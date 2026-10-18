@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 
 import { api } from "@/api/client";
 import { realtime, type ConnectionState, type Message, type Topic } from "@/api/realtime";
-import type { AccountStatus, Balance, Book, Candle, Fill, Instrument, Order, Position, Ticker, Trade } from "@/api/types";
+import type { AccountStatus, Balance, Book, Candle, Fill, Instrument, Margin, Order, Position, Route, Ticker, Trade } from "@/api/types";
 
 /** Latest data of a retained channel. Resets when the topic changes. */
 function useChannel<T>(topic: Topic | null, channel: string): T | undefined {
@@ -81,6 +81,13 @@ export interface AccountLive {
   positions?: Position[];
   balances?: Balance[];
   status?: AccountStatus;
+  /** Broker accounts only: the shared margin pool. */
+  margin?: Margin;
+}
+
+/** The instruments an account trades, with the rules its orders follow there. */
+export function useRoutes(accountId: string | undefined) {
+  return useQuery({ queryKey: ["routes", accountId], queryFn: () => api.routes(accountId!), enabled: !!accountId, staleTime: 5 * 60_000 });
 }
 
 /**
@@ -106,6 +113,9 @@ export function useAccountStream(
           break;
         case "account.status":
           setLive((current) => ({ ...current, status: message.data as AccountStatus }));
+          break;
+        case "account.margin":
+          setLive((current) => ({ ...current, margin: message.data as Margin }));
           break;
         case "account.orders":
           onOrder?.(message.data as Order);

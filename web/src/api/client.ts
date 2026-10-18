@@ -1,5 +1,5 @@
 import type {
-  Account, Balance, Book, Candle, Fill, Instrument, LookupResult, Order, PlaceRequest, PlaceResult, Position, Stats, VenueInfo,
+  Account, Balance, Book, Candle, Fill, Instrument, LookupResult, Margin, Order, PlaceRequest, PlaceResult, Position, Route, Stats, VenueInfo,
 } from "./types";
 
 /** Same for every venue; see gateway account.Category. */
@@ -76,6 +76,8 @@ export const api = {
 
   positions: (id: string) => request<Position[]>("GET", acc(id, "/positions")),
   balances: (id: string) => request<Balance[]>("GET", acc(id, "/balances")),
+  margin: (id: string) => request<Margin | null>("GET", acc(id, "/margin")),
+  routes: (id: string) => request<Route[]>("GET", acc(id, "/instruments")),
   openOrders: (id: string, inst?: string) => request<Order[]>("GET", acc(id, "/orders" + query({ inst }))),
   fills: (id: string, inst?: string) => request<Fill[]>("GET", acc(id, "/fills" + query({ inst, limit: 100 }))),
   place: (id: string, order: PlaceRequest) => request<PlaceResult>("POST", acc(id, "/orders"), order),

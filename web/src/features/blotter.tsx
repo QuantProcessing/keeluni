@@ -3,9 +3,9 @@ import { useState, type ReactNode } from "react";
 
 import { api } from "@/api/client";
 import type { Order, Position } from "@/api/types";
-import { instrumentName, num, price, time, usd } from "@/lib/format";
+import { instrumentName, marketLabel, num, price, time, usd, venueLabel } from "@/lib/format";
 import { useInstruments } from "@/state/hooks";
-import { useWorkspace } from "@/state/workspace";
+import { originLabel, useWorkspace } from "@/state/workspace";
 import { Dialog, PrimaryButton, Tabs, cx } from "@/ui/primitives";
 import { useToast } from "@/ui/toast";
 import { submitOrder } from "./submit";
@@ -68,6 +68,13 @@ function useTick() {
   return (id: string) => data?.find((item) => item.id === id)?.tickSize;
 }
 
+/** On a broker account every row names its venue: one pool, many order books. */
+function Venue({ inst }: { inst: string }) {
+  const { account } = useWorkspace();
+  if (account?.kind !== "broker") return null;
+  return <span className="ml-1.5 text-muted">{venueLabel(inst.split(":")[0] ?? "")}</span>;
+}
+
 function Positions({ positions, loading }: { positions: Position[]; loading: boolean }) {
   const tick = useTick();
   const { setInstrumentId } = useWorkspace();
@@ -88,6 +95,7 @@ function Positions({ positions, loading }: { positions: Position[]; loading: boo
               <td className={tdFirst}>
                 <button className={cx(color, "hover:underline")} onClick={() => setInstrumentId(position.inst)}>{instrumentName(position.inst)}</button>
                 {position.leverage && <span className="ml-1.5 text-muted">{num(position.leverage, 0)}x</span>}
+                <Venue inst={position.inst} />
               </td>
               <td className={cx(td, color)}>{(position.side === "short" ? "-" : "") + num(position.size)}</td>
               <td className={td}>{usd(value)}</td>
@@ -159,8 +167,12 @@ function OpenOrders({ orders }: { orders: Order[] }) {
       {orders.map((order) => (
         <tr key={order.orderId} className="hover:bg-raised">
           <td className={tdFirst}>{time(order.createdAt ?? order.updatedAt ?? 0)}</td>
-          <td className={td}>{instrumentName(order.inst)}</td>
-          <td className={td}>{order.type === "limit" ? "Limit" : "Market"}{order.tif && order.tif !== "gtc" ? ` · ${order.tif.toUpperCase()}` : ""}</td>
+          <td className={td}>{instrumentName(order.inst)}<Venue inst={order.inst} /></td>
+          <td className={td}>
+            {order.type === "limit" ? "Limit" : "Market"}{order.tif && order.tif !== "gtc" ? ` · ${order.tif.toUpperCase()}` : ""}
+            {order.status === "pending" && <span className="ml-1.5 text-muted" title="Accepted, not yet on the exchange">Pending</span>}
+            {order.origin && <span className="ml-1.5 text-down">{originLabel(order.origin)}</span>}
+          </td>
           <td className={cx(td, order.side === "buy" ? "text-up" : "text-down")}>{order.side === "buy" ? "Buy" : "Sell"}</td>
           <td className={td}>{price(order.price, tick(order.inst))}</td>
           <td className={td}>{num(order.qty)}</td>
@@ -186,7 +198,7 @@ function Fills() {
       {fills.map((fill) => (
         <tr key={fill.fillId} className="hover:bg-raised">
           <td className={tdFirst}>{time(fill.ts)}</td>
-          <td className={td}>{instrumentName(fill.inst)}</td>
+          <td className={td}>{instrumentName(fill.inst)}<Venue inst={fill.inst} /></td>
           <td className={cx(td, fill.side === "buy" ? "text-up" : "text-down")}>{fill.side === "buy" ? "Buy" : "Sell"}</td>
           <td className={td}>{price(fill.price, tick(fill.inst))}</td>
           <td className={td}>{num(fill.qty)}</td>
@@ -208,7 +220,7 @@ function Balances() {
       {balances.map((balance) => (
         <tr key={balance.market + balance.asset} className="hover:bg-raised">
           <td className={tdFirst}>{balance.asset}</td>
-          <td className={td}>{balance.market}</td>
+          <td className={td}>{marketLabel(balance.market)}</td>
           <td className={td}>{num(balance.total)}</td>
           <td className={td}>{num(balance.available)}</td>
           <td className={td}>{num(balance.locked)}</td>

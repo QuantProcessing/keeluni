@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Instrument } from "@/api/types";
-import { fallbackInstrument } from "./workspace";
+import { fallbackInstrument, originLabel, rejectionNotice } from "./workspace";
 
 const instrument = (id: string): Instrument => {
   const [venue = "", product = "perp", symbol = ""] = id.split(":");
@@ -28,5 +28,29 @@ describe("fallbackInstrument", () => {
   it("falls back to a BTC perp, then to anything", () => {
     expect(fallbackInstrument("binance:perp:DOGE-USDT", catalog)?.id).toBe("okx:perp:BTC-USDT-SWAP");
     expect(fallbackInstrument("binance:perp:DOGE-USDT", [instrument("lighter:perp:SOL-USDC")])?.id).toBe("lighter:perp:SOL-USDC");
+  });
+});
+
+describe("rejectionNotice", () => {
+  const base = { inst: "okx:perp:ADA-USDT-SWAP", orderId: "9", side: "buy" as const, type: "market" as const, qty: "10", filled: "0", status: "rejected" as const };
+
+  it("shows a CrossEx risk refusal with its label", () => {
+    const notice = rejectionNotice({ ...base, rejectCode: "TRADE_INSUFFICIENT_AVAILABLE_MARGIN_ERROR", rejectMessage: "Insufficient availableMargin" });
+    expect(notice).toEqual({ title: "Buy 10 ADA-USDT-SWAP rejected", detail: "Insufficient availableMargin (TRADE_INSUFFICIENT_AVAILABLE_MARGIN_ERROR)" });
+  });
+
+  it("shows an exchange refusal as the exchange wrote it", () => {
+    const text = "Due to the order could not be executed as maker, the Post Only order will be rejected.";
+    expect(rejectionNotice({ ...base, rejectMessage: text }).detail).toBe(text);
+  });
+
+  it("still explains a rejection without a reason", () => {
+    expect(rejectionNotice(base).detail).toBe("The exchange refused the order after it was accepted.");
+  });
+
+  it("names risk-engine orders", () => {
+    expect(originLabel("liquidation")).toBe("Liquidation");
+    expect(originLabel("adl")).toBe("Auto-deleverage");
+    expect(originLabel(undefined)).toBeUndefined();
   });
 });

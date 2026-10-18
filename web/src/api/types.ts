@@ -1,4 +1,4 @@
-// Wire types of the gateway /v1 API (see docs/rewrite/gateway-api-draft.md).
+// Wire types of the gateway /v1 API (see docs/gateway-api.md).
 
 export type Product = "spot" | "perp";
 export type Side = "buy" | "sell";
@@ -16,7 +16,21 @@ export interface Instrument {
   minQty: string;
   minNotional?: string;
   marketFamily?: string;
+  /** Set when market data comes from a broker rather than the venue ("crossex"): no history. */
+  source?: string;
 }
+
+/** An instrument an account can trade, with the rules its orders follow there. */
+export interface Route {
+  inst: string;
+  tickSize: string;
+  stepSize: string;
+  minQty: string;
+  minNotional?: string;
+}
+
+/** "native": one venue. "broker": one margin pool trading many venues (Gate CrossEx). */
+export type AccountKind = "native" | "broker";
 
 export interface CredentialField {
   key: string;
@@ -28,6 +42,7 @@ export interface CredentialField {
 
 export interface VenueInfo {
   venue: string;
+  kind: AccountKind;
   markets: string[];
   fields: CredentialField[];
 }
@@ -35,6 +50,7 @@ export interface VenueInfo {
 export interface Account {
   id: string;
   venue: string;
+  kind: AccountKind;
   label: string;
   createdAt: string;
   markets: string[];
@@ -122,6 +138,11 @@ export interface Order {
   status: OrderStatus;
   createdAt?: number;
   updatedAt?: number;
+  /** Why an accepted order was rejected afterwards (asynchronous venues). */
+  rejectCode?: string;
+  rejectMessage?: string;
+  /** Set for orders the venue's risk engine placed. */
+  origin?: "liquidation" | "adl" | "settlement";
 }
 
 export interface Fill {
@@ -168,4 +189,26 @@ export interface LookupResult {
 export interface AccountStatus {
   connected: boolean;
   markets: Record<string, boolean>;
+}
+
+/** A broker account's shared margin pool. Rates are ratios: 2.4 means 240%. */
+export interface Margin {
+  equity?: string;
+  available?: string;
+  initialMargin?: string;
+  maintenanceMargin?: string;
+  initialMarginRate?: string;
+  maintenanceMarginRate?: string;
+  unrealizedPnl?: string;
+  byVenue?: VenueMargin[];
+  ts: number;
+}
+
+export interface VenueMargin {
+  venue: string;
+  asset: string;
+  equity: string;
+  available: string;
+  initialMargin?: string;
+  unrealizedPnl?: string;
 }

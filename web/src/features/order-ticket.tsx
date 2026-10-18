@@ -2,8 +2,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
 import { api } from "@/api/client";
-import type { Instrument, Order } from "@/api/types";
-import { instrumentName, num, price, snapToStep, usd } from "@/lib/format";
+import type { Account, Instrument, Order } from "@/api/types";
+import { instrumentName, num, price, snapToStep, usd, venueLabel } from "@/lib/format";
+import { alternativeAccounts, canTrade, rulesFor, type Rules } from "@/lib/routes";
 import { useInstrument, useLastPrice, useStats, useTicker } from "@/state/hooks";
 import { useWorkspace } from "@/state/workspace";
 import { Dialog, PrimaryButton, Row, Tabs, cx } from "@/ui/primitives";
@@ -15,8 +16,12 @@ type Tif = "gtc" | "ioc" | "post_only";
 type Unit = "base" | "quote";
 
 export function OrderTicket() {
-  const { instrumentId, account, live, setConnectOpen, limitPriceHint } = useWorkspace();
+  const { instrumentId, account, accounts, setAccountId, live, routes, trackOrder, setConnectOpen, limitPriceHint } = useWorkspace();
   const instrument = useInstrument(instrumentId);
+  // Orders follow the selected account's rules for this order book.
+  const rules = instrument ? rulesFor(instrument, routes) : undefined;
+  const tradable = !account || !instrument || canTrade(account, instrument);
+  const broker = account?.kind === "broker";
   const perp = instrument?.product === "perp";
   const last = useLastPrice(instrumentId);
   const ticker = useTicker(instrumentId, perp);
@@ -60,52 +65,55 @@ export function OrderTicket() {
 
   const quoteAsset = instrument?.settle || instrument?.quote || "";
   const available = useMemo(() => {
+    // A broker account trades every venue from one pool.
+    if (broker && live.margin?.available) return { amount: Number(live.margin.available), asset: "USD" };
     if (!instrument || !live.balances) return undefined;
     const market = perp ? `${instrument.venue}:perp:${instrument.settle || instrument.quote}` : `${instrument.venue}:spot`;
     const asset = perp || side === "buy" ? quoteAsset : instrument.base;
     const row = live.balances.find((item) => item.market.toUpperCase() === market.toUpperCase() && item.asset.toUpperCase() === asset.toUpperCase())
       ?? live.balances.find((item) => item.asset.toUpperCase() === asset.toUpperCase());
     return row ? { amount: Number(row.available), asset } : { amount: 0, asset };
-  }, [instrument, live.balances, perp, side, quoteAsset]);
+  }, [instrument, live.balances, live.margin, broker, perp, side, quoteAsset]);
 
   // Size in base units, snapped to the instrument step.
   const baseQty = useMemo(() => {
-    if (!instrument || !size) return "";
+    if (!rules || !size) return "";
     const raw = unit === "base" ? size : refPrice > 0 ? String(Number(size) / refPrice) : "";
     if (!raw || !Number.isFinite(Number(raw))) return "";
-    return snapToStep(Number(raw).toFixed(12).replace(/\.?0+$/, ""), instrument.stepSize);
-  }, [instrument, size, unit, refPrice]);
+    return snapToStep(Number(raw).toFixed(12).replace(/\.?0+$/, ""), rules.stepSize);
+  }, [rules, size, unit, refPrice]);
 
   const notional = Number(baseQty) * refPrice;
   const margin = perp && effectiveLeverage ? notional / effectiveLeverage : undefined;
 
   const applyPercent = (value: number) => {
     setPercent(value);
-    if (!available || !instrument || refPrice <= 0) return;
+    if (!available || !rules || refPrice <= 0) return;
     let maxBase: number;
     if (perp) maxBase = (available.amount * (effectiveLeverage ?? 1)) / refPrice;
     else maxBase = side === "buy" ? available.amount / refPrice : available.amount;
     const target = (maxBase * value) / 100;
-    if (unit === "base") setSize(snapToStep(target.toFixed(12), instrument.stepSize));
+    if (unit === "base") setSize(snapToStep(target.toFixed(12), rules.stepSize));
     else setSize((target * refPrice).toFixed(2));
   };
 
-  const validation = validate(instrument, baseQty, type, limitPrice, notional);
+  const validation = tradable ? validate(rules, baseQty, type, limitPrice, notional) : "Not tradable with this account";
 
   const place = async () => {
     if (!account) {
       setConnectOpen(true);
       return;
     }
-    if (!instrument || validation) return;
+    if (!instrument || !rules || validation) return;
     setSubmitting(true);
     try {
       const outcome = await submitOrder(account.id, {
         inst: instrument.id, side, type, qty: baseQty,
-        ...(type === "limit" ? { price: snapToStep(limitPrice, instrument.tickSize), tif } : {}),
+        ...(type === "limit" ? { price: snapToStep(limitPrice, rules.tickSize), tif } : {}),
         ...(perp && reduceOnly ? { reduceOnly: true } : {}),
       });
       if (outcome.kind === "accepted") {
+        trackOrder(outcome.order);
         announce(outcome.order);
         setSize("");
         setPercent(0);
@@ -127,13 +135,25 @@ export function OrderTicket() {
       toast.push({ kind: order.side === "buy" ? "long" : "short", title: `${verb} ${num(order.filled)} ${name} filled`, detail: order.avgPrice ? `Average price ${num(order.avgPrice)}` : undefined });
     } else if (order.status === "open" || order.status === "partially_filled") {
       toast.push({ kind: "info", title: `${verb} ${num(order.qty)} ${name} placed`, detail: order.price ? `Limit ${num(order.price)}` : undefined });
+    } else if (order.status === "pending") {
+      // Accepted by a broker, not yet on the exchange: it can still be refused.
+      toast.push({ kind: "info", title: `${verb} ${num(order.qty)} ${name} accepted`, detail: "Waiting for the exchange" });
     } else {
       toast.push({ kind: "info", title: `${verb} ${num(order.qty)} ${name} submitted`, detail: `Status: ${order.status}` });
     }
   };
 
+  if (account && instrument && !tradable) {
+    return <NotTradable account={account} instrument={instrument} alternatives={alternativeAccounts(accounts, account, instrument)} onSwitch={setAccountId} />;
+  }
+
   return (
     <div className="flex flex-col gap-3 bg-surface p-3">
+      {broker && instrument && (
+        <div className="-mb-1 text-muted" title="Orders go to this order book through your Gate CrossEx account, from its shared margin pool">
+          {venueLabel(instrument.venue)} {perp ? "Perp" : "Spot"} <span className="text-text-2">via {venueLabel(account!.venue)}</span>
+        </div>
+      )}
       {perp && (
         <div className="grid grid-cols-2 gap-2">
           <div className="flex h-8 items-center justify-center rounded-lg bg-raised text-muted" title="Margin mode is managed on the venue">Cross</div>
@@ -228,8 +248,9 @@ export function OrderTicket() {
       <div className="border-t border-line pt-2">
         <Row label="Order Value">{notional > 0 ? usd(notional) : "N/A"}</Row>
         {perp && <Row label="Margin Required" hint="Order value divided by leverage">{margin ? usd(margin) : "N/A"}</Row>}
-        {perp && position?.liquidationPrice && <Row label="Liquidation Price">{price(position.liquidationPrice, instrument?.tickSize)}</Row>}
-        {type === "market" && <Row label="Est. Price" hint="Mark or last trade price; the fill may differ">{refPrice ? price(refPrice, instrument?.tickSize) : "—"}</Row>}
+        {perp && position?.liquidationPrice && <Row label="Liquidation Price">{price(position.liquidationPrice, rules?.tickSize)}</Row>}
+        {type === "market" && <Row label="Est. Price" hint="Mark or last trade price; the fill may differ">{refPrice ? price(refPrice, rules?.tickSize) : "—"}</Row>}
+        {broker && rules && <Row label="Min Size" hint="Gate CrossEx's own minimum for this market">{rules.minQty}{rules.minNotional ? ` · ${usd(rules.minNotional, 0)}` : ""}</Row>}
       </div>
 
       {account && instrument && perp && (
@@ -246,8 +267,8 @@ export function OrderTicket() {
   );
 
   function midPrice(): string | undefined {
-    if (!instrument || !markOrLast) return undefined;
-    return snapToStep(String(markOrLast), instrument.tickSize);
+    if (!rules || !markOrLast) return undefined;
+    return snapToStep(String(markOrLast), rules.tickSize);
   }
 }
 
@@ -257,13 +278,41 @@ function sanitize(value: string): string {
   return rest.length ? `${whole}.${rest.join("")}` : whole ?? "";
 }
 
-function validate(instrument: Instrument | undefined, baseQty: string, type: OrderType, limitPrice: string, notional: number): string | null {
-  if (!instrument) return "Loading market";
+export function validate(rules: Rules | undefined, baseQty: string, type: OrderType, limitPrice: string, notional: number): string | null {
+  if (!rules) return "Loading market";
   if (!baseQty || Number(baseQty) <= 0) return "Enter a size";
-  if (Number(baseQty) < Number(instrument.minQty)) return `Min size ${instrument.minQty}`;
+  if (Number(baseQty) < Number(rules.minQty)) return `Min size ${rules.minQty}`;
   if (type === "limit" && !(Number(limitPrice) > 0)) return "Enter a price";
-  if (instrument.minNotional && notional > 0 && notional < Number(instrument.minNotional)) return `Min value ${instrument.minNotional}`;
+  if (rules.minNotional && notional > 0 && notional < Number(rules.minNotional)) return `Min value ${rules.minNotional}`;
   return null;
+}
+
+/**
+ * The selected account cannot trade this order book. Never switch accounts
+ * silently: whose money is used is the user's decision.
+ */
+function NotTradable({ account, instrument, alternatives, onSwitch }: {
+  account: Account;
+  instrument: Instrument;
+  alternatives: Account[];
+  onSwitch: (id: string) => void;
+}) {
+  const where = `${venueLabel(instrument.venue)} ${instrument.product === "perp" ? "Perp" : "Spot"}`;
+  return (
+    <div className="flex flex-col gap-3 bg-surface p-3">
+      <div className="text-md">{instrument.symbol}</div>
+      <p className="text-text-2">
+        {venueLabel(account.venue)}{account.label !== account.venue ? ` · ${account.label}` : ""} cannot trade {where}
+        {instrument.source ? ", which is available only through Gate CrossEx." : "."}
+      </p>
+      {alternatives.map((item) => (
+        <PrimaryButton key={item.id} onClick={() => onSwitch(item.id)}>
+          Trade with {venueLabel(item.venue)}{item.label !== item.venue ? ` · ${item.label}` : ""}
+        </PrimaryButton>
+      ))}
+      {alternatives.length === 0 && <div className="text-muted">Connect an account that trades {where} to place orders here.</div>}
+    </div>
+  );
 }
 
 function LeverageDialog({ open, onOpenChange, instrument, accountId, current, onApplied }: {

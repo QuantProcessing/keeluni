@@ -109,8 +109,8 @@ then nav items (12px, padding 8×10px): active = `accent`, hover =
 `accent-hover`, no underline or background. **More** has a 14px chevron that
 flips when open; its menu (`overlay`, 10px radius, items 12px/24px, padding
 5×10px, hover = `accent-hover` text) holds the project links.
-Right: account switcher (venue · label) or a teal **Connect** button when no
-account exists, then a 32px icon button (1px `border`, radius lg, `muted`
+Right: account switcher (venue · label; a broker account adds a small
+`accent` "Cross" tag) or a teal **Connect** button when no account exists, then a 32px icon button (1px `border`, radius lg, `muted`
 icon; hover/open = `overlay` fill and `text` icon) for the session menu.
 
 **Sign-in page** — `surface` page, a 320px left-aligned column centred on
@@ -128,6 +128,9 @@ Funding shows rate in `long-text`/`short` and a countdown.
 input (radius lg, `surface-raised`), category tabs (All · Perps · Spot, plus
 one tab per venue), table: Market (name + max-leverage chip), Last Price,
 24h Change, Volume. Keyboard: ↑/↓ navigate, Enter select, Esc close, ⌘K open.
+Markets the selected account cannot trade stay listed (their charts still
+work) but sort last at 50% opacity, with the reason as a tooltip. Markets
+whose data comes from Gate CrossEx carry a muted "Live only" tag.
 
 **Order book** — tabs Order Book · Trades (underline style). Header row:
 tick selector, unit selector. Columns Price · Size · Total. Asks above (pink
@@ -168,12 +171,36 @@ intervals.
    "Connect" when no account, disabled while submitting.
 9. Summary rows: Liquidation Price, Order Value, Margin Required, Fees.
 
+Size steps, minimums and tick come from the selected account's route
+(`/accounts/{id}/instruments`), not the market: Gate CrossEx can allow
+finer sizes than the venue. On a broker account a muted line above the
+ticket names the route ("Binance Perp via Gate CrossEx"), Available to
+Trade is the pool's available margin, and a Min Size row shows the broker's
+minimums. When the account cannot trade the selected market, the ticket is
+replaced by one sentence saying why and a primary button per account that
+can ("Trade with Gate CrossEx"). The account is never switched silently.
+An order a broker accepted shows "accepted · Waiting for the exchange"; a
+later rejection arrives as an error toast with the venue's own text.
+
 **Blotter** — underline tabs with counts (`Positions (2)`). Tables: 12px,
 header `text-muted`, rows 24px, no zebra, hover `surface-raised`.
 Positions columns: Coin (coloured by side, with leverage) · Size · Position
 Value · Entry Price · Mark Price · PNL (ROE %) · Liq. Price · Margin ·
 Close (Market / Limit links in `accent`). Empty state: plain muted text
-"No open positions yet".
+"No open positions yet". On a broker account, Coin cells add the venue in
+muted text. Open orders mark "Pending" (accepted, not yet on the exchange)
+and risk-engine orders (Liquidation, Auto-deleverage, Delisting) in pink.
+
+**Account summary (broker)** — titled with the broker's name: Margin
+Balance, Available Margin, Unrealized PNL, Initial Margin, Initial and
+Maintenance Margin Rate (percent; pink when at risk), then a small table of
+each venue's equity and margin in use. Below 110% / 100% initial rate or at
+100% maintenance rate, a pink warning box states the consequence.
+
+**Live-only chart** — markets without history (Gate CrossEx data) start
+empty with a muted pill "No history for this market — bars start now",
+which becomes "Live only — no history for this market" once bars arrive.
+If no candles exist at all (Kraken), the plot shows one muted sentence.
 
 **Dialogs** — centred, 480px, `surface` bg, 1px `border`, radius xl, 24px
 padding, title 20px centred, body 12px centred, close × top-right.

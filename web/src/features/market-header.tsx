@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Instrument } from "@/api/types";
 import { compact, countdown, pct, price, signed, venueLabel } from "@/lib/format";
+import { canTrade } from "@/lib/routes";
 import { useInstrument, useInstruments, useLastPrice, useNow, useStats, useTicker } from "@/state/hooks";
 import { useWorkspace } from "@/state/workspace";
 import { cx } from "@/ui/primitives";
@@ -62,7 +63,7 @@ function Stat({ label, value, tone, hint }: { label: string; value: string; tone
 type Category = "all" | "perp" | "spot" | string;
 
 function InstrumentPicker() {
-  const { instrumentId, setInstrumentId } = useWorkspace();
+  const { instrumentId, setInstrumentId, account } = useWorkspace();
   const instrument = useInstrument(instrumentId);
   const { data: instruments = [] } = useInstruments();
   const [open, setOpen] = useState(false);
@@ -89,13 +90,14 @@ function InstrumentPicker() {
       if (category === "perp" || category === "spot") {
         if (item.product !== category) return false;
       } else if (category !== "all" && item.venue !== category) return false;
-      return !term || item.symbol.includes(term) || item.base.toUpperCase().startsWith(term);
+      return !term || item.symbol.toUpperCase().includes(term) || item.base.toUpperCase().startsWith(term);
     });
-    // Exact base matches first, then perps, then by symbol.
+    // Tradable with the selected account first, then exact base matches, perps, by symbol.
     const currentVenue = instrument?.venue;
-    result.sort((a, b) => rank(a, term, currentVenue) - rank(b, term, currentVenue) || a.symbol.localeCompare(b.symbol));
+    const score = (item: Instrument) => rank(item, term, currentVenue) + (account && !canTrade(account, item) ? 1000 : 0);
+    result.sort((a, b) => score(a) - score(b) || a.symbol.localeCompare(b.symbol));
     return result.slice(0, 200);
-  }, [instruments, search, category, instrument?.venue]);
+  }, [instruments, search, category, instrument?.venue, account]);
 
   useEffect(() => setCursor(0), [search, category]);
   useEffect(() => {
@@ -143,19 +145,27 @@ function InstrumentPicker() {
             <span>Market</span><span>Venue</span><span className="text-right">Type</span>
           </div>
           <div ref={listRef} className="max-h-[50vh] overflow-y-auto pb-2">
-            {filtered.map((item, index) => (
-              <button
-                key={item.id}
-                data-index={index}
-                onMouseEnter={() => setCursor(index)}
-                onClick={() => choose(item)}
-                className={cx("grid w-full grid-cols-[1fr_120px_80px] gap-2 px-3 py-1.5 text-left", index === cursor && "bg-raised", item.id === instrumentId && "text-accent")}
-              >
-                <span className="truncate">{item.symbol}</span>
-                <span className="text-text-2">{venueLabel(item.venue)}</span>
-                <span className="text-right text-muted">{item.product === "perp" ? "Perp" : "Spot"}</span>
-              </button>
-            ))}
+            {filtered.map((item, index) => {
+              // Untradable markets stay visible (charts work), dimmed with a reason.
+              const tradable = !account || canTrade(account, item);
+              return (
+                <button
+                  key={item.id}
+                  data-index={index}
+                  onMouseEnter={() => setCursor(index)}
+                  onClick={() => choose(item)}
+                  title={tradable ? undefined : item.source ? "Tradable only through Gate CrossEx" : `Not tradable with ${venueLabel(account!.venue)}`}
+                  className={cx("grid w-full grid-cols-[1fr_120px_80px] gap-2 px-3 py-1.5 text-left", index === cursor && "bg-raised", item.id === instrumentId && "text-accent", !tradable && "opacity-50")}
+                >
+                  <span className="truncate">
+                    {item.symbol}
+                    {item.source && <span className="ml-1.5 text-xs text-muted" title="Market data from Gate CrossEx: live only, no history">Live only</span>}
+                  </span>
+                  <span className="text-text-2">{venueLabel(item.venue)}</span>
+                  <span className="text-right text-muted">{item.product === "perp" ? "Perp" : "Spot"}</span>
+                </button>
+              );
+            })}
             {filtered.length === 0 && <div className="px-3 py-6 text-center text-muted">No markets match</div>}
           </div>
           <div className="flex gap-4 border-t border-line px-3 py-2 text-muted">

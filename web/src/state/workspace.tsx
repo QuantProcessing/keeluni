@@ -1,9 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { api } from "@/api/client";
 import type { Account, Fill, Instrument, Order } from "@/api/types";
-import { useAccountStream, useInstruments, type AccountLive } from "./hooks";
+import { useAccountStream, useInstruments, useRoutes, type AccountLive } from "./hooks";
+import type { Route } from "@/api/types";
 import { useToast } from "@/ui/toast";
 import { instrumentName, num, venueLabel } from "@/lib/format";
 
@@ -16,6 +17,10 @@ interface Workspace {
   account: Account | undefined;
   setAccountId: (id: string) => void;
   live: AccountLive;
+  /** Instruments the selected account trades and their order rules. */
+  routes: Route[] | undefined;
+  /** Remembers an order this terminal placed, to report a later rejection. */
+  trackOrder: (order: Order) => void;
   openOrders: Order[];
   fills: Fill[];
   limitPriceHint: { price: string; at: number } | null;
@@ -34,7 +39,7 @@ function stored(key: string, fallback: string): string {
   }
 }
 
-const VENUE_ORDER = ["binance", "okx", "bybit", "hyperliquid", "bitget", "gate", "lighter"];
+const VENUE_ORDER = ["binance", "okx", "bybit", "hyperliquid", "bitget", "gate", "lighter", "deribit", "kraken"];
 
 /**
  * When the saved instrument is not in the catalog (its venue is unreachable
@@ -59,6 +64,26 @@ export function fallbackInstrument(id: string, instruments: Instrument[]): Instr
 
 function terminal(status: Order["status"]) {
   return status === "filled" || status === "canceled" || status === "rejected";
+}
+
+/** Toast text for an order the venue rejected after accepting it. */
+export function rejectionNotice(order: Order): { title: string; detail: string } {
+  const verb = order.side === "buy" ? "Buy" : "Sell";
+  const title = `${verb} ${num(order.qty)} ${instrumentName(order.inst)} rejected`;
+  const detail = order.rejectMessage
+    ? order.rejectCode && !order.rejectMessage.includes(order.rejectCode) ? `${order.rejectMessage} (${order.rejectCode})` : order.rejectMessage
+    : order.rejectCode ?? "The exchange refused the order after it was accepted.";
+  return { title, detail };
+}
+
+/** Label for an order the venue's risk engine placed. */
+export function originLabel(origin: Order["origin"]): string | undefined {
+  switch (origin) {
+    case "liquidation": return "Liquidation";
+    case "adl": return "Auto-deleverage";
+    case "settlement": return "Delisting";
+  }
+  return undefined;
 }
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
@@ -89,12 +114,29 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const ordersQuery = useQuery({ queryKey: ["orders", account?.id], queryFn: () => api.openOrders(account!.id), enabled: !!account, refetchInterval: 60_000 });
   const fillsQuery = useQuery({ queryKey: ["fills", account?.id], queryFn: () => api.fills(account!.id), enabled: !!account, refetchInterval: 120_000 });
 
+  // Orders placed here that are not yet final. An asynchronous venue can
+  // accept an order and reject it moments later; that rejection must reach
+  // the user even though the ticket already reported "accepted".
+  const tracked = useRef(new Map<string, number>());
+  const trackOrder = useCallback((order: Order) => {
+    if (terminal(order.status)) return;
+    tracked.current.set(order.orderId, Date.now());
+    for (const [id, at] of tracked.current) if (Date.now() - at > 10 * 60_000) tracked.current.delete(id);
+  }, []);
+
   const onOrder = useCallback((order: Order) => {
     queryClient.setQueryData<Order[]>(["orders", account?.id], (current = []) => {
       const rest = current.filter((item) => item.orderId !== order.orderId);
       return terminal(order.status) ? rest : [order, ...rest];
     });
-  }, [account?.id, queryClient]);
+    const ours = tracked.current.has(order.orderId);
+    if (terminal(order.status)) tracked.current.delete(order.orderId);
+    if (order.status === "rejected" && ours) {
+      toast.push({ kind: "error", ...rejectionNotice(order) });
+    } else if (order.origin && order.status !== "rejected") {
+      toast.push({ kind: "error", title: `${originLabel(order.origin)} order on ${instrumentName(order.inst)}`, detail: `${order.side === "buy" ? "Buy" : "Sell"} ${num(order.qty)} placed by the exchange's risk engine` });
+    }
+  }, [account?.id, queryClient, toast]);
 
   const onFill = useCallback((fill: Fill) => {
     queryClient.setQueryData<Fill[]>(["fills", account?.id], (current = []) =>
@@ -107,6 +149,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [account?.id, queryClient, toast]);
 
   const live = useAccountStream(account?.id ?? "", onOrder, onFill);
+  const routes = useRoutes(account?.id).data;
 
   useEffect(() => {
     if (fallback) toast.push({ kind: "info", title: `${instrumentName(savedInstrument)} is unavailable`, detail: `${venueLabel(savedInstrument.split(":")[0] ?? "")} cannot be reached from this network. Showing ${fallback.symbol} on ${venueLabel(fallback.venue)}.` });
@@ -118,11 +161,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [accountId, accounts]);
 
   const value = useMemo<Workspace>(() => ({
-    instrumentId, setInstrumentId, accounts, account, setAccountId, live,
+    instrumentId, setInstrumentId, accounts, account, setAccountId, live, routes, trackOrder,
     openOrders: ordersQuery.data ?? [], fills: fillsQuery.data ?? [],
     limitPriceHint, hintLimitPrice: (price) => setHint({ price, at: Date.now() }),
     connectOpen, setConnectOpen,
-  }), [instrumentId, setInstrumentId, accounts, account, setAccountId, live, ordersQuery.data, fillsQuery.data, limitPriceHint, connectOpen]);
+  }), [instrumentId, setInstrumentId, accounts, account, setAccountId, live, routes, trackOrder, ordersQuery.data, fillsQuery.data, limitPriceHint, connectOpen]);
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }

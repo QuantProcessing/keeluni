@@ -29,7 +29,11 @@ export function ChartPanel() {
   const candles = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volume = useRef<ISeriesApi<"Histogram"> | null>(null);
   const layer = useRef(new DrawingLayer());
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  // "live": no history exists (CrossEx-sourced instruments); bars accumulate from now.
+  // "none": the source streams no candles for this instrument at all.
+  const [status, setStatus] = useState<"loading" | "ready" | "error" | "live" | "none">("loading");
+  const liveOnly = !!instrument?.source;
+  const noCandles = liveOnly && instrument?.venue === "kraken";
   const [failure, setFailure] = useState("");
   const [attempt, setAttempt] = useState(0);
 
@@ -91,6 +95,15 @@ export function ChartPanel() {
     volume.current?.setData([]);
     layer.current.setInterval(intervalSeconds(interval));
     layer.current.setBars([]);
+    if (noCandles) {
+      setStatus("none");
+      return () => controller.abort();
+    }
+    if (liveOnly) {
+      // Waiting for the first streamed bar; there is nothing to load.
+      setStatus("live");
+      return () => controller.abort();
+    }
     api.candles(instrumentId, interval, undefined, controller.signal).then((rows) => {
       const bars = rows.map(toBar);
       candles.current?.setData(bars);
@@ -106,9 +119,12 @@ export function ChartPanel() {
       }
     });
     return () => controller.abort();
-  }, [instrumentId, interval, attempt]);
+  }, [instrumentId, interval, attempt, liveOnly, noCandles]);
 
+  const [streamed, setStreamed] = useState(false);
+  useEffect(() => setStreamed(false), [instrumentId, interval]);
   const onCandle = useCallback((candle: Candle) => {
+    setStreamed(true);
     try {
       const bar = toBar(candle);
       candles.current?.update(bar);
@@ -118,7 +134,7 @@ export function ChartPanel() {
       // An out-of-order update (older than the last bar) is ignored.
     }
   }, []);
-  useCandleStream(instrumentId, interval, onCandle);
+  useCandleStream(noCandles ? "" : instrumentId, interval, onCandle);
 
   // Pointer handling for drawing tools. Mouse-down is intercepted in the
   // capture phase so the chart does not pan while a drawing is placed or dragged.
@@ -317,6 +333,16 @@ export function ChartPanel() {
         <div className="relative min-h-0 min-w-0 flex-1">
           <div ref={host} className={cx("absolute inset-0", tool !== "cursor" && "cursor-crosshair")} />
           {status === "loading" && <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center text-muted">Loading chart…</div>}
+          {status === "live" && (
+            <div className="pointer-events-none absolute top-2 left-1/2 z-10 -translate-x-1/2 rounded-md bg-raised px-2 py-1 text-muted">
+              {streamed ? "Live only — no history for this market" : "No history for this market — bars start now"}
+            </div>
+          )}
+          {status === "none" && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center p-6 text-center text-muted">
+              Gate CrossEx streams no candles for {instrument?.symbol} on Kraken.
+            </div>
+          )}
           {status === "error" && (
             <div role="alert" className="absolute inset-0 z-10 flex items-center justify-center bg-surface/85 p-6">
               <div className="max-w-[360px] text-center">

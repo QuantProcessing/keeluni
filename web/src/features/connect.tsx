@@ -16,7 +16,17 @@ const HINTS: Record<string, string> = {
   gate: "Create an API key with futures and spot trade permission. Do not enable withdrawals.",
   hyperliquid: "Use an API wallet private key (app.hyperliquid.xyz/API). Set Account address to your main wallet.",
   lighter: "Use an API key private key and its key index; account index is shown in your Lighter account.",
+  crossex: "One Gate API key trades Binance, OKX, Bybit, Gate, Hyperliquid, Lighter, Kraken and Deribit perps from a shared margin pool. Enable CrossEx trade permission, not withdrawals. The account must be in cross-exchange mode with one-way positions.",
 };
+
+/** "Perp USDT · Spot" for a native venue; the venues a broker reaches. */
+function marketsSummary(item: VenueInfo): string {
+  if (item.kind === "broker") {
+    const venues = [...new Set(item.markets.map((market) => market.split(":")[0] ?? ""))];
+    return venues.map(venueLabel).join(" · ");
+  }
+  return item.markets.map((m) => (m.includes(":perp") ? "Perp" : "Spot") + (m.split(":")[2] ? " " + m.split(":")[2] : "")).join(" · ");
+}
 
 /** The only place credentials are entered. Secrets live only in this form's state until submit. */
 export function ConnectDialog() {
@@ -69,9 +79,13 @@ export function ConnectDialog() {
       {!venue ? (
         <div className="grid grid-cols-2 gap-2">
           {(venues.data ?? []).map((item) => (
-            <button key={item.venue} onClick={() => setVenue(item)} className="flex h-12 flex-col items-start justify-center rounded-lg bg-raised px-3 text-left hover:bg-line-strong/40">
-              <span className="text-md">{venueLabel(item.venue)}</span>
-              <span className="text-muted">{item.markets.map((m) => (m.includes(":perp") ? "Perp" : "Spot") + (m.split(":")[2] ? " " + m.split(":")[2] : "")).join(" · ")}</span>
+            <button
+              key={item.venue}
+              onClick={() => setVenue(item)}
+              className={cx("flex min-h-12 flex-col items-start justify-center rounded-lg bg-raised px-3 py-2 text-left hover:bg-line-strong/40", item.kind === "broker" && "col-span-2")}
+            >
+              <span className="text-md">{venueLabel(item.venue)}{item.kind === "broker" && <span className="ml-2 text-xs text-accent">Cross-exchange</span>}</span>
+              <span className="text-muted">{marketsSummary(item)}</span>
             </button>
           ))}
           {venues.isLoading && <div className="col-span-2 py-6 text-center text-muted">Loading…</div>}
@@ -131,6 +145,7 @@ export function AccountSwitcher() {
         <span className={cx("size-1.5 rounded-full", live.status?.connected ? "bg-up" : "bg-down")} />
         <span>{venueLabel(account.venue)}</span>
         <span className="text-muted">{account.label !== account.venue ? account.label : ""}</span>
+        {account.kind === "broker" && <span className="text-xs text-accent">Cross</span>}
         <span className="text-muted">▾</span>
       </Popover.Trigger>
       <Popover.Portal>
@@ -139,7 +154,7 @@ export function AccountSwitcher() {
             <div key={item.id} className={cx("flex items-center gap-2 rounded-md px-2 py-2", item.id === account.id && "bg-raised")}>
               <button className="flex flex-1 flex-col items-start" onClick={() => { setAccountId(item.id); setOpen(false); }}>
                 <span>{venueLabel(item.venue)} <span className="text-muted">{item.label !== item.venue ? item.label : ""}</span></span>
-                <span className="text-xs text-muted">{item.id}{item.active ? "" : " · inactive"}</span>
+                <span className="text-xs text-muted">{item.kind === "broker" ? "Cross-exchange · " : ""}{item.id}{item.active ? "" : " · inactive"}</span>
               </button>
               {confirming === item.id ? (
                 <span className="flex gap-2">
