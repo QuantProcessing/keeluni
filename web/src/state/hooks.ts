@@ -91,41 +91,34 @@ export function useRoutes(accountId: string | undefined) {
 }
 
 /**
- * Account stream: positions and balances arrive as complete lists and simply
- * replace state; order and fill events are forwarded to the callbacks.
+ * Account streams of every given account: positions, balances, status and
+ * margin arrive as complete snapshots and replace state; order and fill
+ * events are forwarded with the account they belong to.
  */
-export function useAccountStream(
-  accountId: string,
-  onOrder?: (order: Order) => void,
-  onFill?: (fill: Fill) => void,
-): AccountLive {
-  const [live, setLive] = useState<AccountLive>({});
+export function useAccountStreams(
+  accountIds: string[],
+  onOrder?: (accountId: string, order: Order) => void,
+  onFill?: (accountId: string, fill: Fill) => void,
+): Record<string, AccountLive> {
+  const [live, setLive] = useState<Record<string, AccountLive>>({});
+  const key = accountIds.join(",");
   useEffect(() => {
-    setLive({});
-    if (!accountId) return;
-    return realtime.subscribe({ ch: "account", account: accountId }, (message) => {
+    setLive((current) => Object.fromEntries(Object.entries(current).filter(([id]) => accountIds.includes(id))));
+    const patch = (id: string, change: Partial<AccountLive>) =>
+      setLive((current) => ({ ...current, [id]: { ...current[id], ...change } }));
+    const stops = accountIds.map((id) => realtime.subscribe({ ch: "account", account: id }, (message) => {
       switch (message.ch) {
-        case "account.positions":
-          setLive((current) => ({ ...current, positions: message.data as Position[] }));
-          break;
-        case "account.balances":
-          setLive((current) => ({ ...current, balances: message.data as Balance[] }));
-          break;
-        case "account.status":
-          setLive((current) => ({ ...current, status: message.data as AccountStatus }));
-          break;
-        case "account.margin":
-          setLive((current) => ({ ...current, margin: message.data as Margin }));
-          break;
-        case "account.orders":
-          onOrder?.(message.data as Order);
-          break;
-        case "account.fills":
-          onFill?.(message.data as Fill);
-          break;
+        case "account.positions": patch(id, { positions: message.data as Position[] }); break;
+        case "account.balances": patch(id, { balances: message.data as Balance[] }); break;
+        case "account.status": patch(id, { status: message.data as AccountStatus }); break;
+        case "account.margin": patch(id, { margin: message.data as Margin }); break;
+        case "account.orders": onOrder?.(id, message.data as Order); break;
+        case "account.fills": onFill?.(id, message.data as Fill); break;
       }
-    });
-  }, [accountId, onOrder, onFill]);
+    }));
+    return () => stops.forEach((stop) => stop());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, onOrder, onFill]);
   return live;
 }
 

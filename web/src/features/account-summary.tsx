@@ -2,15 +2,15 @@ import { useMemo } from "react";
 
 import type { Margin } from "@/api/types";
 import { usd, venueLabel } from "@/lib/format";
-import { marginLevel, type MarginLevel } from "@/lib/routes";
-import { useWorkspace } from "@/state/workspace";
+import { accountName, marginLevel, type MarginLevel } from "@/lib/routes";
+import { useTradingAccount } from "@/state/workspace";
 import { Row, cx } from "@/ui/primitives";
 
 const STABLES = new Set(["USDT", "USDC", "USD", "FDUSD", "USDE", "USDT0"]);
 
-/** Stablecoin totals and unrealized PnL of the selected account. */
+/** The trading account of the selected market: its funds and stream. */
 export function AccountSummary() {
-  const { account, live } = useWorkspace();
+  const { account, live } = useTradingAccount();
   const summary = useMemo(() => {
     const balances = live.balances ?? [];
     const positions = live.positions ?? [];
@@ -31,7 +31,7 @@ export function AccountSummary() {
   if (account.kind === "broker") {
     return (
       <div className="flex-1 bg-surface p-3">
-        <div className="mb-2 text-md">{venueLabel(account.venue)}</div>
+        <div className="mb-2 text-md">{accountName(account)}</div>
         <MarginPool margin={live.margin} />
         {stream}
       </div>
@@ -39,7 +39,7 @@ export function AccountSummary() {
   }
   return (
     <div className="flex-1 bg-surface p-3">
-      <div className="mb-2 text-md">Account</div>
+      <div className="mb-2 text-md">{accountName(account)}</div>
       <Row label="Stablecoin Balance" hint="Sum of USDT/USDC-like balances across markets">{usd(summary.total)}</Row>
       <Row label="Available">{usd(summary.available)}</Row>
       <Row label="Unrealized PNL"><span className={summary.pnl >= 0 ? "text-up" : "text-down"}>{usd(summary.pnl)}</span></Row>

@@ -1,12 +1,13 @@
+import * as Popover from "@radix-ui/react-popover";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
 import { api } from "@/api/client";
 import type { Account, Instrument, Order } from "@/api/types";
 import { instrumentName, num, price, snapToStep, usd, venueLabel } from "@/lib/format";
-import { alternativeAccounts, canTrade, rulesFor, type Rules } from "@/lib/routes";
+import { accountEquity, accountName, rulesFor, type Rules } from "@/lib/routes";
 import { useInstrument, useLastPrice, useStats, useTicker } from "@/state/hooks";
-import { useWorkspace } from "@/state/workspace";
+import { useTradingAccount, useWorkspace } from "@/state/workspace";
 import { Dialog, PrimaryButton, Row, Tabs, cx } from "@/ui/primitives";
 import { useToast } from "@/ui/toast";
 import { submitOrder } from "./submit";
@@ -16,11 +17,11 @@ type Tif = "gtc" | "ioc" | "post_only";
 type Unit = "base" | "quote";
 
 export function OrderTicket() {
-  const { instrumentId, account, accounts, setAccountId, live, routes, trackOrder, setConnectOpen, limitPriceHint } = useWorkspace();
+  const { instrumentId, trackOrder, limitPriceHint } = useWorkspace();
+  const { account, live, routes } = useTradingAccount();
   const instrument = useInstrument(instrumentId);
-  // Orders follow the selected account's rules for this order book.
+  // Orders follow the trading account's rules for this order book.
   const rules = instrument ? rulesFor(instrument, routes) : undefined;
-  const tradable = !account || !instrument || canTrade(account, instrument);
   const broker = account?.kind === "broker";
   const perp = instrument?.product === "perp";
   const last = useLastPrice(instrumentId);
@@ -70,8 +71,13 @@ export function OrderTicket() {
     if (!instrument || !live.balances) return undefined;
     const market = perp ? `${instrument.venue}:perp:${instrument.settle || instrument.quote}` : `${instrument.venue}:spot`;
     const asset = perp || side === "buy" ? quoteAsset : instrument.base;
-    const row = live.balances.find((item) => item.market.toUpperCase() === market.toUpperCase() && item.asset.toUpperCase() === asset.toUpperCase())
-      ?? live.balances.find((item) => item.asset.toUpperCase() === asset.toUpperCase());
+    // Binance USDT and USDC perps are one account: its balances carry the
+    // USDT market's name. Prefer the exact market, then the venue's product.
+    const same = (item: { asset: string }) => item.asset.toUpperCase() === asset.toUpperCase();
+    const product = market.split(":").slice(0, 2).join(":").toUpperCase();
+    const row = live.balances.find((item) => item.market.toUpperCase() === market.toUpperCase() && same(item))
+      ?? live.balances.find((item) => item.market.toUpperCase().startsWith(product) && same(item))
+      ?? live.balances.find(same);
     return row ? { amount: Number(row.available), asset } : { amount: 0, asset };
   }, [instrument, live.balances, live.margin, broker, perp, side, quoteAsset]);
 
@@ -97,14 +103,10 @@ export function OrderTicket() {
     else setSize((target * refPrice).toFixed(2));
   };
 
-  const validation = tradable ? validate(rules, baseQty, type, limitPrice, notional) : "Not tradable with this account";
+  const validation = validate(rules, baseQty, type, limitPrice, notional);
 
   const place = async () => {
-    if (!account) {
-      setConnectOpen(true);
-      return;
-    }
-    if (!instrument || !rules || validation) return;
+    if (!account || !instrument || !rules || validation) return;
     setSubmitting(true);
     try {
       const outcome = await submitOrder(account.id, {
@@ -113,7 +115,7 @@ export function OrderTicket() {
         ...(perp && reduceOnly ? { reduceOnly: true } : {}),
       });
       if (outcome.kind === "accepted") {
-        trackOrder(outcome.order);
+        trackOrder(account.id, outcome.order);
         announce(outcome.order);
         setSize("");
         setPercent(0);
@@ -143,17 +145,17 @@ export function OrderTicket() {
     }
   };
 
-  if (account && instrument && !tradable) {
-    return <NotTradable account={account} instrument={instrument} alternatives={alternativeAccounts(accounts, account, instrument)} onSwitch={setAccountId} />;
+  if (!account) {
+    return (
+      <div className="flex flex-col gap-3 bg-surface p-3">
+        {instrument && <NoAccount instrument={instrument} />}
+      </div>
+    );
   }
 
   return (
     <div className="flex flex-col gap-3 bg-surface p-3">
-      {broker && instrument && (
-        <div className="-mb-1 text-muted" title="Orders go to this order book through your Gate CrossEx account, from its shared margin pool">
-          {venueLabel(instrument.venue)} {perp ? "Perp" : "Spot"} <span className="text-text-2">via {venueLabel(account!.venue)}</span>
-        </div>
-      )}
+      <AccountRow account={account} />
       {perp && (
         <div className="grid grid-cols-2 gap-2">
           <div className="flex h-8 items-center justify-center rounded-lg bg-raised text-muted" title="Margin mode is managed on the venue">Cross</div>
@@ -239,10 +241,10 @@ export function OrderTicket() {
 
       <PrimaryButton
         onClick={place}
-        disabled={!!account && (submitting || !!validation || !instrument)}
-        className={account && side === "sell" ? "bg-down hover:bg-down/80" : undefined}
+        disabled={submitting || !!validation || !instrument}
+        className={side === "sell" ? "bg-down hover:bg-down/80" : undefined}
       >
-        {!account ? "Connect" : submitting ? "Placing…" : validation && size ? validation : type === "market" ? `Market ${side === "buy" ? "Buy" : "Sell"}` : `Place ${side === "buy" ? "Buy" : "Sell"} Order`}
+        {submitting ? "Placing…" : validation && size ? validation : type === "market" ? `Market ${side === "buy" ? "Buy" : "Sell"}` : `Place ${side === "buy" ? "Buy" : "Sell"} Order`}
       </PrimaryButton>
 
       <div className="border-t border-line pt-2">
@@ -253,7 +255,7 @@ export function OrderTicket() {
         {broker && rules && <Row label="Min Size" hint="Gate CrossEx's own minimum for this market">{rules.minQty}{rules.minNotional ? ` · ${usd(rules.minNotional, 0)}` : ""}</Row>}
       </div>
 
-      {account && instrument && perp && (
+      {instrument && perp && (
         <LeverageDialog
           open={leverageOpen}
           onOpenChange={setLeverageOpen}
@@ -288,30 +290,105 @@ export function validate(rules: Rules | undefined, baseQty: string, type: OrderT
 }
 
 /**
- * The selected account cannot trade this order book. Never switch accounts
- * silently: whose money is used is the user's decision.
+ * The account an order goes to. It follows the instrument's venue: the
+ * account last chosen there, else the native account, else a broker. When
+ * several accounts trade this order book a menu lists them all; nothing is
+ * switched without the user picking it.
  */
-function NotTradable({ account, instrument, alternatives, onSwitch }: {
-  account: Account;
-  instrument: Instrument;
-  alternatives: Account[];
-  onSwitch: (id: string) => void;
-}) {
-  const where = `${venueLabel(instrument.venue)} ${instrument.product === "perp" ? "Perp" : "Spot"}`;
+function AccountRow({ account }: { account: Account }) {
+  const { candidates, chooseTradingAccount, live, unconnectedBrokers, openConnect, instrumentId } = useWorkspace();
+  const [open, setOpen] = useState(false);
+  const instrument = useInstrument(instrumentId);
+  const choosable = candidates.length > 1 || unconnectedBrokers.length > 0;
+  const status = live[account.id]?.status;
+  const row = (
+    <>
+      <span className={cx("size-1.5 shrink-0 rounded-full", status ? (status.connected ? "bg-up" : "bg-down") : "bg-muted")} />
+      <span className="truncate">{accountName(account)}</span>
+      {account.kind === "broker" && <span className="shrink-0 text-muted">· Cross-exchange</span>}
+    </>
+  );
   return (
-    <div className="flex flex-col gap-3 bg-surface p-3">
-      <div className="text-md">{instrument.symbol}</div>
-      <p className="text-text-2">
-        {venueLabel(account.venue)}{account.label !== account.venue ? ` · ${account.label}` : ""} cannot trade {where}
-        {instrument.source ? ", which is available only through Gate CrossEx." : "."}
-      </p>
-      {alternatives.map((item) => (
-        <PrimaryButton key={item.id} onClick={() => onSwitch(item.id)}>
-          Trade with {venueLabel(item.venue)}{item.label !== item.venue ? ` · ${item.label}` : ""}
-        </PrimaryButton>
-      ))}
-      {alternatives.length === 0 && <div className="text-muted">Connect an account that trades {where} to place orders here.</div>}
+    <div className="flex h-8 items-center gap-2">
+      <span className="shrink-0 text-muted">Account</span>
+      {choosable ? (
+        <Popover.Root open={open} onOpenChange={setOpen}>
+          <Popover.Trigger
+            aria-label="Trading account"
+            className={cx("ml-auto flex h-8 min-w-0 items-center gap-2 rounded-lg px-2.5 hover:bg-raised", open && "bg-raised")}
+          >
+            {row}
+            <span className="shrink-0 text-muted">{open ? "▴" : "▾"}</span>
+          </Popover.Trigger>
+          <Popover.Portal>
+            <Popover.Content align="end" sideOffset={4} className="z-40 w-[288px] rounded-[10px] border border-line bg-overlay py-1">
+              <div className="px-3 pt-1.5 pb-1 text-muted">Trade {instrument?.symbol} with</div>
+              {candidates.map((item) => (
+                <AccountOption key={item.id} account={item} selected={item.id === account.id} onChoose={() => { chooseTradingAccount(item.id); setOpen(false); }} />
+              ))}
+              {unconnectedBrokers.map((broker) => (
+                <button
+                  key={broker}
+                  onClick={() => { setOpen(false); openConnect(broker); }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-accent hover:bg-raised"
+                >
+                  + Connect {venueLabel(broker)}
+                  <span className="ml-auto text-muted">one pool, many venues</span>
+                </button>
+              ))}
+            </Popover.Content>
+          </Popover.Portal>
+        </Popover.Root>
+      ) : (
+        <span className="ml-auto flex min-w-0 items-center gap-2 px-2.5">{row}</span>
+      )}
     </div>
+  );
+}
+
+function AccountOption({ account, selected, onChoose }: { account: Account; selected: boolean; onChoose: () => void }) {
+  const { live } = useWorkspace();
+  const equity = accountEquity(account, live[account.id]);
+  return (
+    <button onClick={onChoose} className={cx("flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-raised", selected && "text-accent")}>
+      <span className="w-3 shrink-0">{selected ? "✓" : ""}</span>
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate">{accountName(account)}</span>
+        <span className="text-muted">{account.kind === "broker" ? "Cross-exchange margin" : "Native"}</span>
+      </span>
+      <span className="ml-auto shrink-0 text-right">
+        <span className="block">{equity ? usd(equity.available) : "—"}</span>
+        <span className="block text-muted">available</span>
+      </span>
+    </button>
+  );
+}
+
+/**
+ * No connected account trades this order book. Say so in one sentence and
+ * offer the accounts that would: the venue itself, and any broker that
+ * reaches it.
+ */
+function NoAccount({ instrument }: { instrument: Instrument }) {
+  const { venues, unconnectedBrokers, openConnect } = useWorkspace();
+  const where = `${venueLabel(instrument.venue)} ${instrument.product === "perp" ? "perps" : "spot"}`;
+  const native = venues.some((item) => item.venue === instrument.venue && item.kind === "native");
+  return (
+    <>
+      <div className="flex items-baseline justify-between">
+        <span className="text-md">{instrument.symbol}</span>
+        <span className="text-muted">{venueLabel(instrument.venue)}</span>
+      </div>
+      <p className="text-text-2">No connected account trades {where}.</p>
+      {native && <PrimaryButton onClick={() => openConnect(instrument.venue)}>Connect {venueLabel(instrument.venue)}</PrimaryButton>}
+      {unconnectedBrokers.map((broker) => (
+        <button key={broker} onClick={() => openConnect(broker)} className="h-10 rounded-lg border border-line text-text hover:bg-raised">
+          Connect {venueLabel(broker)}
+          <span className="ml-1.5 text-muted">· trades {venueLabel(instrument.venue)} from one pool</span>
+        </button>
+      ))}
+      <p className="text-muted">The chart, book and trades stay live without an account.</p>
+    </>
   );
 }
 

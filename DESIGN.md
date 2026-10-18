@@ -109,9 +109,15 @@ then nav items (12px, padding 8×10px): active = `accent`, hover =
 `accent-hover`, no underline or background. **More** has a 14px chevron that
 flips when open; its menu (`overlay`, 10px radius, items 12px/24px, padding
 5×10px, hover = `accent-hover` text) holds the project links.
-Right: account switcher (venue · label; a broker account adds a small
-`accent` "Cross" tag) or a teal **Connect** button when no account exists, then a 32px icon button (1px `border`, radius lg, `muted`
-icon; hover/open = `overlay` fill and `text` icon) for the session menu.
+Right: the **Accounts** summary (a status dot — pink when any account's
+stream is down — then "3 Accounts" or the single account's name, then total
+equity in `muted`) or a teal **Connect** button when no account exists, then
+a 32px icon button (1px `border`, radius lg, `muted` icon; hover/open =
+`overlay` fill and `text` icon) for the session menu. The Accounts popover
+(360px, `overlay`) is an overview, not a selector: a table Account · Equity ·
+Available with a dot and "Native" / "Cross-exchange" under each name, a
+Total row, and "+ Connect exchange". Clicking an account filters the
+blotter to it; ✕ (on row hover) removes it after an inline confirm.
 
 **Sign-in page** — `surface` page, a 320px left-aligned column centred on
 screen: mark 40px, "Sign in to Bolter" 20px, one muted line, a labelled
@@ -125,12 +131,14 @@ leverage chip (`accent-soft` bg, `accent` text, radius md). Stats are label
 Funding shows rate in `long-text`/`short` and a countdown.
 
 **Instrument selector** — popover anchored under the name, 800px wide: search
-input (radius lg, `surface-raised`), category tabs (All · Perps · Spot, plus
-one tab per venue), table: Market (name + max-leverage chip), Last Price,
-24h Change, Volume. Keyboard: ↑/↓ navigate, Enter select, Esc close, ⌘K open.
-Markets the selected account cannot trade stay listed (their charts still
-work) but sort last at 50% opacity, with the reason as a tooltip. Markets
-whose data comes from Gate CrossEx carry a muted "Live only" tag.
+input (radius lg, `surface-raised`), category tabs (All · Tradable · Perps ·
+Spot, plus one tab per venue; Tradable appears once an account exists),
+table: Market · Venue · Type. Keyboard: ↑/↓ navigate, Enter select, Esc
+close, ⌘K open. Every market is listed and fully live — market data always
+comes from the venue itself, whatever account trades it. A small `long` dot
+after the venue marks markets a connected account can trade (tooltip names
+the accounts); they rank slightly ahead. Non-crypto markets carry a muted
+asset-class word after the symbol (Stock, Commodity, FX, Pre-IPO).
 
 **Order book** — tabs Order Book · Trades (underline style). Header row:
 tick selector, unit selector. Columns Price · Size · Total. Asks above (pink
@@ -154,6 +162,15 @@ time. Drawings are stored per instrument in localStorage and kept across
 intervals.
 
 **Order ticket** —
+0. Account row: muted "Account" left; right, a dot (stream state), the
+   account name, and "· Cross-exchange" for a broker. The account follows
+   the selected market's venue: the account last chosen for that venue, else
+   the native account, else a broker that reaches it. When more than one
+   account (or an unconnected broker) could trade it, the row is a menu:
+   "Trade BTC-USD with", one line per account (name, Native /
+   Cross-exchange margin, available on the right, ✓ on the current one),
+   then "+ Connect Gate CrossEx · one pool, many venues". The choice is
+   remembered per venue. Nothing is switched without the user picking it.
 1. Top row of three equal segmented buttons: margin mode (Cross), leverage
    (`20x`, opens Adjust Leverage dialog), and a third slot.
 2. Underline tabs: Market · Limit.
@@ -171,36 +188,41 @@ intervals.
    "Connect" when no account, disabled while submitting.
 9. Summary rows: Liquidation Price, Order Value, Margin Required, Fees.
 
-Size steps, minimums and tick come from the selected account's route
+Size steps, minimums and tick come from the trading account's route
 (`/accounts/{id}/instruments`), not the market: Gate CrossEx can allow
-finer sizes than the venue. On a broker account a muted line above the
-ticket names the route ("Binance Perp via Gate CrossEx"), Available to
-Trade is the pool's available margin, and a Min Size row shows the broker's
-minimums. When the account cannot trade the selected market, the ticket is
-replaced by one sentence saying why and a primary button per account that
-can ("Trade with Gate CrossEx"). The account is never switched silently.
-An order a broker accepted shows "accepted · Waiting for the exchange"; a
-later rejection arrives as an error toast with the venue's own text.
+finer sizes than the venue. On a broker account Available to Trade is the
+pool's available margin and a Min Size row shows the broker's minimums.
+When no connected account trades the market, the ticket is the symbol and
+venue, one sentence ("No connected account trades Kraken perps."), a
+primary "Connect Kraken" that opens the connect dialog straight on that
+venue's form, a bordered "Connect Gate CrossEx · trades Kraken from one
+pool" when a broker reaches it, and a muted note that the chart, book and
+trades stay live. An order a broker accepted shows "accepted · Waiting for
+the exchange"; a later rejection arrives as an error toast with the venue's
+own text and the account's name.
 
-**Blotter** — underline tabs with counts (`Positions (2)`). Tables: 12px,
-header `text-muted`, rows 24px, no zebra, hover `surface-raised`.
-Positions columns: Coin (coloured by side, with leverage) · Size · Position
-Value · Entry Price · Mark Price · PNL (ROE %) · Liq. Price · Margin ·
-Close (Market / Limit links in `accent`). Empty state: plain muted text
-"No open positions yet". On a broker account, Coin cells add the venue in
-muted text. Open orders mark "Pending" (accepted, not yet on the exchange)
-and risk-engine orders (Liquidation, Auto-deleverage, Delisting) in pink.
+**Blotter** — every connected account in one set of tables. Underline tabs
+with counts (`Positions (2)`); at the right end of the tab row an account
+filter ("All Accounts ▾", a menu of accounts with status dots; the choice is
+remembered). Tables: 12px, header `text-muted`, rows 24px, no zebra, hover
+`surface-raised`. Coin cells show the symbol and its venue in muted text.
+With more than one account an Account column follows Coin; for a broker it
+adds "→ Binance", the venue it routed to. Positions columns: Coin
+(coloured by side, with leverage) · Account · Size · Position Value · Entry
+Price · Mark Price · PNL (ROE %) · Liq. Price · Margin · Close (Market link
+in `accent`; it always closes on the account holding the position, and the
+dialog names it). Empty state: plain muted text "No open positions yet".
+Open orders mark "Pending" (accepted, not yet on the exchange) and
+risk-engine orders (Liquidation, Auto-deleverage, Delisting) in pink.
+Balances show the market ("Binance USD-M", "Cross-exchange pool").
 
-**Account summary (broker)** — titled with the broker's name: Margin
+**Account summary** — below the ticket, for the ticket's account, titled
+with its name. Native: stablecoin balance, available, unrealized PNL,
+position margin, private stream state. Broker: Margin
 Balance, Available Margin, Unrealized PNL, Initial Margin, Initial and
 Maintenance Margin Rate (percent; pink when at risk), then a small table of
 each venue's equity and margin in use. Below 110% / 100% initial rate or at
 100% maintenance rate, a pink warning box states the consequence.
-
-**Live-only chart** — markets without history (Gate CrossEx data) start
-empty with a muted pill "No history for this market — bars start now",
-which becomes "Live only — no history for this market" once bars arrive.
-If no candles exist at all (Kraken), the plot shows one muted sentence.
 
 **Dialogs** — centred, 480px, `surface` bg, 1px `border`, radius xl, 24px
 padding, title 20px centred, body 12px centred, close × top-right.
@@ -210,9 +232,10 @@ Warnings use a pink-bordered box with pink text on `warning-bg`.
 **Connect (credential) dialog** — the only place credentials are entered.
 Step 1: venue grid (name buttons). Step 2: fields for that venue from
 `/v1/venues` (password-type inputs for secrets, autocomplete off), optional
-label, "Connect" button; errors inline under the button. Success closes the
-dialog and selects the new account. Removing an account lives in the
-account switcher menu with a confirm.
+label, "Connect" button; errors inline under the button. Opened from the
+ticket for one venue, it starts at step 2. Success closes the dialog; a new
+account for the market on screen becomes its ticket account. Removing an
+account lives in the Accounts popover with a confirm.
 
 **Status bar** — 24px, left: pill `● Online` (teal dot) / `● Reconnecting`
 (pink); right: gateway latency.

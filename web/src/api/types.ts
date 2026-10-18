@@ -16,8 +16,8 @@ export interface Instrument {
   minQty: string;
   minNotional?: string;
   marketFamily?: string;
-  /** Set when market data comes from a broker rather than the venue ("crossex"): no history. */
-  source?: string;
+  /** The venue's classification when it is not plain crypto: equity, commodity, fx, ... */
+  assetClass?: string;
 }
 
 /** An instrument an account can trade, with the rules its orders follow there. */
