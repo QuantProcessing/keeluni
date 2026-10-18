@@ -76,6 +76,17 @@ func MarketCapabilities() []MarketCapability {
 	}
 	addHot(VenueGate, NativeFamilyPerpetual, 200)
 
+	// Kraken and Deribit publish mark, index, funding and open interest on
+	// one ticker per instrument, and an all-market REST summary.
+	for _, venue := range []Venue{VenueKraken, VenueDeribit} {
+		for _, dataset := range []MarketDataset{DatasetMark, DatasetIndex, DatasetFunding, DatasetOpenInterest} {
+			add(venue, NativeFamilyPerpetual, dataset, TransportREST, GranularityAllMarket, 15*time.Second, 0, true, false, "tickers")
+			add(venue, NativeFamilyPerpetual, dataset, TransportWebSocket, GranularitySingleInstrument, 0, 100, false, false, "")
+		}
+	}
+	addHot(VenueKraken, NativeFamilyPerpetual, 100)
+	addHot(VenueDeribit, NativeFamilyPerpetual, 100)
+
 	add(VenueNado, NativeFamilyUSDT0Perpetual, DatasetFunding, TransportWebSocket, GranularityAllMarket, 0, 0, true, false, "")
 	for _, dataset := range []MarketDataset{DatasetMark, DatasetIndex, DatasetOpenInterest} {
 		add(VenueNado, NativeFamilyUSDT0Perpetual, dataset, TransportREST, GranularityMultiSymbol, 15*time.Second, 0, true, false, "contracts")

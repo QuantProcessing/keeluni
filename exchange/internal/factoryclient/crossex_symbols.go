@@ -25,11 +25,12 @@ type crossExMarket struct {
 	native func(row crossex.Symbol) string
 }
 
-// crossExMarkets lists the reachable markets that have a native counterpart.
-// Kraken, Deribit, Binance TradFi and the USDC markets of Binance and OKX
-// have none yet and are deliberately absent.
+// crossExMarkets lists the reachable markets. Every one has a native
+// counterpart, whose catalog supplies identity; OKX USDC perps are absent
+// because CrossEx quotes them in contracts of unknown size.
 var crossExMarkets = []crossExMarket{
 	{"BINANCE", exchange.VenueBinance, "USDT", func(row crossex.Symbol) string { return row.Base() + "USDT" }},
+	{"BINANCE", exchange.VenueBinance, "USDC", func(row crossex.Symbol) string { return row.Base() + "USDC" }},
 	{"OKX", exchange.VenueOKX, "USDT", func(row crossex.Symbol) string { return row.Base() + "-USDT-SWAP" }},
 	{"BYBIT", exchange.VenueBybit, "USDT", func(row crossex.Symbol) string { return row.Base() + "USDT" }},
 	{"BYBIT", exchange.VenueBybit, "USDC", func(row crossex.Symbol) string { return row.Base() + "PERP" }},
@@ -42,6 +43,16 @@ var crossExMarkets = []crossExMarket{
 		return row.Base()
 	}},
 	{"LIGHTER", exchange.VenueLighter, "USDC", func(row crossex.Symbol) string { return row.Base() }},
+	{"KRAKEN", exchange.VenueKraken, "USD", func(row crossex.Symbol) string { return "PF_" + krakenNativeBase(row.Base()) + "USD" }},
+	{"DERIBIT", exchange.VenueDeribit, "USDC", func(row crossex.Symbol) string { return row.Base() + "_USDC-PERPETUAL" }},
+}
+
+// krakenNativeBase spells a CrossEx base as Kraken does: bitcoin is XBT.
+func krakenNativeBase(base string) string {
+	if base == "BTC" {
+		return "XBT"
+	}
+	return base
 }
 
 // CrossExMarketRoute names one reachable native market.

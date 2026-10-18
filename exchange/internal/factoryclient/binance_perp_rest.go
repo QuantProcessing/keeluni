@@ -80,7 +80,9 @@ func binancePerpInstrumentsFromExchangeInfo(info *binanceperp.ExchangeInfoRespon
 		if symbol.Status != "TRADING" {
 			continue
 		}
-		if symbol.ContractType != "PERPETUAL" {
+		// TRADIFI_PERPETUAL rows (stocks, metals, indices) are ordinary USD-M
+		// perpetuals: same order, position and margin semantics.
+		if symbol.ContractType != "PERPETUAL" && symbol.ContractType != "TRADIFI_PERPETUAL" {
 			continue
 		}
 		canonical, supported, err := binancePerpPublicInstrumentSymbols(

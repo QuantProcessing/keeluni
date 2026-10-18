@@ -308,6 +308,14 @@ func (c *Client) Chart(ctx context.Context, instrument, resolution string, start
 	return out, err
 }
 
+// BookSummaries returns every future of currency with its mark, funding and
+// open interest in one call.
+func (c *Client) BookSummaries(ctx context.Context, currency string) ([]BookSummary, error) {
+	var out []BookSummary
+	err := c.call(ctx, "public/get_book_summary_by_currency", params{"currency": currency, "kind": "future"}, false, &out)
+	return out, err
+}
+
 func (c *Client) FundingRateHistory(ctx context.Context, instrument string, start, end int64) ([]FundingPoint, error) {
 	var out []FundingPoint
 	err := c.call(ctx, "public/get_funding_rate_history", params{

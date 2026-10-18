@@ -45,7 +45,7 @@ func TestEveryRouteHasOneFactoryBindingCredentialSchemaAndMarketFamily(t *testin
 	if _, _, _, ok := catalogIdentityForConfig("unknown"); ok {
 		t.Fatal("unknown factory accepted")
 	}
-	if exchange.NativeMarketFamily(exchange.VenueBinance, exchange.ProductPerp, "USDC") != "" {
+	if exchange.NativeMarketFamily(exchange.VenueOKX, exchange.ProductPerp, "USDC") != "" {
 		t.Fatal("unsupported settlement accepted")
 	}
 }

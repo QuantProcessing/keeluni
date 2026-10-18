@@ -7794,35 +7794,30 @@
       ]
     },
     {
-      "id": "exchange/factory.CrossExOnly",
-      "kind": "func",
-      "coverage": "unit",
-      "tests": [
-        "TestCrossExMarketConnectorIsPublicAndConstructsWithoutIO"
-      ]
-    },
-    {
-      "id": "exchange/factory.NewCrossExMarketConnector",
+      "id": "exchange/factory.BinanceUSDCPerpConfig",
       "kind": "func",
       "coverage": "contract",
       "tests": [
-        "TestCrossExMarketConnectorIsPublicAndConstructsWithoutIO"
+        "TestNativePerpConfigsConstructWithoutIO",
+        "TestNativePerpConfigsValidateLocally"
       ]
     },
     {
-      "id": "exchange/factory.Ticker24h",
-      "kind": "type",
-      "coverage": "unit",
+      "id": "exchange/factory.KrakenPerpConfig",
+      "kind": "func",
+      "coverage": "contract",
       "tests": [
-        "TestCrossExMarketConnectorIsPublicAndConstructsWithoutIO"
+        "TestNativePerpConfigsConstructWithoutIO",
+        "TestNativePerpConfigsValidateLocally"
       ]
     },
     {
-      "id": "exchange/factory.PublicMarketConnector.Ticker24h",
-      "kind": "method",
-      "coverage": "unit",
+      "id": "exchange/factory.DeribitPerpConfig",
+      "kind": "func",
+      "coverage": "contract",
       "tests": [
-        "TestCrossExMarketConnectorIsPublicAndConstructsWithoutIO"
+        "TestNativePerpConfigsConstructWithoutIO",
+        "TestNativePerpConfigsValidateLocally"
       ]
     }
   ]

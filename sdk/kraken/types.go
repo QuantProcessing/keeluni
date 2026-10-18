@@ -122,6 +122,7 @@ type OpenPosition struct {
 	Price             json.Number `json:"price"`
 	Size              json.Number `json:"size"`
 	FillTime          string      `json:"fillTime"`
+	UnrealizedPnl     json.Number `json:"unrealizedPnl"`
 	UnrealizedFunding json.Number `json:"unrealizedFunding"`
 	PnlCurrency       string      `json:"pnlCurrency"`
 	MaxFixedLeverage  json.Number `json:"maxFixedLeverage"`

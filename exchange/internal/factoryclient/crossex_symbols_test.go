@@ -37,6 +37,11 @@ func TestMapCrossExInstrumentsMatchesByNativeSymbol(t *testing.T) {
 		nativePerp(exchange.VenueHyperliquid, "kPEPE-USDC", "kPEPE", "USDC", "kPEPE", "0.000001", "1"),
 		nativePerp(exchange.VenueHyperliquid, "xyz:TSLA-USDC", "TSLA", "USDC", "xyz:TSLA", "0.01", "0.001"),
 		nativePerp(exchange.VenueLighter, "1000PEPE-USDC", "1000PEPE", "USDC", "1000PEPE", "0.000001", "1"),
+		nativePerp(exchange.VenueBinance, "AMZN-USDT", "AMZN", "USDT", "AMZNUSDT", "0.01", "0.01"),
+		nativePerp(exchange.VenueBinance, "BTC-USDC", "BTC", "USDC", "BTCUSDC", "0.1", "0.001"),
+		nativePerp(exchange.VenueKraken, "BTC-USD", "BTC", "USD", "PF_XBTUSD", "1", "0.0001"),
+		nativePerp(exchange.VenueKraken, "TSLAX-USD", "TSLAX", "USD", "PF_TSLAXUSD", "0.01", "0.01"),
+		nativePerp(exchange.VenueDeribit, "AAPL-USDC", "AAPL", "USDC", "AAPL_USDC-PERPETUAL", "0.01", "0.01"),
 		// A native spot instrument with the same native symbol must not match.
 		newInstrument(exchange.VenueBinance, exchange.ProductSpot, "ETH-USDT", "ETH", "USDT", "", "ETHUSDT", "",
 			decimal.RequireFromString("0.01"), decimal.RequireFromString("0.0001"), decimal.RequireFromString("0.0001"), exchange.OptionalDecimal{}, oneContract()),
@@ -45,7 +50,8 @@ func TestMapCrossExInstrumentsMatchesByNativeSymbol(t *testing.T) {
 		crossExRow("BINANCE_FUTURE_BTC_USDT", "0.10", "0.001", "0.001", ptr("50"), ""),
 		crossExRow("BINANCE_FUTURE_1000PEPE_USDT", "0.0000001", "1", "1", ptr("5"), ""),
 		crossExRow("BINANCE_FUTURE_ETH_USDT", "0.01", "0.001", "0.001", ptr("20"), ""), // native catalog lacks it
-		crossExRow("BINANCE_FUTURE_AMZN_USDT", "0.01", "0.01", "0.01", nil, ""),        // TradFi, not native
+		crossExRow("BINANCE_FUTURE_AMZN_USDT", "0.01", "0.01", "0.01", nil, ""),        // TradFi perp
+		crossExRow("BINANCE_FUTURE_BTC_USDC", "0.1", "0.001", "0.001", ptr("5"), ""),
 		crossExRow("OKX_FUTURE_BTC_USDT", "0.1", "0.0001", "0.0001", nil, ""),
 		crossExRow("OKX_FUTURE_BTC_USDC", "0.1", "0.0001", "0.0001", nil, ""), // USDC not served
 		crossExRow("BYBIT_FUTURE_BTC_USDC", "0.1", "0.001", "0.001", ptr("5"), ""),
@@ -53,7 +59,10 @@ func TestMapCrossExInstrumentsMatchesByNativeSymbol(t *testing.T) {
 		crossExRow("HYPERLIQUID_FUTURE_kPEPE_USDC", "0.000001", "1", "1", ptr("10"), ""),
 		crossExRow("HYPERLIQUID_FUTURE_TSLA_USDC", "0.01", "0.001", "0.001", ptr("10"), "xyz"),
 		crossExRow("LIGHTER_FUTURE_1000PEPE_USDC", "0.000001", "1", "1", nil, ""),
-		crossExRow("KRAKEN_FUTURE_BTC_USD", "0.5", "0.0001", "0.0001", nil, ""),
+		crossExRow("KRAKEN_FUTURE_BTC_USD", "0.5", "0.0001", "0.0001", nil, ""), // Kraken spells it XBT
+		crossExRow("KRAKEN_FUTURE_TSLAX_USD", "0.01", "0.01", "0.01", nil, ""),
+		crossExRow("KRAKEN_FUTURE_DOGE_USD", "0.00001", "1", "1", nil, ""), // native catalog lacks it
+		crossExRow("DERIBIT_FUTURE_AAPL_USDC", "0.01", "0.01", "0.01", nil, ""),
 	}
 	suspended := crossExRow("BINANCE_FUTURE_LUNA_USDT", "0.1", "1", "1", nil, "")
 	suspended.State = "suspend"
@@ -81,6 +90,11 @@ func TestMapCrossExInstrumentsMatchesByNativeSymbol(t *testing.T) {
 		"HYPERLIQUID_FUTURE_kPEPE_USDC": {exchange.VenueHyperliquid, "kPEPE-USDC"},
 		"HYPERLIQUID_FUTURE_TSLA_USDC":  {exchange.VenueHyperliquid, "xyz:TSLA-USDC"},
 		"LIGHTER_FUTURE_1000PEPE_USDC":  {exchange.VenueLighter, "1000PEPE-USDC"},
+		"BINANCE_FUTURE_AMZN_USDT":      {exchange.VenueBinance, "AMZN-USDT"},
+		"BINANCE_FUTURE_BTC_USDC":       {exchange.VenueBinance, "BTC-USDC"},
+		"KRAKEN_FUTURE_BTC_USD":         {exchange.VenueKraken, "BTC-USD"},
+		"KRAKEN_FUTURE_TSLAX_USD":       {exchange.VenueKraken, "TSLAX-USD"},
+		"DERIBIT_FUTURE_AAPL_USDC":      {exchange.VenueDeribit, "AAPL-USDC"},
 	}
 	if len(got) != len(wantIdentity) {
 		t.Fatalf("mapped %d instruments, want %d: %v", len(got), len(wantIdentity), mapKeysOf(got))
@@ -112,7 +126,7 @@ func TestMapCrossExInstrumentsMatchesByNativeSymbol(t *testing.T) {
 		t.Fatal("absent min notional became a value")
 	}
 
-	wantUnmatched := map[string]int{"BINANCE": 2, "OKX": 1, "KRAKEN": 1}
+	wantUnmatched := map[string]int{"BINANCE": 1, "OKX": 1, "KRAKEN": 1}
 	for exchangeType, count := range wantUnmatched {
 		if mapping.Unmatched[exchangeType] != count {
 			t.Fatalf("unmatched = %v, want %v", mapping.Unmatched, wantUnmatched)
@@ -147,10 +161,10 @@ func TestMapCrossExInstrumentsRejectsDuplicateTargets(t *testing.T) {
 
 func TestCrossExReachableMarketsMatchServedRoutes(t *testing.T) {
 	want := map[CrossExMarketRoute]bool{
-		{exchange.VenueBinance, "USDT"}: true, {exchange.VenueOKX, "USDT"}: true,
+		{exchange.VenueBinance, "USDT"}: true, {exchange.VenueBinance, "USDC"}: true, {exchange.VenueOKX, "USDT"}: true,
 		{exchange.VenueBybit, "USDT"}: true, {exchange.VenueBybit, "USDC"}: true,
 		{exchange.VenueGate, "USDT"}: true, {exchange.VenueHyperliquid, "USDC"}: true,
-		{exchange.VenueLighter, "USDC"}: true,
+		{exchange.VenueLighter, "USDC"}: true, {exchange.VenueKraken, "USD"}: true, {exchange.VenueDeribit, "USDC"}: true,
 	}
 	got := CrossExReachableMarkets()
 	if len(got) != len(want) {

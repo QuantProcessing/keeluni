@@ -84,9 +84,6 @@ func (client *crossExPerpClient) Reaches() []exchange.MarketRoute {
 	for _, market := range crossExMarkets {
 		add(market.venue, market.settlement)
 	}
-	for _, market := range crossExOnlyMarkets {
-		add(market.venue, market.quote)
-	}
 	return out
 }
 
@@ -116,11 +113,7 @@ func (client *crossExPerpClient) RefreshInstruments(ctx context.Context) ([]exch
 	if err != nil {
 		return nil, crossExMalformed(client.meta, "RefreshInstruments", "crossex rules are inconsistent")
 	}
-	only, err := MapCrossExOnlyInstruments(rows, natives)
-	if err != nil {
-		return nil, crossExMalformed(client.meta, "RefreshInstruments", "crossex rules are inconsistent")
-	}
-	instruments := append(append([]exchange.Instrument(nil), mapping.Instruments...), only...)
+	instruments := mapping.Instruments
 	bySymbol := make(map[string]exchange.Instrument, len(instruments))
 	for _, instrument := range instruments {
 		bySymbol[instrument.Identity.NativeSymbol] = instrument

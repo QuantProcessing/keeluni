@@ -30,6 +30,8 @@ type Instrument struct {
 	TakerCommission    json.Number `json:"taker_commission"`
 	IsActive           bool        `json:"is_active"`
 	State              string      `json:"state"`
+	UnderlyingType     string      `json:"underlying_type"`
+	ProductGroup       string      `json:"product_group"`
 	TickSizeSteps      []struct {
 		AbovePrice json.Number `json:"above_price"`
 		TickSize   json.Number `json:"tick_size"`
@@ -65,6 +67,21 @@ type Ticker struct {
 	Funding8h      json.Number `json:"funding_8h"`
 	InterestValue  json.Number `json:"interest_value"`
 	Stats          Stats       `json:"stats"`
+}
+
+// BookSummary is one row of get_book_summary_by_currency.
+type BookSummary struct {
+	InstrumentName string      `json:"instrument_name"`
+	BaseCurrency   string      `json:"base_currency"`
+	MarkPrice      json.Number `json:"mark_price"`
+	OpenInterest   json.Number `json:"open_interest"`
+	CurrentFunding json.Number `json:"current_funding"`
+	Funding8h      json.Number `json:"funding_8h"`
+	Volume         json.Number `json:"volume"`
+	High           json.Number `json:"high"`
+	Low            json.Number `json:"low"`
+	Last           json.Number `json:"last"`
+	PriceChange    json.Number `json:"price_change"`
 }
 
 // OrderBook levels are [price, amount] for REST snapshots.

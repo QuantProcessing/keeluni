@@ -28,6 +28,8 @@ var defaultAuthKinds = map[string]AuthKind{
 	"aster":       AuthAsterAPIWallet,
 	"nado":        AuthNadoSigner,
 	"crossex":     AuthAPIKeySecret,
+	"kraken":      AuthAPIKeySecret,
+	"deribit":     AuthAPIKeySecret,
 }
 
 type Registry struct {

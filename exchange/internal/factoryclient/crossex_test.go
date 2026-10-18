@@ -131,6 +131,7 @@ func crossExNatives() []exchange.Instrument {
 	return []exchange.Instrument{
 		nativePerp(exchange.VenueBinance, "BTC-USDT", "BTC", "USDT", "BTCUSDT", "0.10", "0.001"),
 		nativePerp(exchange.VenueOKX, "ADA-USDT-SWAP", "ADA", "USDT", "ADA-USDT-SWAP", "0.0001", "10"),
+		nativePerp(exchange.VenueKraken, "BTC-USD", "BTC", "USD", "PF_XBTUSD", "1", "0.0001"),
 	}
 }
 
@@ -165,16 +166,13 @@ func TestCrossExClientIsBrokeredAndKeepsNativeIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Binance and OKX map onto native instruments; Kraken exists only on CrossEx.
+	// Every CrossEx row maps onto a native instrument, Kraken's XBT included.
 	if len(instruments) != 3 {
 		t.Fatalf("instruments = %v", instruments)
 	}
 	kraken, err := client.ResolveInstrument(context.Background(), "kraken:BTC-USD")
-	if err != nil || !IsCrossExOnly(kraken) || kraken.Identity.NativeSymbol != "KRAKEN_FUTURE_BTC_USD" || kraken.Identity.SettleAsset != "USD" {
-		t.Fatalf("kraken = %+v, %v", kraken.Identity, err)
-	}
-	if IsCrossExOnly(binanceBTC(t, client)) {
-		t.Fatal("a native-backed instrument was marked crossex-only")
+	if err != nil || kraken.Identity.NativeSymbol != "KRAKEN_FUTURE_BTC_USD" || kraken.Identity.SettleAsset != "USD" || !kraken.Rules.PriceIncrement.Equal(decimal.RequireFromString("0.5")) {
+		t.Fatalf("kraken = %+v %+v, %v", kraken.Identity, kraken.Rules, err)
 	}
 	btc := binanceBTC(t, client)
 	if btc.Identity.Venue != exchange.VenueBinance || btc.Identity.Symbol != "BTC-USDT" || btc.Identity.NativeSymbol != "BINANCE_FUTURE_BTC_USDT" {

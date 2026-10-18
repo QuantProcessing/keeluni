@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/QuantProcessing/boltertrader/exchange"
 )
@@ -62,44 +61,5 @@ func TestCrossExPerpConfigValidatesLocally(t *testing.T) {
 	}
 	if got := CrossExPerpConfig("key", "secret", natives).String(); got != `exchange/factory.Config{name:"crossex-perp", credentials:redacted}` {
 		t.Fatalf("config string = %s", got)
-	}
-}
-
-func TestCrossExMarketConnectorIsPublicAndConstructsWithoutIO(t *testing.T) {
-	transport := new(countingTransport)
-	connector, err := NewCrossExMarketConnector(func(context.Context) ([]exchange.Instrument, error) { return nil, nil },
-		&http.Client{Transport: transport}, WithEnvironment(EnvironmentLive))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if transport.requests.Load() != 0 {
-		t.Fatal("construction performed I/O")
-	}
-	if _, ok := connector.WebSocket().(exchange.DerivativeReferenceWebSocket); !ok {
-		t.Fatal("crossex connector lacks the reference stream")
-	}
-	if _, supported, _ := connector.FundingRate(context.Background(), exchange.FundingRateRequest{}); supported {
-		t.Fatal("crossex connector claims REST funding")
-	}
-	if _, err := connector.Candles(context.Background(), exchange.CandlesRequest{}); !errors.Is(err, exchange.ErrUnsupported) {
-		t.Fatalf("history err = %v", err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-	if _, supported, err := connector.Ticker24h(ctx, exchange.Instrument{}); !supported || err == nil {
-		t.Fatalf("ticker24h supported=%v err=%v", supported, err)
-	}
-	if err := connector.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if _, supported, _ := (*PublicMarketConnector)(nil).Ticker24h(ctx, exchange.Instrument{}); supported {
-		t.Fatal("nil connector claims a live ticker")
-	}
-	if _, err := NewCrossExMarketConnector(nil, nil); !errors.Is(err, exchange.ErrInvalidConfig) {
-		t.Fatalf("nil http client err = %v", err)
-	}
-	native := exchange.Instrument{Metadata: exchange.InstrumentMetadata{ClassificationSource: "crossex"}}
-	if !CrossExOnly(native) || CrossExOnly(exchange.Instrument{}) {
-		t.Fatal("CrossExOnly misclassifies")
 	}
 }
