@@ -18,7 +18,8 @@ const (
 
 // AccountRoute is the native private-stream boundary. Instrument is
 // intentionally absent: a Gateway account route owns one private event stream
-// regardless of catalog size.
+// regardless of catalog size. A brokered account's route names the broker
+// venue: its one stream carries events for every venue it reaches.
 type AccountRoute struct {
 	AccountID    string      `json:"accountId"`
 	RouteID      string      `json:"routeId"`
@@ -31,7 +32,7 @@ type AccountRoute struct {
 
 func (route AccountRoute) Validate() error {
 	if strings.TrimSpace(route.AccountID) == "" || strings.TrimSpace(route.RouteID) == "" ||
-		!knownVenue(route.Venue) || route.Environment != EnvironmentLive ||
+		!(knownVenue(route.Venue) || knownBroker(route.Venue)) || route.Environment != EnvironmentLive ||
 		(route.Product != ProductSpot && route.Product != ProductPerp) || strings.TrimSpace(route.NativeFamily) == "" {
 		return fmt.Errorf("account route is invalid")
 	}

@@ -122,6 +122,32 @@ Most interface members are implemented by all admitted rows. A documented
 venue exception returns `exchange.ErrUnsupported` from the method itself rather
 than removing that method from the public intersection.
 
+## Brokered clients
+
+A brokered client trades other venues' order books from one account. Gate
+CrossEx (`factory.CrossExPerpConfig`) is the only one. It returns an ordinary
+`exchange.PerpClient` and additionally implements `exchange.BrokeredClient`,
+which callers discover by type assertion.
+
+This is a deliberate exception to "a client publishes only its own venue's
+instruments":
+
+- Instruments keep the identity of the venue whose book they trade. A Binance
+  BTC-USDT order placed through CrossEx is `VenueBinance` / `BTC-USDT`, the
+  same instrument a native Binance client trades. Only `NativeSymbol`
+  (`BINANCE_FUTURE_BTC_USDT`) and `Rules` (CrossEx's own tick, lot, minimum
+  size and notional) differ. `Reaches()` lists the venue markets allowed.
+- The broker venue (`exchange.VenueCrossEx`, `exchange.IsBroker`) never
+  identifies an instrument. It owns what belongs to the account: errors,
+  credentials, rate limits, and the private stream's `AccountRoute.Venue`.
+  One account stream carries events for every reachable venue.
+- Market data is read from the instrument's own venue. The brokered client's
+  market methods return `exchange.ErrUnsupported`: CrossEx publishes no
+  history and forwards each venue's native size units.
+- Order acknowledgements are `AckAcceptedPending`: CrossEx accepts
+  asynchronously and the order may still be refused by CrossEx risk checks or
+  by the exchange. The private stream reports the outcome.
+
 ## Account and mode dimensions
 
 Do not collapse account system, logical account identity, position mode, margin

@@ -7644,6 +7644,74 @@
       "tests": [
         "TestEveryRouteHasOneFactoryBindingCredentialSchemaAndMarketFamily"
       ]
+    },
+    {
+      "id": "exchange.BrokeredClient",
+      "kind": "interface",
+      "coverage": "contract",
+      "tests": [
+        "TestBrokeredClientInterfaceShape",
+        "TestCrossExPerpConfigConstructsABrokeredClientWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange.BrokeredClient.Broker",
+      "kind": "interface_method",
+      "coverage": "contract",
+      "tests": [
+        "TestBrokeredClientInterfaceShape",
+        "TestCrossExPerpConfigConstructsABrokeredClientWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange.BrokeredClient.Reaches",
+      "kind": "interface_method",
+      "coverage": "contract",
+      "tests": [
+        "TestBrokeredClientInterfaceShape",
+        "TestCrossExPerpConfigConstructsABrokeredClientWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange.IsBroker",
+      "kind": "func",
+      "coverage": "unit",
+      "tests": [
+        "TestBrokerVenueOwnsAccountsNotInstruments"
+      ]
+    },
+    {
+      "id": "exchange.MarketRoute",
+      "kind": "type",
+      "coverage": "unit",
+      "tests": [
+        "TestBrokeredClientInterfaceShape"
+      ]
+    },
+    {
+      "id": "exchange.VenueCrossEx",
+      "kind": "const",
+      "coverage": "contract",
+      "tests": [
+        "TestBrokerVenueOwnsAccountsNotInstruments"
+      ]
+    },
+    {
+      "id": "exchange/factory.CrossExPerpConfig",
+      "kind": "func",
+      "coverage": "contract",
+      "tests": [
+        "TestCrossExPerpConfigConstructsABrokeredClientWithoutIO",
+        "TestCrossExPerpConfigValidatesLocally"
+      ]
+    },
+    {
+      "id": "exchange/factory.NativeInstrumentSource",
+      "kind": "type",
+      "coverage": "contract",
+      "tests": [
+        "TestCrossExPerpConfigConstructsABrokeredClientWithoutIO"
+      ]
     }
   ]
 }

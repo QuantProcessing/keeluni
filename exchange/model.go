@@ -21,6 +21,10 @@ const (
 	VenueGate        Venue = "gate"
 	VenueAster       Venue = "aster"
 	VenueNado        Venue = "nado"
+
+	// VenueCrossEx is Gate CrossEx, a broker venue (see BrokeredClient). It
+	// owns accounts and private streams but never identifies an instrument.
+	VenueCrossEx Venue = "crossex"
 )
 
 type Product string

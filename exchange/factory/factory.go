@@ -1,6 +1,7 @@
 package factory
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -362,6 +363,31 @@ func GateUSDTPerpConfig(apiKey, secretKey string, options ...Option) Config[exch
 		return requireNonEmptyCredentials("gate usdt perp", apiKey, secretKey)
 	}, func(settings settings) exchange.PerpClient {
 		return factoryclient.NewGateUSDTPerp(apiKey, secretKey, factorySettingsForConfig("gate-usdt-perp", settings))
+	})
+}
+
+// NativeInstrumentSource returns the native perp instruments of the venues a
+// brokered client reaches. The caller owns and refreshes the native catalogs.
+type NativeInstrumentSource func(context.Context) ([]exchange.Instrument, error)
+
+// CrossExPerpConfig returns a typed ticket for a Gate CrossEx perp client.
+//
+// The client is brokered (exchange.BrokeredClient): its instruments are the
+// native perp instruments of the venues CrossEx reaches, bound to CrossEx
+// symbols and rules. natives supplies those native instruments; matching is
+// by native symbol. Only cross-exchange, single-position-mode accounts are
+// supported. Market data methods return exchange.ErrUnsupported.
+func CrossExPerpConfig(apiKey, secretKey string, natives NativeInstrumentSource, options ...Option) Config[exchange.PerpClient] {
+	return perpConfig("crossex-perp", options, func(settings settings) error {
+		if err := rejectUnsupportedAccountAddress(settings); err != nil {
+			return err
+		}
+		if natives == nil {
+			return invalidConfig("crossex perp requires a native instrument source")
+		}
+		return requireNonEmptyCredentials("crossex perp", apiKey, secretKey)
+	}, func(settings settings) exchange.PerpClient {
+		return factoryclient.NewCrossExPerp(apiKey, secretKey, factoryclient.CrossExNativeSource(natives), factorySettings(settings))
 	})
 }
 
