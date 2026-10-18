@@ -212,8 +212,28 @@ type wsMessage struct {
 	Event     string          `json:"event"`
 	RequestID string          `json:"request_id"`
 	Payload   json.RawMessage `json:"payload"`
-	Result    wsResultBody    `json:"result"`
+	Result    wsResultBody    `json:"-"`
 	Error     json.RawMessage `json:"error"`
+	// raw is the result field as sent: a status body for acknowledgements,
+	// the data object for public pushes.
+	raw json.RawMessage
+}
+
+func (m *wsMessage) UnmarshalJSON(data []byte) error {
+	type plain wsMessage
+	var wire struct {
+		plain
+		Result json.RawMessage `json:"result"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	*m = wsMessage(wire.plain)
+	m.raw = wire.Result
+	if len(wire.Result) > 0 && wire.Result[0] == '{' {
+		_ = json.Unmarshal(wire.Result, &m.Result)
+	}
+	return nil
 }
 
 func (m wsMessage) payloadKind() byte {

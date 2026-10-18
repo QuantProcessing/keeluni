@@ -1,5 +1,11 @@
 package exchange
 
+import (
+	"context"
+
+	"github.com/shopspring/decimal"
+)
+
 // A brokered client trades other venues' order books from one account.
 // Gate CrossEx is the only one today.
 //
@@ -35,3 +41,34 @@ func knownBroker(venue Venue) bool {
 // IsBroker reports whether venue is a broker venue rather than an order-book
 // venue. A broker venue never identifies an instrument.
 func IsBroker(venue Venue) bool { return knownBroker(venue) }
+
+// MarginPool is a shared margin account's state: one pool backing positions
+// on several venues. Rates are margin balance over requirement; at or below
+// 1 the broker restricts or liquidates the account.
+type MarginPool struct {
+	Equity                OptionalDecimal `json:"equity"`
+	Available             OptionalDecimal `json:"available"`
+	InitialMargin         OptionalDecimal `json:"initial_margin"`
+	MaintenanceMargin     OptionalDecimal `json:"maintenance_margin"`
+	InitialMarginRate     OptionalDecimal `json:"initial_margin_rate"`
+	MaintenanceMarginRate OptionalDecimal `json:"maintenance_margin_rate"`
+	UnrealizedPnL         OptionalDecimal `json:"unrealized_pnl"`
+	// Venues is the per-venue share of the pool.
+	Venues []VenueMarginShare `json:"venues,omitempty"`
+}
+
+// VenueMarginShare is one venue's part of a margin pool in one asset.
+type VenueMarginShare struct {
+	Venue         Venue           `json:"venue"`
+	Asset         string          `json:"asset"`
+	Equity        decimal.Decimal `json:"equity"`
+	Available     decimal.Decimal `json:"available"`
+	InitialMargin decimal.Decimal `json:"initial_margin"`
+	UnrealizedPnL decimal.Decimal `json:"unrealized_pnl"`
+}
+
+// MarginPoolREST is an optional facet of brokered clients, discovered by type
+// assertion.
+type MarginPoolREST interface {
+	MarginPool(context.Context) (MarginPool, error)
+}

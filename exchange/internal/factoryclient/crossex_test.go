@@ -158,15 +158,23 @@ func binanceBTC(t *testing.T, client *crossExPerpClient) exchange.Instrument {
 func TestCrossExClientIsBrokeredAndKeepsNativeIdentity(t *testing.T) {
 	client := newTestCrossExClient(t, newCrossExStub(t))
 	var brokered exchange.BrokeredClient = client
-	if brokered.Broker() != exchange.VenueCrossEx || len(brokered.Reaches()) != len(crossExMarkets) {
+	if brokered.Broker() != exchange.VenueCrossEx || len(brokered.Reaches()) != 10 {
 		t.Fatalf("broker = %s reaches = %v", brokered.Broker(), brokered.Reaches())
 	}
 	instruments, err := client.RefreshInstruments(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(instruments) != 2 {
-		t.Fatalf("instruments = %v (Kraken has no native counterpart)", instruments)
+	// Binance and OKX map onto native instruments; Kraken exists only on CrossEx.
+	if len(instruments) != 3 {
+		t.Fatalf("instruments = %v", instruments)
+	}
+	kraken, err := client.ResolveInstrument(context.Background(), "kraken:BTC-USD")
+	if err != nil || !IsCrossExOnly(kraken) || kraken.Identity.NativeSymbol != "KRAKEN_FUTURE_BTC_USD" || kraken.Identity.SettleAsset != "USD" {
+		t.Fatalf("kraken = %+v, %v", kraken.Identity, err)
+	}
+	if IsCrossExOnly(binanceBTC(t, client)) {
+		t.Fatal("a native-backed instrument was marked crossex-only")
 	}
 	btc := binanceBTC(t, client)
 	if btc.Identity.Venue != exchange.VenueBinance || btc.Identity.Symbol != "BTC-USDT" || btc.Identity.NativeSymbol != "BINANCE_FUTURE_BTC_USDT" {
@@ -429,6 +437,8 @@ func TestCrossExAccountEventsRouteEveryVenueThroughOneStream(t *testing.T) {
 
 	stub.pushes <- `{"channel":"order","event":"subscribe","payload":{"order_id":"1","text":"17","state":"FAIL","symbol":"OKX_FUTURE_ADA_USDT","side":"BUY","type":"MARKET","qty":"10","executed_qty":"0","business_type":"FUTURE","reason":"{\"label\":\"TRADE_INSUFFICIENT_AVAILABLE_MARGIN_ERROR\",\"message\":\"Insufficient availableMargin\"}","update_time":"1756434169098"},"time":1}`
 	stub.pushes <- `{"channel":"order","event":"subscribe","payload":{"order_id":"2","state":"OPEN","symbol":"KRAKEN_FUTURE_BTC_USD","side":"BUY","type":"LIMIT","qty":"1","business_type":"FUTURE"},"time":1}`
+	// An exchange the gateway does not serve is skipped, not reported as an error.
+	stub.pushes <- `{"channel":"order","event":"subscribe","payload":{"order_id":"3","state":"OPEN","symbol":"OKX_FUTURE_BTC_USDC","side":"BUY","type":"LIMIT","qty":"1","business_type":"FUTURE"},"time":1}`
 	stub.pushes <- `{"channel":"usertrades","event":"subscribe","payload":{"transaction_id":"5","order_id":"3","text":"18","symbol":"BINANCE_FUTURE_BTC_USDT","business_type":"FUTURE","side":"SELL","qty":"0.001","price":"60000","fee":"0.012","fee_coin":"USDT","match_role":"TAKER","create_time":"1756465636528"},"time":1}`
 	stub.pushes <- `{"channel":"position","event":"subscribe","payload":{"symbol":"BINANCE_FUTURE_BTC_USDT","position_side":"NONE","position_qty":"0","update_time":"1756434169098"},"time":1}`
 	stub.pushes <- `{"channel":"asset","event":"subscribe","payload":{"coin":"USDT","exchange_type":"BINANCE","balance":"900","available_balance":"700"},"time":1}`
@@ -436,7 +446,7 @@ func TestCrossExAccountEventsRouteEveryVenueThroughOneStream(t *testing.T) {
 
 	var events []exchange.AccountEvent
 	timeout := time.After(3 * time.Second)
-	for len(events) < 4 {
+	for len(events) < 5 {
 		select {
 		case event := <-subscription.Events():
 			if err := event.Validate(); err != nil {
@@ -447,19 +457,23 @@ func TestCrossExAccountEventsRouteEveryVenueThroughOneStream(t *testing.T) {
 			t.Fatalf("got %d events: %+v", len(events), events)
 		}
 	}
-	if events[0].Kind != exchange.AccountEventOrder || events[0].InstrumentID != "okx:perp:ADA-USDT-SWAP" || events[0].Order.Order.Status != "rejected" {
+	failed := events[0].Order
+	if events[0].Kind != exchange.AccountEventOrder || events[0].InstrumentID != "okx:perp:ADA-USDT-SWAP" || failed.Order.Status != "rejected" ||
+		failed.Order.RejectCode != "TRADE_INSUFFICIENT_AVAILABLE_MARGIN_ERROR" || failed.Order.RejectMessage != "Insufficient availableMargin" {
 		t.Fatalf("order event = %+v", events[0])
 	}
-	// Kraken is not served and is skipped, not reported as an error.
-	if events[1].Kind != exchange.AccountEventFill || events[1].InstrumentID != "binance:perp:BTC-USDT" || events[1].Fill.Fill.Liquidity != exchange.LiquidityTaker {
-		t.Fatalf("fill event = %+v", events[1])
+	if events[1].Kind != exchange.AccountEventOrder || events[1].InstrumentID != "kraken:perp:BTC-USD" {
+		t.Fatalf("kraken order event = %+v", events[1])
 	}
-	if events[2].Kind != exchange.AccountEventPosition || events[2].Position.Kind != exchange.EventSnapshot || len(events[2].Position.Positions) != 0 {
-		t.Fatalf("closed position event = %+v", events[2])
+	if events[2].Kind != exchange.AccountEventFill || events[2].InstrumentID != "binance:perp:BTC-USDT" || events[2].Fill.Fill.Liquidity != exchange.LiquidityTaker {
+		t.Fatalf("fill event = %+v", events[2])
+	}
+	if events[3].Kind != exchange.AccountEventPosition || events[3].Position.Kind != exchange.EventSnapshot || len(events[3].Position.Positions) != 0 {
+		t.Fatalf("closed position event = %+v", events[3])
 	}
 	// The per-venue asset row is a breakdown; only the pool row is a balance.
-	if events[3].Kind != exchange.AccountEventBalance || len(events[3].Balance.Balances) != 1 || !events[3].Balance.Balances[0].Total.Equal(decimal.NewFromInt(1500)) {
-		t.Fatalf("balance event = %+v", events[3])
+	if events[4].Kind != exchange.AccountEventBalance || len(events[4].Balance.Balances) != 1 || !events[4].Balance.Balances[0].Total.Equal(decimal.NewFromInt(1500)) {
+		t.Fatalf("balance event = %+v", events[4])
 	}
 	select {
 	case err := <-subscription.Errors():

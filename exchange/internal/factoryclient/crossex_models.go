@@ -88,6 +88,17 @@ func crossExOrder(row crossex.Order) exchange.Order {
 	if price := crossExDecimal(row.ExecutedAvgPrice); price.IsPositive() {
 		order.AverageFillPrice = exchange.OptionalDecimal{Value: price, Valid: true}
 	}
+	if rejection, ok := crossExOrderRejection(row); ok {
+		order.RejectCode, order.RejectMessage = rejection.Code, rejection.Message
+	}
+	switch strings.ToUpper(strings.TrimSpace(row.Attribute)) {
+	case crossex.AttributeLiq, crossex.AttributeReduce:
+		order.Origin = exchange.OrderOriginLiquidation
+	case crossex.AttributeADL:
+		order.Origin = exchange.OrderOriginADL
+	case crossex.AttributeSettlement:
+		order.Origin = exchange.OrderOriginSettlement
+	}
 	return order
 }
 

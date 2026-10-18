@@ -7712,6 +7712,118 @@
       "tests": [
         "TestCrossExPerpConfigConstructsABrokeredClientWithoutIO"
       ]
+    },
+    {
+      "id": "exchange.MarginPool",
+      "kind": "type",
+      "coverage": "unit",
+      "tests": [
+        "TestMarginPoolAndOrderOriginModels"
+      ]
+    },
+    {
+      "id": "exchange.MarginPoolREST",
+      "kind": "interface",
+      "coverage": "contract",
+      "tests": [
+        "TestMarginPoolAndOrderOriginModels"
+      ]
+    },
+    {
+      "id": "exchange.MarginPoolREST.MarginPool",
+      "kind": "interface_method",
+      "coverage": "contract",
+      "tests": [
+        "TestMarginPoolAndOrderOriginModels"
+      ]
+    },
+    {
+      "id": "exchange.VenueMarginShare",
+      "kind": "type",
+      "coverage": "unit",
+      "tests": [
+        "TestMarginPoolAndOrderOriginModels"
+      ]
+    },
+    {
+      "id": "exchange.OrderOrigin",
+      "kind": "type",
+      "coverage": "unit",
+      "tests": [
+        "TestMarginPoolAndOrderOriginModels"
+      ]
+    },
+    {
+      "id": "exchange.OrderOriginADL",
+      "kind": "const",
+      "coverage": "unit",
+      "tests": [
+        "TestMarginPoolAndOrderOriginModels"
+      ]
+    },
+    {
+      "id": "exchange.OrderOriginLiquidation",
+      "kind": "const",
+      "coverage": "unit",
+      "tests": [
+        "TestMarginPoolAndOrderOriginModels"
+      ]
+    },
+    {
+      "id": "exchange.OrderOriginSettlement",
+      "kind": "const",
+      "coverage": "unit",
+      "tests": [
+        "TestMarginPoolAndOrderOriginModels"
+      ]
+    },
+    {
+      "id": "exchange.VenueKraken",
+      "kind": "const",
+      "coverage": "contract",
+      "tests": [
+        "TestBrokeredOnlyVenuesIdentifyInstruments"
+      ]
+    },
+    {
+      "id": "exchange.VenueDeribit",
+      "kind": "const",
+      "coverage": "contract",
+      "tests": [
+        "TestBrokeredOnlyVenuesIdentifyInstruments"
+      ]
+    },
+    {
+      "id": "exchange/factory.CrossExOnly",
+      "kind": "func",
+      "coverage": "unit",
+      "tests": [
+        "TestCrossExMarketConnectorIsPublicAndConstructsWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange/factory.NewCrossExMarketConnector",
+      "kind": "func",
+      "coverage": "contract",
+      "tests": [
+        "TestCrossExMarketConnectorIsPublicAndConstructsWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange/factory.Ticker24h",
+      "kind": "type",
+      "coverage": "unit",
+      "tests": [
+        "TestCrossExMarketConnectorIsPublicAndConstructsWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange/factory.PublicMarketConnector.Ticker24h",
+      "kind": "method",
+      "coverage": "unit",
+      "tests": [
+        "TestCrossExMarketConnectorIsPublicAndConstructsWithoutIO"
+      ]
     }
   ]
 }

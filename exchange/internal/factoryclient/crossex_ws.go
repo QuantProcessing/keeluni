@@ -42,8 +42,8 @@ func (socket *crossExWebSocket) SetAccountInstruments(instruments []exchange.Acc
 		return fmt.Errorf("account instrument index is invalid")
 	}
 	reachable := map[exchange.Venue]bool{}
-	for _, market := range crossExMarkets {
-		reachable[market.venue] = true
+	for _, route := range socket.client.Reaches() {
+		reachable[route.Venue] = true
 	}
 	seen := make(map[string]struct{}, len(instruments))
 	for _, item := range instruments {

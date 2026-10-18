@@ -3,6 +3,9 @@ package factory
 import (
 	"context"
 	"net/http"
+	"time"
+
+	"github.com/shopspring/decimal"
 
 	"github.com/QuantProcessing/boltertrader/exchange"
 	"github.com/QuantProcessing/boltertrader/exchange/internal/factoryclient"
@@ -21,6 +24,27 @@ type PublicMarketConnector struct {
 	close   func() error
 	scope   exchange.CatalogScope
 	funding bool
+	// refresh replaces the catalog path for connectors that own their
+	// instrument list (CrossEx).
+	refresh func(context.Context) ([]exchange.Instrument, error)
+	// ticker24h serves 24-hour figures for connectors without candle history.
+	ticker24h func(context.Context, exchange.Instrument) (Ticker24h, error)
+}
+
+// Ticker24h is a 24-hour summary taken from a live ticker.
+type Ticker24h struct {
+	Last, Open, High, Low, Volume decimal.Decimal
+	Time                          time.Time
+}
+
+// Ticker24h returns live 24-hour figures when the connector has no candle
+// history to derive them from. supported is false for every other connector.
+func (connector *PublicMarketConnector) Ticker24h(ctx context.Context, instrument exchange.Instrument) (Ticker24h, bool, error) {
+	if connector == nil || connector.ticker24h == nil {
+		return Ticker24h{}, false, nil
+	}
+	ticker, err := connector.ticker24h(ctx, instrument)
+	return ticker, true, err
 }
 
 // NewPublicMarketConnector builds one read-only connector for a supported
@@ -76,6 +100,9 @@ func NewPublicMarketConnector(
 }
 
 func (connector *PublicMarketConnector) Refresh(ctx context.Context) ([]exchange.Instrument, error) {
+	if connector != nil && connector.refresh != nil {
+		return connector.refresh(ctx)
+	}
 	if connector == nil || connector.catalog == nil {
 		return nil, invalidConfig("public market connector is unavailable")
 	}
@@ -206,3 +233,34 @@ func publicMarketClientForConfig(configName string, settings settings) (exchange
 	}
 	return market, perp, mark, socket, closeClient
 }
+
+// NewCrossExMarketConnector builds the credential-free connector for markets
+// that exist only on Gate CrossEx (Kraken, Deribit, Binance TradFi and USDC
+// perps). Its instruments carry the reached venue's identity; natives lists
+// the native instruments so markets with both kinds (Binance USDT perps)
+// serve each instrument from one source only. Market data is live from the
+// CrossEx public stream; CrossEx publishes no history, so Candles and
+// OrderBook return exchange.ErrUnsupported and FundingRate reports
+// unsupported. Construction performs no network I/O.
+func NewCrossExMarketConnector(natives NativeInstrumentSource, httpClient *http.Client, options ...Option) (*PublicMarketConnector, error) {
+	if httpClient == nil {
+		return nil, invalidConfig("crossex market connector requires an http client")
+	}
+	settings := newSettings(append([]Option{WithHTTPClient(httpClient)}, options...))
+	if err := settings.validate(); err != nil {
+		return nil, err
+	}
+	market := factoryclient.NewCrossExMarket(factoryclient.CrossExNativeSource(natives), factorySettings(settings))
+	return &PublicMarketConnector{
+		market: market, socket: publicMarketSocket(market), close: market.Close,
+		refresh: market.RefreshInstruments,
+		ticker24h: func(ctx context.Context, instrument exchange.Instrument) (Ticker24h, error) {
+			ticker, err := market.Ticker24h(ctx, instrument)
+			return Ticker24h(ticker), err
+		},
+	}, nil
+}
+
+// CrossExOnly reports whether instrument's market data comes from the CrossEx
+// public stream rather than from its venue.
+func CrossExOnly(instrument exchange.Instrument) bool { return factoryclient.IsCrossExOnly(instrument) }

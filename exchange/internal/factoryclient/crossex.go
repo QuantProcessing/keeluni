@@ -72,9 +72,20 @@ func (client *crossExPerpClient) GoString() string { return client.String() }
 func (client *crossExPerpClient) Broker() exchange.Venue { return exchange.VenueCrossEx }
 
 func (client *crossExPerpClient) Reaches() []exchange.MarketRoute {
-	out := make([]exchange.MarketRoute, 0, len(crossExMarkets))
+	seen := map[exchange.MarketRoute]bool{}
+	var out []exchange.MarketRoute
+	add := func(venue exchange.Venue, settlement string) {
+		route := exchange.MarketRoute{Venue: venue, Product: exchange.ProductPerp, Settlement: settlement}
+		if !seen[route] {
+			seen[route] = true
+			out = append(out, route)
+		}
+	}
 	for _, market := range crossExMarkets {
-		out = append(out, exchange.MarketRoute{Venue: market.venue, Product: exchange.ProductPerp, Settlement: market.settlement})
+		add(market.venue, market.settlement)
+	}
+	for _, market := range crossExOnlyMarkets {
+		add(market.venue, market.quote)
 	}
 	return out
 }
@@ -105,14 +116,19 @@ func (client *crossExPerpClient) RefreshInstruments(ctx context.Context) ([]exch
 	if err != nil {
 		return nil, crossExMalformed(client.meta, "RefreshInstruments", "crossex rules are inconsistent")
 	}
-	bySymbol := make(map[string]exchange.Instrument, len(mapping.Instruments))
-	for _, instrument := range mapping.Instruments {
+	only, err := MapCrossExOnlyInstruments(rows, natives)
+	if err != nil {
+		return nil, crossExMalformed(client.meta, "RefreshInstruments", "crossex rules are inconsistent")
+	}
+	instruments := append(append([]exchange.Instrument(nil), mapping.Instruments...), only...)
+	bySymbol := make(map[string]exchange.Instrument, len(instruments))
+	for _, instrument := range instruments {
 		bySymbol[instrument.Identity.NativeSymbol] = instrument
 	}
 	client.mu.Lock()
 	client.instruments = bySymbol
 	client.mu.Unlock()
-	return append([]exchange.Instrument(nil), mapping.Instruments...), nil
+	return instruments, nil
 }
 
 func (client *crossExPerpClient) Instruments(ctx context.Context) ([]exchange.Instrument, error) {
@@ -239,6 +255,69 @@ func (client *crossExPerpClient) PerpAccount(ctx context.Context) (exchange.Perp
 		return exchange.PerpAccount{}, err
 	}
 	return crossExPerpAccount(account), nil
+}
+
+// MarginPool reports the cross-exchange pool and each venue's share.
+func (client *crossExPerpClient) MarginPool(ctx context.Context) (exchange.MarginPool, error) {
+	account, err := client.account(ctx, "MarginPool")
+	if err != nil {
+		return exchange.MarginPool{}, err
+	}
+	return crossExMarginPool(account), nil
+}
+
+func crossExMarginPool(account crossex.Account) exchange.MarginPool {
+	optional := func(value string) exchange.OptionalDecimal {
+		if strings.TrimSpace(value) == "" {
+			return exchange.OptionalDecimal{}
+		}
+		return exchange.OptionalDecimal{Value: crossExDecimal(value), Valid: true}
+	}
+	perp := crossExPerpAccount(account)
+	pool := exchange.MarginPool{
+		Equity: perp.Equity, Available: perp.Available, InitialMargin: perp.MarginUsed, UnrealizedPnL: perp.UnrealizedPnL,
+		MaintenanceMargin:     optional(account.MaintenanceMargin),
+		InitialMarginRate:     optional(account.InitialMarginRate),
+		MaintenanceMarginRate: optional(account.MaintenanceMarginRate),
+	}
+	for _, asset := range account.Assets {
+		if crossExIsPoolRow(asset) {
+			continue
+		}
+		venue, ok := crossExVenueOf(asset.ExchangeType)
+		if !ok {
+			continue
+		}
+		pool.Venues = append(pool.Venues, exchange.VenueMarginShare{
+			Venue: venue, Asset: strings.ToUpper(strings.TrimSpace(asset.Coin)),
+			Equity: crossExDecimal(asset.Equity), Available: crossExDecimal(asset.AvailableBalance),
+			InitialMargin: crossExDecimal(asset.FuturesInitialMargin), UnrealizedPnL: crossExDecimal(asset.Upnl),
+		})
+	}
+	return pool
+}
+
+// crossExVenueOf names the order-book venue of a CrossEx exchange_type.
+func crossExVenueOf(exchangeType string) (exchange.Venue, bool) {
+	switch strings.ToUpper(strings.TrimSpace(exchangeType)) {
+	case "BINANCE":
+		return exchange.VenueBinance, true
+	case "OKX":
+		return exchange.VenueOKX, true
+	case "BYBIT":
+		return exchange.VenueBybit, true
+	case "GATE":
+		return exchange.VenueGate, true
+	case "HYPERLIQUID":
+		return exchange.VenueHyperliquid, true
+	case "LIGHTER":
+		return exchange.VenueLighter, true
+	case "KRAKEN":
+		return exchange.VenueKraken, true
+	case "DERIBIT":
+		return exchange.VenueDeribit, true
+	}
+	return "", false
 }
 
 func crossExPerpAccount(account crossex.Account) exchange.PerpAccount {
@@ -684,4 +763,5 @@ var (
 	_ exchange.PerpClient       = (*crossExPerpClient)(nil)
 	_ exchange.ExactOrderLookup = (*crossExPerpClient)(nil)
 	_ exchange.BrokeredClient   = (*crossExPerpClient)(nil)
+	_ exchange.MarginPoolREST   = (*crossExPerpClient)(nil)
 )
