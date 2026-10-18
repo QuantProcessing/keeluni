@@ -22,6 +22,8 @@ export function MarketHeader() {
   const open = Number(stats?.open24h);
   const change = last && open ? Number(last) - open : undefined;
   const funding = ticker?.funding ?? stats?.funding;
+  const fundingHours = ticker?.fundingIntervalHours ?? stats?.fundingIntervalHours;
+  const fundingApr = ticker?.fundingApr ?? stats?.fundingApr;
   const nextFunding = ticker?.nextFunding ?? stats?.nextFunding;
   const tick = instrument?.tickSize;
 
@@ -40,15 +42,25 @@ export function MarketHeader() {
       {perp && ticker?.oi && <Stat label="Open Interest" value={compact(ticker.oi) + " " + (instrument?.base ?? "")} />}
       {perp && (
         <div className="shrink-0">
-          <div className="dotted text-muted" title="Current funding rate / time to next settlement">Funding / Countdown</div>
+          <div className="dotted text-muted" title="Rate charged at the next settlement, per settlement period / annualized (simple) / time to the settlement. Positive: longs pay shorts.">Funding / APR / Countdown</div>
           <div className="mt-1 flex gap-3">
-            <span className={Number(funding) >= 0 ? "text-up" : "text-down"}>{funding ? (Number(funding) * 100).toFixed(4) + "%" : "—"}</span>
+            <span className={Number(funding) >= 0 ? "text-up" : "text-down"}>
+              {fundingRate(funding)}{fundingHours ? <span className="text-muted"> /{fundingHours}h</span> : null}
+            </span>
+            <span className={Number(fundingApr) >= 0 ? "text-up" : "text-down"}>{fundingApr ? pct(Number(fundingApr)) : "—"}</span>
             <span>{countdown(nextFunding, now)}</span>
           </div>
         </div>
       )}
     </div>
   );
+}
+
+/** Funding per settlement, as a percentage with enough digits for hourly venues. */
+export function fundingRate(value: string | undefined): string {
+  if (!value) return "—";
+  const percent = Number(value) * 100;
+  return (Math.abs(percent) < 0.001 && percent !== 0 ? percent.toFixed(6) : percent.toFixed(4)) + "%";
 }
 
 function Stat({ label, value, tone, hint }: { label: string; value: string; tone?: "up" | "down"; hint?: string }) {

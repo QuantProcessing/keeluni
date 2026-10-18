@@ -7819,6 +7819,86 @@
         "TestNativePerpConfigsConstructWithoutIO",
         "TestNativePerpConfigsValidateLocally"
       ]
+    },
+    {
+      "id": "exchange.FundingQuote",
+      "kind": "type",
+      "coverage": "unit",
+      "tests": [
+        "TestFundingQuoteAnnualizesOnlyAKnownPeriod"
+      ]
+    },
+    {
+      "id": "exchange.FundingQuote.Annualized",
+      "kind": "method",
+      "coverage": "unit",
+      "tests": [
+        "TestFundingQuoteAnnualizesOnlyAKnownPeriod"
+      ]
+    },
+    {
+      "id": "exchange.FundingBoard",
+      "kind": "type",
+      "coverage": "unit",
+      "tests": [
+        "TestFundingBoardValidateKeepsWrongNumbersOut"
+      ]
+    },
+    {
+      "id": "exchange.FundingBoard.Validate",
+      "kind": "method",
+      "coverage": "unit",
+      "tests": [
+        "TestFundingBoardValidateKeepsWrongNumbersOut"
+      ]
+    },
+    {
+      "id": "exchange/factory.PublicFundingBoard",
+      "kind": "type",
+      "coverage": "unit",
+      "tests": [
+        "TestPublicFundingBoardCoversEveryServedPerpMarket"
+      ]
+    },
+    {
+      "id": "exchange/factory.NewPublicFundingBoard",
+      "kind": "func",
+      "coverage": "unit",
+      "tests": [
+        "TestPublicFundingBoardCoversEveryServedPerpMarket"
+      ]
+    },
+    {
+      "id": "exchange/factory.PublicFundingBoard.Scope",
+      "kind": "method",
+      "coverage": "unit",
+      "tests": [
+        "TestPublicFundingBoardCoversEveryServedPerpMarket"
+      ]
+    },
+    {
+      "id": "exchange/factory.PublicFundingBoard.Load",
+      "kind": "method",
+      "coverage": "unit",
+      "tests": [
+        "TestPublicFundingBoardCoversEveryServedPerpMarket"
+      ]
+    },
+    {
+      "id": "exchange/factory.PublicFundingBoard.Streams",
+      "kind": "method",
+      "coverage": "unit",
+      "tests": [
+        "TestPublicFundingBoardCoversEveryServedPerpMarket"
+      ]
+    },
+    {
+      "id": "exchange/factory.PublicFundingBoard.Stream",
+      "kind": "method",
+      "coverage": "unit",
+      "tests": [
+        "TestPublicFundingBoardCoversEveryServedPerpMarket"
+      ]
     }
   ]
 }

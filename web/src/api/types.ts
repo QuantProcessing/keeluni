@@ -84,7 +84,11 @@ export interface Candle {
 export interface Ticker {
   mark?: string;
   index?: string;
+  /** Fraction of notional paid at nextFunding (>0: longs pay shorts). */
   funding?: string;
+  fundingIntervalHours?: number;
+  /** funding annualized (simple, 8760 h); absent when the period is unknown. */
+  fundingApr?: string;
   nextFunding?: number;
   oi?: string;
   ts: number;
@@ -97,8 +101,32 @@ export interface Stats {
   low24h: string;
   volume24h: string;
   funding?: string;
+  fundingIntervalHours?: number;
+  fundingApr?: string;
   nextFunding?: number;
   mark?: string;
+}
+
+/** One perpetual's current funding from the gateway's resident dataset. */
+export interface FundingQuote {
+  inst: string;
+  venue: string;
+  base: string;
+  rate: string;
+  intervalHours?: number;
+  apr?: string;
+  nextFunding?: number;
+  rateCap?: string;
+  rateFloor?: string;
+  observedAt: number;
+  stale: boolean;
+}
+
+export interface FundingPoint {
+  t: number;
+  rate: string;
+  intervalHours?: number;
+  apr?: string;
 }
 
 export interface Position {

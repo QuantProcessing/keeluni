@@ -85,12 +85,13 @@ func (client *okxPerpClient) FundingRate(ctx context.Context, req exchange.Fundi
 	if err != nil {
 		return exchange.FundingRate{}, okxMalformed(exchange.ProductPerp, "FundingRate", "invalid observed timestamp")
 	}
+	// fundingTime is the next settlement, the one fundingRate is charged at;
+	// OKX's nextFundingTime is the settlement after it.
 	fundingTime, err := okxOptionalMillis(row.FundingTime)
 	if err != nil {
 		return exchange.FundingRate{}, okxMalformed(exchange.ProductPerp, "FundingRate", "invalid funding timestamp")
 	}
-	next, err := okxOptionalMillis(row.NextFundingTime)
-	if err != nil {
+	if _, err := okxOptionalMillis(row.NextFundingTime); err != nil {
 		return exchange.FundingRate{}, okxMalformed(exchange.ProductPerp, "FundingRate", "invalid next funding timestamp")
 	}
 	return exchange.FundingRate{
@@ -98,7 +99,7 @@ func (client *okxPerpClient) FundingRate(ctx context.Context, req exchange.Fundi
 		Rate:            rate,
 		ObservedAt:      observed,
 		FundingTime:     fundingTime,
-		NextFundingTime: next,
+		NextFundingTime: fundingTime,
 	}, nil
 }
 

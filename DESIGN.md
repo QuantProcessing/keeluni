@@ -128,7 +128,9 @@ The footer tells where the first-run password is printed.
 **Market header** — instrument selector (icon-less name + chevron, 20px) with a
 leverage chip (`accent-soft` bg, `accent` text, radius md). Stats are label
 (muted, dotted underline) over value (white). Change uses long/short colour.
-Funding shows rate in `long-text`/`short` and a countdown.
+Funding shows the rate per settlement with its period (`0.0012% /1h`), the
+annualized rate, and a countdown; rate and APR use `long-text`/`short`. Rates
+from venues with different periods are only comparable through the APR.
 
 **Instrument selector** — popover anchored under the name, 800px wide: search
 input (radius lg, `surface-raised`), category tabs (All · Tradable · Perps ·

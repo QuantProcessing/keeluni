@@ -158,6 +158,7 @@ type PrepMeta struct {
 		Name        string `json:"name"`
 		SzDecimals  int    `json:"szDecimals"`
 		MaxLeverage int    `json:"maxLeverage"`
+		IsDelisted  bool   `json:"isDelisted,omitempty"`
 	} `json:"universe"`
 	CollateralToken int `json:"collateralToken,omitempty"`
 }

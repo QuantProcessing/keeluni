@@ -342,6 +342,8 @@ type FundingRate struct {
 	Premium         string `json:"premium"`
 	SettFundingRate string `json:"settFundingRate"`
 	SettState       string `json:"settState"`
+	MaxFundingRate  string `json:"maxFundingRate"`
+	MinFundingRate  string `json:"minFundingRate"`
 	Ts              string `json:"ts"`
 }
 

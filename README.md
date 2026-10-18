@@ -16,12 +16,35 @@ sdk        native venue APIs
 
 - **sdk/** implements each venue's native API faithfully.
 - **exchange/** normalizes venues into one typed client contract.
-- **gateway/** exposes that contract over HTTP/WebSocket. It is business-agnostic:
-  accounts + encrypted credentials, market data fan-out, order commands, and live
-  position/balance snapshots. It keeps no order ledger — idempotency is the
-  venue's `clientOrderId`, and the venue is the source of truth.
+- **gateway/** exposes that contract over HTTP/WebSocket (see below).
 - **trader/** is the manual-trading app. Other apps (hedging, arbitrage) talk to
   the gateway directly and own their own storage.
+
+## What the gateway is
+
+Three rules decide whether something belongs in the gateway or in an app:
+
+1. **The only way out to a venue.** Every venue request — public or private,
+   REST or WebSocket — leaves through the gateway. Rate limits, connections,
+   proxies and credentials exist only there, so one budget per venue is shared
+   and prioritised: orders and cancels first, interactive reads next, resident
+   collection last (at most 25% of a venue's request budget). Apps never call a
+   venue directly.
+2. **Current venue facts only.** The gateway may hold facts in memory — the
+   instrument catalog, position snapshots, market-wide datasets such as funding
+   — as long as a restart can rebuild them from the venue. It accumulates no
+   history the venue cannot return again, keeps no order ledger (idempotency is
+   the venue's `clientOrderId`, and the venue is the source of truth), and needs
+   no database: trading keeps working when an app's database is down.
+3. **Normalisation, not business.** The gateway makes every venue speak the
+   same identifiers, units and meanings (e.g. one funding rate convention, with
+   its interval and annualised value). Anything relating two instruments or
+   venues, any strategy, and any multi-order workflow belongs to an app.
+
+Resident collection therefore splits by whether data must accumulate: current
+market-wide facts are gateway datasets; time series kept beyond what a venue
+retains, and anything derived across instruments, live in an app with its own
+database.
 
 Supported: Binance, OKX, Bybit, Bitget, Gate (spot + USDT perps; Binance/Bybit/Bitget
 also USDC perps), Hyperliquid and Lighter (spot + perps), Kraken Futures (USD perps) and

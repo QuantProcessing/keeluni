@@ -157,3 +157,43 @@ func TestMissingPolicyAndCanceledRequestNeverReachNetwork(t *testing.T) {
 		t.Fatal(calls)
 	}
 }
+
+func TestBackgroundRequestsStopAtTheirShareAndNeverStarveOrders(t *testing.T) {
+	now := time.Unix(100, 0)
+	c := NewCoordinator(func() time.Time { return now })
+	calls := 0
+	client := budgetClient(t, c, roundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
+	}))
+	background := func() error {
+		req, _ := http.NewRequestWithContext(Background(context.Background()), "GET", "https://example.invalid/api/v5/public/funding-rate", nil)
+		resp, err := venuehttp.DoHTTP(client, req, "okx")
+		if resp != nil {
+			resp.Body.Close()
+		}
+		return err
+	}
+	// OKX allows 600 units per minute locally; background may use 150. The
+	// endpoint limit (10/s) is lifted by advancing the clock between calls.
+	admitted := 0
+	for i := 0; i < 400; i++ {
+		if i%10 == 0 {
+			now = now.Add(time.Second)
+		}
+		if background() == nil {
+			admitted++
+		}
+	}
+	if admitted != 150 {
+		t.Fatalf("background admitted = %d, want 150", admitted)
+	}
+	var local *venuehttp.LocalRateLimitError
+	if err := background(); !errors.As(err, &local) {
+		t.Fatalf("background beyond its share = %v", err)
+	}
+	// Orders still have the rest of the window.
+	if err := budgetRequest(WithPrincipal(client, "acct"), "okx", "POST", "/api/v5/trade/order", `{}`); err != nil {
+		t.Fatalf("order after background exhaustion: %v", err)
+	}
+}

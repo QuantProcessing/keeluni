@@ -342,9 +342,10 @@ func lighterMarketStatFact(identity exchange.InstrumentIdentity, row lighterMark
 	if rate == "" {
 		rate = row.FundingRate
 	}
+	// The stream quotes a percentage per hourly settlement.
 	if parsed, err := decimalOrSkip(rate); err == nil {
-		fact.FundingRate = exchange.OptionalDecimal{Value: parsed, Valid: true}
-		fact.FundingIntervalHours = exchange.OptionalInt{Value: lighterFundingQuoteHours, Valid: true}
+		fact.FundingRate = exchange.OptionalDecimal{Value: parsed.Div(lighterFundingPercent), Valid: true}
+		fact.FundingIntervalHours = exchange.OptionalInt{Value: 1, Valid: true}
 		fact.FundingObservedAt = observedAt
 		fields |= nativeDerivativeFieldFunding | nativeDerivativeFieldFundingInterval
 	}
@@ -364,8 +365,9 @@ func lighterMarketStatFact(identity exchange.InstrumentIdentity, row lighterMark
 		fact.OpenInterestNotionalAsset = identity.SettleAsset
 		fields |= nativeDerivativeFieldOpenInterestNotional
 	}
+	// funding_timestamp is the last settlement; Lighter settles on every hour.
 	if row.FundingTimestamp > 0 {
-		fact.NextFundingTime = time.UnixMilli(row.FundingTimestamp).UTC()
+		fact.NextFundingTime = time.UnixMilli(row.FundingTimestamp).UTC().Truncate(time.Hour).Add(time.Hour)
 		fields |= nativeDerivativeFieldNextFundingTime
 	}
 	return fact, fields

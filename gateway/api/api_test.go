@@ -12,8 +12,10 @@ import (
 
 	"github.com/QuantProcessing/boltertrader/exchange"
 	"github.com/QuantProcessing/boltertrader/gateway/account"
+	"github.com/QuantProcessing/boltertrader/gateway/funding"
 	"github.com/QuantProcessing/boltertrader/gateway/hub"
 	"github.com/QuantProcessing/boltertrader/gateway/market"
+	"github.com/QuantProcessing/boltertrader/gateway/resident"
 	"github.com/QuantProcessing/boltertrader/gateway/store"
 	"github.com/QuantProcessing/boltertrader/secretstore"
 	"github.com/shopspring/decimal"
@@ -32,11 +34,20 @@ func newTestServer(t *testing.T) *Server {
 		Rules: exchange.InstrumentRules{PriceIncrement: decimal.RequireFromString("0.1"), QuantityIncrement: decimal.RequireFromString("0.001"), MinQuantity: decimal.RequireFromString("0.001")},
 	}})
 	manager := account.NewManager(accounts, catalog, http.DefaultClient)
-	feeds := market.NewFeeds(catalog)
+	residents := resident.NewRegistry()
+	fundingData, err := funding.New(catalog, residents, http.DefaultClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	feeds := market.NewFeeds(catalog, fundingData)
 	public := hub.New(feeds.Source, time.Second)
 	private := hub.New(manager.Source, time.Second)
-	t.Cleanup(func() { public.Close(); private.Close() })
-	return NewServer([]byte("test-token-0123456789abcdef0123456789"), catalog, manager, feeds, public, private)
+	datasets := hub.New(fundingData.Source, time.Second)
+	t.Cleanup(func() { public.Close(); private.Close(); datasets.Close() })
+	return NewServer([]byte("test-token-0123456789abcdef0123456789"), Deps{
+		Catalog: catalog, Accounts: manager, Feeds: feeds, Funding: fundingData, Resident: residents,
+		Public: public, Private: private, Datasets: datasets,
+	})
 }
 
 func do(server *Server, method, path, token, body string) *httptest.ResponseRecorder {
@@ -122,5 +133,27 @@ func TestVenuesListBrokerWithItsMarkets(t *testing.T) {
 		if got := do(server, "GET", path, token, "").Code; got != 404 {
 			t.Fatalf("%s = %d", path, got)
 		}
+	}
+}
+
+func TestFundingEndpoints(t *testing.T) {
+	server := newTestServer(t)
+	// The test catalog has one perp; nothing has been collected yet.
+	if response := do(server, "GET", "/v1/funding", token, ""); response.Code != 200 || !strings.Contains(response.Body.String(), `"quotes":[]`) ||
+		!strings.Contains(response.Body.String(), `"market":"binance:perp:USDT"`) {
+		t.Fatalf("table = %d %s", response.Code, response.Body)
+	}
+	if got := do(server, "GET", "/v1/funding?inst=binance:perp:BTC-USDT", token, "").Code; got != 404 {
+		t.Fatalf("uncollected quote = %d", got)
+	}
+	if got := do(server, "GET", "/v1/funding?inst=binance:perp:NOPE-USDT", token, "").Code; got != 404 {
+		t.Fatalf("unknown instrument = %d", got)
+	}
+	if got := do(server, "GET", "/v1/funding/history?inst=binance:perp:BTC-USDT&since=1&until=4000000000000", token, "").Code; got != 400 {
+		t.Fatalf("oversized window = %d", got)
+	}
+	health := do(server, "GET", "/v1/health", "", "")
+	if health.Code != 200 || !strings.Contains(health.Body.String(), `"datasets"`) {
+		t.Fatalf("health = %d %s", health.Code, health.Body)
 	}
 }

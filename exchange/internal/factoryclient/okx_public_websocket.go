@@ -858,15 +858,17 @@ func okxFundingRateEvent(operation string, instrument exchange.Instrument, fundi
 	if err != nil {
 		return exchange.FundingRateEvent{}, okxWSError(clientMeta{venue: exchange.VenueOKX, product: exchange.ProductPerp}, operation, exchange.KindMalformedResponse, "invalid funding rate")
 	}
-	effectiveAt, err := okxMillis(funding.FundingTime)
+	// OKX names fields for the period priced, not the clock: fundingTime is
+	// the next settlement, the one fundingRate is charged at; nextFundingTime
+	// is the settlement after it.
+	settlesAt, err := okxMillis(funding.FundingTime)
 	if err != nil {
 		return exchange.FundingRateEvent{}, okxWSError(clientMeta{venue: exchange.VenueOKX, product: exchange.ProductPerp}, operation, exchange.KindMalformedResponse, "invalid funding timestamp")
 	}
-	nextAt, err := okxOptionalMillis(funding.NextFundingTime)
-	if err != nil {
+	if _, err := okxOptionalMillis(funding.NextFundingTime); err != nil {
 		return exchange.FundingRateEvent{}, okxWSError(clientMeta{venue: exchange.VenueOKX, product: exchange.ProductPerp}, operation, exchange.KindMalformedResponse, "invalid next funding timestamp")
 	}
-	return exchange.FundingRateEvent{Instrument: instrument, Rate: rate, EffectiveAt: effectiveAt, NextAt: nextAt}, nil
+	return exchange.FundingRateEvent{Instrument: instrument, Rate: rate, EffectiveAt: settlesAt, NextAt: settlesAt}, nil
 }
 
 func emitOKXWSError[T any](callbacks streamCallbacks[T], err error) {

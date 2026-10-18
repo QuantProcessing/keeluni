@@ -4,7 +4,23 @@
 
 ## 0. 原则
 
-- gateway 业务无关：只负责账户凭证、行情、下单/撤单/查询，不保存订单账本；交易所是订单的唯一事实来源。
+gateway 的定义（判断一件事放 gateway 还是放应用，以这三条为准）：
+
+1. **交易所的唯一出口。** 所有访问交易所的流量（公开/私有、REST/WebSocket）都经过 gateway；
+   限流、连接、代理、凭证只存在于 gateway。同一交易所的额度统一分配并分优先级：
+   下单/撤单 > 用户触发的查询 > 后台常驻采集（最多占该交易所额度的 25%）。应用不直连交易所。
+2. **只提供交易所的当前事实。** 可以在内存中常驻持有（标的目录、持仓快照、资费等全市场数据集），
+   但必须能在重启后从交易所重新拉回；不积累交易所给不回来的历史，不保存订单账本，
+   不依赖数据库——应用的数据库故障时交易照常。
+3. **做规范化，不做业务。** 统一各交易所的标识、单位与语义（例如资费统一为
+   "单次结算比例 + 结算周期 + 年化"）；涉及两个标的/交易所之间的关系、任何策略、
+   多笔订单的编排都属于应用。
+
+因此常驻采集按"是否需要积累"划分：交易所的当前全市场事实是 gateway 的常驻数据集；
+超出交易所保留期的时间序列、跨标的的计算，放在拥有自己数据库的应用里。
+
+其他约定：
+
 - 幂等只靠交易所 clientOrderId；结果 `unknown` 时先按 clientOrderId 查单，绝不盲目重下。
 - 上层应用（trader、对冲、套利）各自拥有存储；trader 无数据库。
 - 支持：Binance / OKX / Bybit / Bitget / Gate（现货 + U 本位永续），Hyperliquid / Lighter（现货 + 永续）。
@@ -117,8 +133,33 @@ GET  /v1/venues                         交易所列表：{venue, kind:"native"|
 GET  /v1/instruments?venue=&product=    规则：tick/step/minQty/minNotional
 GET  /v1/orderbook?inst=&depth=20
 GET  /v1/candles?inst=&interval=1m&start=&end=&limit=
-GET  /v1/ticker?inst=                   last/mark/index/funding/nextFunding/openInterest/24h(由日K派生)
+GET  /v1/ticker?inst=                   last/mark/24h(由小时K派生)，资费字段来自常驻资费数据集
+GET  /v1/funding?venue=&base=           常驻资费表（所有永续）+ 各市场采集状态；?inst= 取单个
+GET  /v1/funding/history?inst=&since=&until=   已结算资费，窗口 ≤ 30 天（默认最近 7 天）
 ```
+
+### 资费（常驻数据集）
+
+统一口径（exchange 层换算，每家交易所含义相同）：
+
+| 字段 | 含义 |
+|---|---|
+| `rate` | `nextFunding` 那次结算收付的仓位名义价值比例（小数），>0 表示多头付给空头 |
+| `intervalHours` | 该标的自己的结算周期；无法确定时缺省，绝不默认 8h |
+| `apr` | `rate × 8760 / intervalHours`（单利年化），跨交易所比较用；周期未知时缺省 |
+| `nextFunding` | `rate` 对应的那次结算时刻（ms）；已过结算但新数据未到时按周期顺延 |
+| `rateCap` / `rateFloor` | 交易所公布的上下限（有则给） |
+| `stale` | 该市场的采集连续 3 个周期未成功 |
+
+采集：Hyperliquid 用 WS `allDexsAssetCtxs`（一个订阅覆盖主 dex 和全部 HIP-3 dex，约 15 秒一次完整快照，
+不占 REST 权重）；其余市场用全市场 HTTP，每 15 秒一次（Gate 30 秒）。后台采集最多占该交易所额度的
+25%，拿不到额度就跳过本轮，不排队。读取失败保留上一份快照。各市场状态见 `/v1/health` 的 `datasets`。
+
+各交易所的换算：Binance `fundingInfo` 只列非默认周期的标的，未列出的为 8h；OKX `fundingTime`
+才是下次结算（`nextFundingTime` 是再下一次），周期为二者之差；Gate 周期以秒给出；Lighter REST 资费表是
+8h 等效值（÷8），WS 是"百分数/小时"（÷100）；Hyperliquid、Lighter 每整点结算。
+
+Trade 页的 `ticker` 推送和 `/v1/ticker` 的资费字段都从这个数据集读取，只有一个来源。
 
 ### 账户
 ```
@@ -158,6 +199,7 @@ PUT    /leverage                        {inst, leverage}
 {"op":"sub","ch":"book","inst":"binance:perp:BTC-USDT"}
 {"op":"sub","ch":"candle","inst":"...","interval":"1m"}
 {"op":"sub","ch":"account","account":"acc_7f3k2m"}
+{"op":"sub","ch":"funding","inst":"okx:perp:BTC-USDT-SWAP"}
 {"op":"unsub", ...同上}
 {"op":"ping"}
 ```
@@ -169,7 +211,8 @@ PUT    /leverage                        {inst, leverage}
 | `book` | `{bids:[[p,q]...], asks:[...], ts}` | gateway 维护本地簿，推 top-N **全量快照**，100ms 节流 |
 | `trades` | `[{p,q,side,ts}]` | |
 | `candle` | `{t,o,h,l,c,v}` | |
-| `ticker` | `{mark,index,funding,nextFunding,oi,ts}` | |
+| `ticker` | `{mark,index,funding,fundingIntervalHours,fundingApr,nextFunding,oi,ts}` | 资费字段来自常驻资费数据集 |
+| `funding` | 资费记录（同 `/v1/funding`） | 订阅时先发当前值，之后有变化才推；不开新的交易所连接 |
 | `account.orders` | 单个订单的最新完整状态（可含 `rejectCode`、`rejectMessage`、`origin`: liquidation/adl/settlement） | upsert by orderId |
 | `account.fills` | 单笔成交 | |
 | `account.positions` | 该账户**全部持仓的完整列表** | 前端直接替换，无需合并 |
@@ -206,7 +249,7 @@ PUT    /leverage                        {inst, leverage}
 ```
 sdk/          各交易所原生 API
 exchange/     统一抽象（client、模型、目录、错误）
-gateway/      venue · market · hub · account · store · ratelimit · api
+gateway/      venue · market · hub · account · store · ratelimit · resident · funding · api
 trader/       登录、会话、反代、静态文件
 web/          前端（设计规范见 DESIGN.md）
 cmd/gateway   cmd/trader
@@ -214,4 +257,4 @@ cmd/gateway   cmd/trader
 
 ## 8. 暂不支持（按需加回）
 
-通知渠道（Telegram 等）、活动流 / 审计页、资金费率看板、组合 ledger / PnL 归因、mock 模式。
+通知渠道（Telegram 等）、活动流 / 审计页、组合 ledger / PnL 归因、mock 模式。

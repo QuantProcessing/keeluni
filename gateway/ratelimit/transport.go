@@ -61,6 +61,11 @@ func (transport *Transport) RoundTrip(request *http.Request) (*http.Response, er
 	if policy.Action == "cancel" {
 		reserve = 0
 	}
+	// Background collection may only use the first quarter of the window, so
+	// orders and interactive reads always keep three quarters.
+	if isBackground(request.Context()) {
+		reserve = limit - limit*BackgroundShare/100
+	}
 	charges := []Charge{{Key: venueKey, Cost: policy.Cost, Reserve: reserve}}
 	if err := transport.coordinator.Configure(venueKey, Quota{Limit: limit, Interval: time.Minute}); err != nil {
 		return nil, err
@@ -108,6 +113,24 @@ func (transport *Transport) RoundTrip(request *http.Request) (*http.Response, er
 		}
 	}
 	return response, err
+}
+
+// BackgroundShare is the percentage of a venue's request budget that
+// background (resident collection) requests may use.
+const BackgroundShare = 25
+
+type backgroundKey struct{}
+
+// Background marks requests made with ctx as resident collection: they are
+// admitted only while the venue's window is below BackgroundShare percent
+// used, and are refused rather than queued otherwise.
+func Background(ctx context.Context) context.Context {
+	return context.WithValue(ctx, backgroundKey{}, true)
+}
+
+func isBackground(ctx context.Context) bool {
+	background, _ := ctx.Value(backgroundKey{}).(bool)
+	return background
 }
 
 type principalKey struct{}
