@@ -132,6 +132,7 @@ var venueNames = map[exchange.Venue]string{
 	exchange.VenueBinance: "Binance", exchange.VenueOKX: "OKX", exchange.VenueBybit: "Bybit",
 	exchange.VenueBitget: "Bitget", exchange.VenueGate: "Gate", exchange.VenueHyperliquid: "Hyperliquid",
 	exchange.VenueLighter: "Lighter", exchange.VenueAster: "Aster", exchange.VenueNado: "Nado",
+	exchange.VenueCrossEx: "Gate CrossEx", exchange.VenueKraken: "Kraken", exchange.VenueDeribit: "Deribit",
 }
 
 func venueName(venue exchange.Venue) string {

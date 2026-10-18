@@ -115,7 +115,7 @@ func TestRuntimePushesFullPositionListFromSnapshotStreamAndFillRefresh(t *testin
 	perp := &fakePerp{socket: &fakeSocket{subscription: subscription}}
 	perp.setPositions(exchange.Position{NativeSymbol: "BTCUSDT", PositionSlot: exchange.PositionSlotNet, Quantity: decimal.RequireFromString("0.01"), EntryPrice: decimal.NewFromInt(60000)})
 
-	rt := newRuntime("acc_test", exchange.VenueBinance, []routeClient{{market: marketKey, perp: perp}}, catalog)
+	rt := newRuntime("acc_test", exchange.VenueBinance, []routeClient{{key: marketKey, markets: []venue.Market{marketKey}, perp: perp}}, catalog)
 	sink := &collector{}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

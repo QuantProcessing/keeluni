@@ -73,7 +73,7 @@ func PolicyForRequest(request *http.Request) HTTPPolicy {
 		if strings.HasPrefix(path, "/api/v5/trade/cancel-") {
 			policy.Action = "cancel"
 		}
-	case "gate":
+	case "gate", "crossex":
 		if request.Method == http.MethodPost && strings.HasSuffix(path, "/orders") {
 			policy.Action = "place"
 		}

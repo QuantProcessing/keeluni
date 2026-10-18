@@ -27,6 +27,7 @@ var defaultAuthKinds = map[string]AuthKind{
 	"hyperliquid": AuthEVMPrivateKey,
 	"aster":       AuthAsterAPIWallet,
 	"nado":        AuthNadoSigner,
+	"crossex":     AuthAPIKeySecret,
 }
 
 type Registry struct {

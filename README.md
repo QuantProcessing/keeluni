@@ -24,7 +24,9 @@ sdk        native venue APIs
   the gateway directly and own their own storage.
 
 Supported: Binance, OKX, Bybit, Bitget, Gate (spot + USDT perps; Bybit/Bitget also
-USDC perps), Hyperliquid and Lighter (spot + perps).
+USDC perps), Hyperliquid and Lighter (spot + perps). Gate CrossEx is a broker
+account: one margin pool trading Binance, OKX, Bybit, Gate, Hyperliquid, Lighter,
+Kraken and Deribit perps (design: [docs/crossex-design.md](docs/crossex-design.md)).
 
 API and security contract: [docs/gateway-api.md](docs/gateway-api.md).
 Exchange library: [docs/exchange/README.md](docs/exchange/README.md).

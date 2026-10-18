@@ -44,6 +44,8 @@ func NewServer(token []byte, catalog *market.Catalog, accounts *account.Manager,
 	m.HandleFunc("POST /v1/accounts", server.createAccount)
 	m.HandleFunc("DELETE /v1/accounts/{id}", server.deleteAccount)
 	m.HandleFunc("GET /v1/accounts/{id}/balances", server.balances)
+	m.HandleFunc("GET /v1/accounts/{id}/margin", server.margin)
+	m.HandleFunc("GET /v1/accounts/{id}/instruments", server.routes)
 	m.HandleFunc("GET /v1/accounts/{id}/positions", server.positions)
 	m.HandleFunc("GET /v1/accounts/{id}/orders", server.openOrders)
 	m.HandleFunc("GET /v1/accounts/{id}/orders/lookup", server.lookupOrder)
@@ -163,6 +165,17 @@ func (server *Server) deleteAccount(w http.ResponseWriter, r *http.Request) {
 func (server *Server) balances(w http.ResponseWriter, r *http.Request) {
 	balances, err := server.accounts.Balances(r.Context(), r.PathValue("id"))
 	server.respond(w, balances, err)
+}
+
+// margin returns the account's shared margin pool; null for accounts without one.
+func (server *Server) margin(w http.ResponseWriter, r *http.Request) {
+	margin, err := server.accounts.Margin(r.Context(), r.PathValue("id"))
+	server.respond(w, margin, err)
+}
+
+func (server *Server) routes(w http.ResponseWriter, r *http.Request) {
+	routes, err := server.accounts.Routes(r.Context(), r.PathValue("id"))
+	server.respond(w, routes, err)
 }
 
 func (server *Server) positions(w http.ResponseWriter, r *http.Request) {

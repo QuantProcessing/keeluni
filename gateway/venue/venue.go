@@ -4,6 +4,13 @@
 // A market is one (venue, product, settlement) route, e.g. Binance USDT
 // perpetuals. The list here is the entire supported surface; anything absent
 // stays reachable through the exchange package but is not served.
+//
+// Two kinds of market exist. A native market has a public connector of its
+// own (Binance perps through Binance's API). A brokered market exists only
+// through a broker (Kraken perps through Gate CrossEx): its instruments and
+// market data come from the broker. Accounts are a separate axis — see
+// Brokers — so a native market can be traded by a native account and by a
+// broker account alike.
 package venue
 
 import (
@@ -27,7 +34,7 @@ func (market Market) String() string {
 	return string(market.Venue) + ":" + string(market.Product) + ":" + market.Settlement
 }
 
-// Markets lists every served route in display order.
+// Markets lists every natively served route in display order.
 var Markets = []Market{
 	{exchange.VenueBinance, exchange.ProductPerp, "USDT"},
 	{exchange.VenueBinance, exchange.ProductSpot, ""},
@@ -47,7 +54,63 @@ var Markets = []Market{
 	{exchange.VenueLighter, exchange.ProductSpot, ""},
 }
 
-// Venues lists served venues in display order.
+// BrokeredMarkets lists routes served only through a broker. Their
+// instruments and market data come from the broker's public data; there is
+// no native connector. Binance USDT perps appear in both lists: crypto perps
+// are native, TradFi perps exist only on the broker.
+var BrokeredMarkets = []Market{
+	{exchange.VenueBinance, exchange.ProductPerp, "USDT"},
+	{exchange.VenueBinance, exchange.ProductPerp, "USDC"},
+	{exchange.VenueKraken, exchange.ProductPerp, "USD"},
+	{exchange.VenueDeribit, exchange.ProductPerp, "USDC"},
+}
+
+// Broker is an account venue that trades other venues' markets.
+type Broker struct {
+	Venue exchange.Venue
+	// Markets the broker's accounts trade. It covers native markets and the
+	// brokered ones.
+	Markets []Market
+}
+
+// Brokers lists the served brokers.
+var Brokers = []Broker{{
+	Venue: exchange.VenueCrossEx,
+	Markets: []Market{
+		{exchange.VenueBinance, exchange.ProductPerp, "USDT"},
+		{exchange.VenueBinance, exchange.ProductPerp, "USDC"},
+		{exchange.VenueOKX, exchange.ProductPerp, "USDT"},
+		{exchange.VenueBybit, exchange.ProductPerp, "USDT"},
+		{exchange.VenueBybit, exchange.ProductPerp, "USDC"},
+		{exchange.VenueGate, exchange.ProductPerp, "USDT"},
+		{exchange.VenueHyperliquid, exchange.ProductPerp, "USDC"},
+		{exchange.VenueLighter, exchange.ProductPerp, "USDC"},
+		{exchange.VenueKraken, exchange.ProductPerp, "USD"},
+		{exchange.VenueDeribit, exchange.ProductPerp, "USDC"},
+	},
+}}
+
+// BrokerOf returns the broker with venue, if any.
+func BrokerOf(venue exchange.Venue) (Broker, bool) {
+	for _, broker := range Brokers {
+		if broker.Venue == venue {
+			return broker, true
+		}
+	}
+	return Broker{}, false
+}
+
+// Reaches reports whether the broker trades market.
+func (broker Broker) Reaches(market Market) bool {
+	for _, reached := range broker.Markets {
+		if reached == market {
+			return true
+		}
+	}
+	return false
+}
+
+// Venues lists account venues in display order: native venues, then brokers.
 func Venues() []exchange.Venue {
 	seen := map[exchange.Venue]bool{}
 	var venues []exchange.Venue
@@ -57,11 +120,17 @@ func Venues() []exchange.Venue {
 			venues = append(venues, market.Venue)
 		}
 	}
+	for _, broker := range Brokers {
+		venues = append(venues, broker.Venue)
+	}
 	return venues
 }
 
-// MarketsOf returns the served routes of one venue.
+// MarketsOf returns the markets an account of venue trades.
 func MarketsOf(venue exchange.Venue) []Market {
+	if broker, ok := BrokerOf(venue); ok {
+		return append([]Market(nil), broker.Markets...)
+	}
 	var markets []Market
 	for _, market := range Markets {
 		if market.Venue == venue {
@@ -71,7 +140,7 @@ func MarketsOf(venue exchange.Venue) []Market {
 	return markets
 }
 
-// Supported reports whether venue is served.
+// Supported reports whether accounts of venue are served.
 func Supported(venue exchange.Venue) bool { return len(MarketsOf(venue)) > 0 }
 
 // InstrumentID is the gateway's public instrument identity:
@@ -82,6 +151,7 @@ func Supported(venue exchange.Venue) bool { return len(MarketsOf(venue)) > 0 }
 // carries the settlement asset for linear perpetuals. Builder-deployed
 // Hyperliquid perpetuals keep their dex prefix ("xyz:TSLA-USDC"), so the id
 // may contain more than two colons; only the first two are separators.
+// The venue is always the order book's venue, never a broker.
 type InstrumentID string
 
 func NewInstrumentID(venue exchange.Venue, product exchange.Product, symbol string) InstrumentID {
@@ -101,8 +171,9 @@ func (id InstrumentID) Parse() (exchange.Venue, exchange.Product, string, error)
 	return exchange.Venue(parts[0]), product, parts[2], nil
 }
 
-// MarketOf resolves the served route an instrument belongs to.
-func MarketOf(instrument exchange.Instrument) (Market, bool) {
+// MarketKey is the market an instrument belongs to, whether or not that
+// market is natively served.
+func MarketKey(instrument exchange.Instrument) Market {
 	identity := instrument.Identity
 	settlement := ""
 	if identity.Product == exchange.ProductPerp {
@@ -111,8 +182,14 @@ func MarketOf(instrument exchange.Instrument) (Market, bool) {
 			settlement = strings.ToUpper(identity.QuoteAsset)
 		}
 	}
+	return Market{Venue: identity.Venue, Product: identity.Product, Settlement: settlement}
+}
+
+// MarketOf resolves the natively served route an instrument belongs to.
+func MarketOf(instrument exchange.Instrument) (Market, bool) {
+	key := MarketKey(instrument)
 	for _, market := range Markets {
-		if market.Venue == identity.Venue && market.Product == identity.Product && market.Settlement == settlement {
+		if market == key {
 			return market, true
 		}
 	}

@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -87,6 +88,39 @@ func TestAccountErrors(t *testing.T) {
 		}
 		if strings.Contains(response.Body.String(), `"s"`) && strings.Contains(tc.body, "apiSecret") {
 			t.Errorf("response echoes credential material: %s", response.Body)
+		}
+	}
+}
+
+func TestVenuesListBrokerWithItsMarkets(t *testing.T) {
+	server := newTestServer(t)
+	response := do(server, "GET", "/v1/venues", token, "")
+	var venues []struct {
+		Venue   string   `json:"venue"`
+		Kind    string   `json:"kind"`
+		Markets []string `json:"markets"`
+		Fields  []struct {
+			Key string `json:"key"`
+		} `json:"fields"`
+	}
+	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &venues) != nil {
+		t.Fatalf("venues = %d %s", response.Code, response.Body)
+	}
+	var crossex, binance bool
+	for _, item := range venues {
+		switch item.Venue {
+		case "crossex":
+			crossex = item.Kind == "broker" && len(item.Fields) == 2 && strings.Contains(strings.Join(item.Markets, ","), "kraken:perp:USD")
+		case "binance":
+			binance = item.Kind == "native"
+		}
+	}
+	if !crossex || !binance {
+		t.Fatalf("venues = %+v", venues)
+	}
+	for _, path := range []string{"/v1/accounts/acc_missing/margin", "/v1/accounts/acc_missing/instruments"} {
+		if got := do(server, "GET", path, token, "").Code; got != 404 {
+			t.Fatalf("%s = %d", path, got)
 		}
 	}
 }
