@@ -18,7 +18,7 @@
 | D6 | 本需求不做对冲 app。 |
 | D7 | 只支持单向持仓 `SINGLE`。`DUAL` 账户接入时提示，下单在本地拒绝。 |
 | D8 | 不做跨账户持仓提示。 |
-| D9 | CrossEx 独有标的（约 840 个）作为后续独立需求。 |
+| D9 | CrossEx 独有标的纳入本需求，行情用 CrossEx 公共行情，作为普通行情源接入，不做特殊设计。紧接 P3 实施。例外：OKX USDC（240）行情为张且面值未知，暂不接入（见 §3）。 |
 
 ## 2. 概念
 
@@ -62,11 +62,23 @@ CrossEx 账户 client 的行情方法（`OrderBook`、`Candles`、`PublicTrades`
 
 | 项 | 原因 / 去向 |
 |---|---|
-| CrossEx 独有标的（Kraken 205、Deribit 142、Binance TradFi 217、Binance/OKX USDC 278，实测数） | 无原生行情来源，需要接入 CrossEx 公共 WS 作为行情源；后续需求 |
+| OKX USDC 合约（240） | CrossEx 行情按张推送（BTC 盘口 `2622`、成交 `q=1`），下单却用币，面值没有来源（CrossEx `contract_size` 为 null，OKX 公开 API 在本地网络不列出这些合约）。单位无法证明前不接入 |
 | 现货 `SPOT`、杠杆 `MARGIN` | 现货市价买入必须用 `quote_qty`；杠杆有借贷/利息模型。后续需求 |
 | 资金划转、闪兑 | 账户管理能力，后续需求 |
 | 股票 / ETF | D5 |
 | 分所模式、模式修改 | D3、D4 |
+
+### CrossEx 独有标的
+
+实测（2026-10-18）：
+
+| 来源 | 数量 | 单位 | 历史 | 实时 K 线 | 盘口 |
+|---|---|---|---|---|---|
+| Kraken | 205 | 币 | 无 | **无**（`Kraken does not support kline channel`） | 仅增量，首条快照、序号连续 |
+| Deribit | 142 | 币（与原生一致） | 无 | 有 | `order_book_20` |
+| Binance TradFi + USDC | 260 | 币 | 无 | 有 | `order_book_20`（增量流无快照，不可用） |
+
+这些标的的图表从打开时开始累积，不合成历史。
 
 ## 4. 标的映射（CrossEx symbol ↔ instrument id）
 
