@@ -1,0 +1,57 @@
+{
+ "jsonrpc": "2.0",
+ "result": {
+  "trades": [
+   {
+    "timestamp": 1792334635968,
+    "price": 81060.3,
+    "direction": "sell",
+    "index_price": 81032.84,
+    "instrument_name": "BTC_USDC-PERPETUAL",
+    "trade_seq": 19345408,
+    "amount": 0.1,
+    "mark_price": 81060.42,
+    "tick_direction": 3,
+    "starbase_match_id": 237586500940738560,
+    "trade_id": "USDC-80063481",
+    "contracts": 1000.0,
+    "starbase_timestamp": 1792334635968224693
+   },
+   {
+    "timestamp": 1792334635966,
+    "price": 81060.3,
+    "direction": "sell",
+    "index_price": 81032.84,
+    "instrument_name": "BTC_USDC-PERPETUAL",
+    "trade_seq": 19345407,
+    "amount": 0.1,
+    "mark_price": 81060.42,
+    "tick_direction": 3,
+    "starbase_match_id": 237586500932349953,
+    "trade_id": "USDC-80063480",
+    "contracts": 1000.0,
+    "starbase_timestamp": 1792334635966477676
+   },
+   {
+    "timestamp": 1792334635966,
+    "price": 81060.3,
+    "direction": "sell",
+    "index_price": 81032.84,
+    "instrument_name": "BTC_USDC-PERPETUAL",
+    "trade_seq": 19345406,
+    "amount": 0.1,
+    "mark_price": 81060.42,
+    "tick_direction": 3,
+    "starbase_match_id": 237586500932349952,
+    "trade_id": "USDC-80063479",
+    "contracts": 1000.0,
+    "starbase_timestamp": 1792334635966395305
+   }
+  ],
+  "has_more": true
+ },
+ "usIn": 1792334637581941,
+ "usOut": 1792334637582275,
+ "usDiff": 334,
+ "testnet": false
+}
