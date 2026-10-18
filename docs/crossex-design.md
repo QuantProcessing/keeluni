@@ -30,8 +30,25 @@
 | Margin pool | 盈亏在哪里互抵、在哪里一起被强平 | 每个账户（市场）各自独立 | 一个账户一个共享池 |
 
 行情（盘口、K 线、成交、资金费率、标记价）只属于 instrument，与账户无关。CrossEx 订单
-真实进入底层交易所订单簿（交易所拒单原文透传、交易所维护时无法下单可证），所以继续使用
-现有原生公共行情连接，不经 CrossEx。
+真实进入底层交易所订单簿（交易所拒单原文透传、交易所维护时无法下单可证）。
+
+行情来源按 instrument 选，不按账户选：
+
+- 已有原生行情的标的（v1 全部）：继续用原生公共行情。
+- CrossEx 独有标的（D9，后续）：把 CrossEx 公共 WS 当作普通行情源接入，不做特殊设计。
+
+2026-10-18 实测 CrossEx 公共 WS（`wss://api.gateio.ws/ws/crossex/public`，免鉴权），这是 v1 仍用原生行情的原因：
+
+| 项 | 实测 |
+|---|---|
+| 覆盖 | 8 个交易所；`order_book_x`、`order_book_update`、`trade`、`kline_x`、`funding_rate`、`mark_price` 均有推送 |
+| 数量单位 | **交易所原生单位透传**：OKX、Gate 为张（OKX BTC 买一 974.48 与原生张数一致），Binance、Hyperliquid 为币。下单却用币，且 `rule/symbols` 不给面值（`contract_size: null`） |
+| 快照深度 | 各所上限不同：OKX ≤ 5 档、Bybit 1 档、Kraken 不支持快照 |
+| 增量盘口 | 序列号语义各异（Bybit `u=-1`，Hyperliquid 每条都是快照），且无 REST 快照可用于重同步 |
+| 历史 | **无**。REST 只有 `market/tickers`、`market/funding_info`，需签名、限频 1 次/秒；没有 K 线与资金费率历史 |
+
+CrossEx 账户 client 的行情方法（`OrderBook`、`Candles`、`PublicTrades`、行情 Watch、资金费率）
+返回 `exchange.ErrUnsupported`：gateway 从不经账户 client 取行情，这是现有的方法级例外机制。
 
 ## 3. 范围
 
