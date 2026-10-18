@@ -21,7 +21,11 @@ import (
 // CrossEx documents per-user limits per 10 seconds: orders and cancels 100,
 // reads 200. One CrossEx key trades every reached venue, so this is one budget
 // for all of them: 600 per minute keeps under the order limit.
-var localUnitsPerMinute = map[string]int{"binance": 1200, "aster": 1200, "bybit": 1200, "bitget": 600, "okx": 600, "gate": 600, "hyperliquid": 1200, "lighter": 300, "nado": 300, "crossex": 600}
+//
+// Kraken Futures allows 500 cost units per 10 seconds on /derivatives (an
+// order costs 10, a read 1-3); Deribit grants new accounts about 20 non-
+// matching and 5 matching requests per second. Both budgets stay well inside.
+var localUnitsPerMinute = map[string]int{"binance": 1200, "aster": 1200, "bybit": 1200, "bitget": 600, "okx": 600, "gate": 600, "hyperliquid": 1200, "lighter": 300, "nado": 300, "crossex": 600, "kraken": 1200, "deribit": 600}
 
 type Transport struct {
 	coordinator *Coordinator

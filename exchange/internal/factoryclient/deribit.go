@@ -125,13 +125,37 @@ func deribitRESTLevels(rows [][2]jsonNumber) []exchange.BookLevel {
 }
 
 // deribitResolutions maps portable intervals onto Deribit chart
-// resolutions. Deribit has no 4h bar; 4h is not offered.
+// resolutions. Deribit has no 4h bar: 4h candles are built from hourly ones
+// (source is the bar fetched, step the bar returned).
 var deribitResolutions = map[string]struct {
 	resolution string
+	source     time.Duration
 	step       time.Duration
 }{
-	"1m": {"1", time.Minute}, "5m": {"5", 5 * time.Minute}, "15m": {"15", 15 * time.Minute}, "30m": {"30", 30 * time.Minute},
-	"1h": {"60", time.Hour}, "12h": {"720", 12 * time.Hour}, "1d": {"1D", 24 * time.Hour},
+	"1m": {"1", time.Minute, time.Minute}, "5m": {"5", 5 * time.Minute, 5 * time.Minute}, "15m": {"15", 15 * time.Minute, 15 * time.Minute},
+	"30m": {"30", 30 * time.Minute, 30 * time.Minute}, "1h": {"60", time.Hour, time.Hour}, "4h": {"60", time.Hour, 4 * time.Hour},
+	"12h": {"720", 12 * time.Hour, 12 * time.Hour}, "1d": {"1D", 24 * time.Hour, 24 * time.Hour},
+}
+
+// deribitAggregate folds source bars into step bars aligned to UTC multiples
+// of step. A bar is complete once every source bar in it closed.
+func deribitAggregate(bars []exchange.Candle, step time.Duration) []exchange.Candle {
+	var out []exchange.Candle
+	for _, bar := range bars {
+		open := bar.OpenTime.Truncate(step)
+		if len(out) == 0 || !out[len(out)-1].OpenTime.Equal(open) {
+			out = append(out, exchange.Candle{OpenTime: open, CloseTime: open.Add(step), Open: bar.Open, High: bar.High, Low: bar.Low, Close: bar.Close, Volume: bar.Volume})
+		} else {
+			current := &out[len(out)-1]
+			current.High, current.Low = decimal.Max(current.High, bar.High), decimal.Min(current.Low, bar.Low)
+			current.Close, current.Volume = bar.Close, current.Volume.Add(bar.Volume)
+		}
+	}
+	now := time.Now()
+	for index := range out {
+		out[index].Complete = !out[index].CloseTime.After(now)
+	}
+	return out
 }
 
 func (client *deribitPerpClient) Candles(ctx context.Context, request exchange.CandlesRequest) (exchange.CandlePage, error) {
@@ -159,7 +183,9 @@ func (client *deribitPerpClient) Candles(ctx context.Context, request exchange.C
 	if start.IsZero() {
 		start = end.Add(-time.Duration(limit) * spec.step)
 	}
-	chart, err := client.sdk.Chart(ctx, native, spec.resolution, start.UnixMilli(), end.UnixMilli())
+	// Whole aggregated bars: fetch from the start of the first one.
+	fetchStart := start.Truncate(spec.step)
+	chart, err := client.sdk.Chart(ctx, native, spec.resolution, fetchStart.UnixMilli(), end.UnixMilli())
 	if err != nil {
 		return exchange.CandlePage{}, deribitNormalizeErr(client.meta, "Candles", err)
 	}
@@ -168,16 +194,23 @@ func (client *deribitPerpClient) Candles(ctx context.Context, request exchange.C
 		return exchange.CandlePage{}, deribitMalformed(client.meta, "Candles", "deribit chart columns differ in length")
 	}
 	now := time.Now()
-	candles := make([]exchange.Candle, 0, len(chart.Ticks))
+	bars := make([]exchange.Candle, 0, len(chart.Ticks))
 	for index, tick := range chart.Ticks {
 		open := time.UnixMilli(tick).UTC()
-		if !withinHalfOpen(open, start, end.Add(time.Nanosecond)) {
-			continue
-		}
-		closeTime := open.Add(spec.step)
-		candles = append(candles, exchange.Candle{OpenTime: open, CloseTime: closeTime,
+		closeTime := open.Add(spec.source)
+		bars = append(bars, exchange.Candle{OpenTime: open, CloseTime: closeTime,
 			Open: numberDecimal(chart.Open[index]), High: numberDecimal(chart.High[index]), Low: numberDecimal(chart.Low[index]),
 			Close: numberDecimal(chart.Close[index]), Volume: numberDecimal(chart.Volume[index]), Complete: !closeTime.After(now)})
+	}
+	sort.Slice(bars, func(i, j int) bool { return bars[i].OpenTime.Before(bars[j].OpenTime) })
+	if spec.step != spec.source {
+		bars = deribitAggregate(bars, spec.step)
+	}
+	candles := make([]exchange.Candle, 0, len(bars))
+	for _, bar := range bars {
+		if withinHalfOpen(bar.OpenTime, start.Truncate(spec.step), end.Add(time.Nanosecond)) {
+			candles = append(candles, bar)
+		}
 	}
 	if len(candles) > limit {
 		candles = candles[len(candles)-limit:]

@@ -438,8 +438,15 @@ func krakenWSPosition(row kraken.WSPosition) exchange.Position {
 	return position
 }
 
-func (backend *krakenWSBackend) StartAccountEvents(ctx context.Context, _ accountInstrumentIndex, callbacks accountEventCallbacks) (func() error, error) {
-	return backend.private(ctx, func(status backendStatus) { callbacks.Status(accountStreamStatus(backend.meta(), status)) }, callbacks.Error, callbacks.Event)
+// StartAccountEvents streams the account. The account also holds inverse
+// and dated contracts the gateway does not serve; their events are dropped
+// here rather than failing the stream.
+func (backend *krakenWSBackend) StartAccountEvents(ctx context.Context, index accountInstrumentIndex, callbacks accountEventCallbacks) (func() error, error) {
+	return backend.private(ctx, func(status backendStatus) { callbacks.Status(accountStreamStatus(backend.meta(), status)) }, callbacks.Error, func(event accountBackendEvent) {
+		if servedAccountEvent(index, event) {
+			callbacks.Event(event)
+		}
+	})
 }
 
 // Per-instrument private watches filter the account stream.

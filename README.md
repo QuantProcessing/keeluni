@@ -23,10 +23,11 @@ sdk        native venue APIs
 - **trader/** is the manual-trading app. Other apps (hedging, arbitrage) talk to
   the gateway directly and own their own storage.
 
-Supported: Binance, OKX, Bybit, Bitget, Gate (spot + USDT perps; Bybit/Bitget also
-USDC perps), Hyperliquid and Lighter (spot + perps). Gate CrossEx is a broker
-account: one margin pool trading Binance, OKX, Bybit, Gate, Hyperliquid, Lighter,
-Kraken and Deribit perps (design: [docs/crossex-design.md](docs/crossex-design.md)).
+Supported: Binance, OKX, Bybit, Bitget, Gate (spot + USDT perps; Binance/Bybit/Bitget
+also USDC perps), Hyperliquid and Lighter (spot + perps), Kraken Futures (USD perps) and
+Deribit (USDC perps). Gate CrossEx is a broker account: one margin pool trading Binance,
+OKX, Bybit, Gate, Hyperliquid, Lighter, Kraken and Deribit perps
+(design: [docs/crossex-design.md](docs/crossex-design.md)).
 
 API and security contract: [docs/gateway-api.md](docs/gateway-api.md).
 Exchange library: [docs/exchange/README.md](docs/exchange/README.md).

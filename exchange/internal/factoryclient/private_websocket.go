@@ -133,6 +133,17 @@ func (index accountInstrumentIndex) instruments() []exchange.AccountInstrument {
 	return items
 }
 
+// servedAccountEvent reports an event for an indexed instrument, or an
+// account-level one. Adapters whose account spans contracts the index does
+// not cover drop the rest before projection.
+func servedAccountEvent(index accountInstrumentIndex, event accountBackendEvent) bool {
+	if event.Kind == exchange.AccountEventBalance {
+		return true
+	}
+	_, ok := index.resolve(event.NativeSymbol, event.NativeID)
+	return ok
+}
+
 func projectAccountBackendEvent(route exchange.AccountRoute, index accountInstrumentIndex, event accountBackendEvent) ([]exchange.AccountEvent, error) {
 	switch event.Kind {
 	case exchange.AccountEventOrder:

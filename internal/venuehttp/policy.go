@@ -73,6 +73,21 @@ func PolicyForRequest(request *http.Request) HTTPPolicy {
 		if strings.HasPrefix(path, "/api/v5/trade/cancel-") {
 			policy.Action = "cancel"
 		}
+	case "kraken":
+		if strings.HasSuffix(path, "/sendorder") {
+			policy.Action, policy.Cost = "place", 10
+		}
+		if strings.HasSuffix(path, "/cancelorder") {
+			policy.Action, policy.Cost = "cancel", 10
+		}
+	case "deribit":
+		// JSON-RPC over GET: the method is the path.
+		switch {
+		case strings.HasSuffix(path, "/private/buy"), strings.HasSuffix(path, "/private/sell"):
+			policy.Action = "place"
+		case strings.HasSuffix(path, "/private/cancel"):
+			policy.Action = "cancel"
+		}
 	case "gate", "crossex":
 		if request.Method == http.MethodPost && strings.HasSuffix(path, "/orders") {
 			policy.Action = "place"

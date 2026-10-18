@@ -41,57 +41,39 @@ func TestRunStopsWithContext(t *testing.T) {
 	}
 }
 
-func crossExOnlyInstrument(v exchange.Venue, symbol, base, settle, native string) exchange.Instrument {
-	instrument := exchange.Instrument{
+func perp(v exchange.Venue, symbol, base, settle, native string) exchange.Instrument {
+	return exchange.Instrument{
 		Identity: exchange.InstrumentIdentity{Venue: v, Product: exchange.ProductPerp, Symbol: symbol, BaseAsset: base, QuoteAsset: settle, SettleAsset: settle, NativeSymbol: native},
 		Rules:    exchange.InstrumentRules{PriceIncrement: decimal.RequireFromString("0.5"), QuantityIncrement: decimal.RequireFromString("0.0001"), MinQuantity: decimal.RequireFromString("0.0001")},
 	}
-	instrument.Metadata.ClassificationSource = "crossex"
-	return instrument
 }
 
-func TestBrokeredInstrumentsAreListedAndNativeWins(t *testing.T) {
-	nativeBTC := exchange.Instrument{
-		Identity: exchange.InstrumentIdentity{Venue: exchange.VenueBinance, Product: exchange.ProductPerp, Symbol: "BTC-USDT",
-			BaseAsset: "BTC", QuoteAsset: "USDT", SettleAsset: "USDT", NativeSymbol: "BTCUSDT"},
-		Rules: exchange.InstrumentRules{PriceIncrement: decimal.RequireFromString("0.1"), QuantityIncrement: decimal.RequireFromString("0.001"), MinQuantity: decimal.RequireFromString("0.001")},
-	}
+// Kraken, Deribit and Binance USDC perps are native markets: each lists its
+// own instruments, and the venue's asset class is published.
+func TestEveryPerpMarketIsNative(t *testing.T) {
+	aapl := perp(exchange.VenueDeribit, "AAPL-USDC", "AAPL", "USDC", "AAPL_USDC-PERPETUAL")
+	aapl.Metadata.AssetClass = exchange.AssetClassEquity
 	catalog := NewStaticCatalog([]exchange.Instrument{
-		nativeBTC,
-		crossExOnlyInstrument(exchange.VenueKraken, "BTC-USD", "BTC", "USD", "KRAKEN_FUTURE_BTC_USD"),
-		crossExOnlyInstrument(exchange.VenueBinance, "AMZN-USDT", "AMZN", "USDT", "BINANCE_FUTURE_AMZN_USDT"),
+		perp(exchange.VenueBinance, "BTC-USDT", "BTC", "USDT", "BTCUSDT"),
+		perp(exchange.VenueBinance, "BTC-USDC", "BTC", "USDC", "BTCUSDC"),
+		perp(exchange.VenueKraken, "BTC-USD", "BTC", "USD", "PF_XBTUSD"),
+		aapl,
 	})
-	kraken, err := catalog.Get("kraken:perp:BTC-USD")
-	if err != nil || !kraken.Brokered() || kraken.Source != "crossex" {
-		t.Fatalf("kraken = %+v, %v", kraken, err)
-	}
-	native, _ := catalog.Get("binance:perp:BTC-USDT")
-	if native.Brokered() || native.Source != "" {
-		t.Fatalf("native = %+v", native)
-	}
-	binance := catalog.List(exchange.VenueBinance, exchange.ProductPerp)
-	if len(binance) != 2 {
-		t.Fatalf("binance perps = %d", len(binance))
-	}
-	if len(catalog.List(exchange.VenueKraken, "")) != 1 {
-		t.Fatal("kraken not listed")
-	}
-
-	// A broker instrument with a native id never replaces the native one.
-	catalog.publishBrokered(venue.Market{Venue: exchange.VenueBinance, Product: exchange.ProductPerp, Settlement: "USDT"}, []exchange.Instrument{
-		crossExOnlyInstrument(exchange.VenueBinance, "BTC-USDT", "BTC", "USDT", "BINANCE_FUTURE_BTC_USDT"),
-	})
-	if again, _ := catalog.Get("binance:perp:BTC-USDT"); again.Brokered() {
-		t.Fatal("broker instrument displaced the native one")
-	}
-	// A venue that lists an instrument natively takes it over.
-	listed := crossExOnlyInstrument(exchange.VenueBinance, "AMZN-USDT", "AMZN", "USDT", "AMZNUSDT")
-	listed.Metadata.ClassificationSource = ""
-	catalog.publish(venue.Market{Venue: exchange.VenueBinance, Product: exchange.ProductPerp, Settlement: "USDT"}, []exchange.Instrument{nativeBTC, listed})
-	if amzn, _ := catalog.Get("binance:perp:AMZN-USDT"); amzn.Brokered() {
-		t.Fatal("natively listed instrument still served by the broker")
+	for _, id := range []venue.InstrumentID{"binance:perp:BTC-USDT", "binance:perp:BTC-USDC", "kraken:perp:BTC-USD", "deribit:perp:AAPL-USDC"} {
+		if _, err := catalog.Get(id); err != nil {
+			t.Fatalf("%s: %v", id, err)
+		}
 	}
 	if got := len(catalog.List(exchange.VenueBinance, exchange.ProductPerp)); got != 2 {
-		t.Fatalf("binance perps after takeover = %d", got)
+		t.Fatalf("binance perps = %d", got)
+	}
+	if listed, _ := catalog.Get("deribit:perp:AAPL-USDC"); listed.AssetClass != "equity" {
+		t.Fatalf("asset class = %q", listed.AssetClass)
+	}
+	if listed, _ := catalog.Get("kraken:perp:BTC-USD"); listed.AssetClass != "" {
+		t.Fatalf("unknown asset class published as %q", listed.AssetClass)
+	}
+	if found, ok := catalog.ResolveNative(venue.Market{Venue: exchange.VenueKraken, Product: exchange.ProductPerp, Settlement: "USD"}, "PF_XBTUSD", ""); !ok || found.ID != "kraken:perp:BTC-USD" {
+		t.Fatalf("resolve native = %+v %v", found, ok)
 	}
 }

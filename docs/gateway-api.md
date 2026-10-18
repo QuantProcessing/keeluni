@@ -47,10 +47,10 @@ instrument id 永远是**订单簿所在交易所**的 id：经 CrossEx 交易 B
 `binance:perp:BTC-USDT`，与原生 Binance 账户交易的是同一个标的。账户决定"用谁的钱、走哪条通道"，
 标的决定"哪个订单簿"。
 
-只能经 CrossEx 交易的标的（Kraken、Deribit、Binance TradFi / USDC 永续）也用订单簿交易所命名，
-如 `kraken:perp:BTC-USD`；`GET /v1/instruments` 中它们带 `"source":"crossex"`：行情来自 CrossEx
-公共流，**没有历史**（K 线、盘口 REST 返回 501），Kraken 无 K 线、盘口仅一档（来自 ticker）。
-原生账户不能交易这类标的。
+行情永远来自订单簿所在交易所的原生接口，与用哪个账户交易无关。Kraken（USD 永续）、
+Deribit（USDC 永续）与 Binance（USDC 永续、TradFi 永续）都是原生市场：可用原生账户交易，
+CrossEx 支持的也可经 CrossEx 交易。`GET /v1/instruments` 带交易所给出的 `assetClass`
+（`crypto` / `equity` / `commodity` / `fx` / `pre_ipo` ...，未知时省略）。
 
 **clientOrderId**：调用方生成，十进制 uint48（`exchange` 层既有约束，各适配器已负责映射到
 交易所原生格式，如 Hyperliquid cloid）。推荐生成方式：

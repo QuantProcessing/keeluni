@@ -143,7 +143,8 @@ instruments":
   One account stream carries events for every reachable venue.
 - Market data is read from the instrument's own venue. The brokered client's
   market methods return `exchange.ErrUnsupported`: CrossEx publishes no
-  history and forwards each venue's native size units.
+  history and forwards each venue's native size units. Every reachable market
+  has a native client, so every CrossEx instrument maps onto a native one.
 - Order acknowledgements are `AckAcceptedPending`: CrossEx accepts
   asynchronously and the order may still be refused by CrossEx risk checks or
   by the exchange. The private stream reports the outcome.

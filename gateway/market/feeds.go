@@ -83,10 +83,6 @@ func (feeds *Feeds) ValidKey(key hub.Key) error {
 		if !validInterval(key.Interval) {
 			return fmt.Errorf("unsupported candle interval")
 		}
-		if instrument.Brokered() && (key.Interval == "12h" || instrument.Venue == exchange.VenueKraken) {
-			// CrossEx streams no Kraken candles and no 12h interval.
-			return fmt.Errorf("candles are unavailable for this instrument and interval")
-		}
 		return nil
 	case ChannelTicker:
 		if instrument.Product != exchange.ProductPerp {
@@ -385,18 +381,6 @@ func (catalog *Catalog) Stats(ctx context.Context, id venue.InstrumentID) (Stats
 	instrument, client, err := catalog.connector(id)
 	if err != nil {
 		return Stats24h{}, err
-	}
-	// Without candle history (CrossEx-only instruments) the live ticker
-	// carries the 24-hour figures.
-	waitCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	ticker, live, err := client.Ticker24h(waitCtx, instrument.Native())
-	cancel()
-	if live {
-		if err != nil {
-			return Stats24h{}, err
-		}
-		return Stats24h{Last: ticker.Last.String(), Open24h: ticker.Open.String(), High24h: ticker.High.String(),
-			Low24h: ticker.Low.String(), Volume24h: ticker.Volume.String()}, nil
 	}
 	now := time.Now().UTC()
 	page, err := client.Candles(ctx, exchange.CandlesRequest{Instrument: instrument.Native(), Interval: "1h", Start: now.Add(-24 * time.Hour), End: now, Limit: 25})

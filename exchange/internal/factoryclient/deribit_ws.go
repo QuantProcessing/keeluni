@@ -165,17 +165,29 @@ func (backend *deribitWSBackend) StartCandles(ctx context.Context, instrument ex
 	if err != nil {
 		return nil, err
 	}
+	// For built intervals the stream keeps the source bars of the current
+	// aggregated bar; a bar from an earlier period starts a new one.
+	var bucket []exchange.Candle
 	return backend.public(ctx, "chart.trades."+native+"."+spec.resolution, callbacks.Status, func(data json.RawMessage) error {
 		var candle deribit.ChartCandle
 		if deribit.Decode(data, &candle) != nil {
 			return fmt.Errorf("deribit candle message is malformed")
 		}
 		open := krakenMillis(candle.Tick)
-		closeTime := open.Add(spec.step)
-		callbacks.Event(exchange.CandleEvent{Instrument: instrument, Interval: interval, Candle: exchange.Candle{
-			OpenTime: open, CloseTime: closeTime, Open: numberDecimal(candle.Open), High: numberDecimal(candle.High), Low: numberDecimal(candle.Low),
-			Close: numberDecimal(candle.Close), Volume: numberDecimal(candle.Volume), Complete: !closeTime.After(time.Now()),
-		}})
+		bar := exchange.Candle{OpenTime: open, CloseTime: open.Add(spec.source), Open: numberDecimal(candle.Open), High: numberDecimal(candle.High),
+			Low: numberDecimal(candle.Low), Close: numberDecimal(candle.Close), Volume: numberDecimal(candle.Volume), Complete: !open.Add(spec.source).After(time.Now())}
+		if spec.step != spec.source {
+			if len(bucket) > 0 && !bucket[0].OpenTime.Truncate(spec.step).Equal(open.Truncate(spec.step)) {
+				bucket = bucket[:0]
+			}
+			if len(bucket) > 0 && bucket[len(bucket)-1].OpenTime.Equal(open) {
+				bucket[len(bucket)-1] = bar
+			} else {
+				bucket = append(bucket, bar)
+			}
+			bar = deribitAggregate(bucket, spec.step)[0]
+		}
+		callbacks.Event(exchange.CandleEvent{Instrument: instrument, Interval: interval, Candle: bar})
 		return nil
 	})
 }
@@ -285,14 +297,13 @@ func (backend *deribitWSBackend) private(ctx context.Context, status func(backen
 	})
 }
 
-func (backend *deribitWSBackend) StartAccountEvents(ctx context.Context, _ accountInstrumentIndex, callbacks accountEventCallbacks) (func() error, error) {
+// StartAccountEvents streams the account. Options, dated and inverse
+// futures share it; only indexed USDC linear perps are routed.
+func (backend *deribitWSBackend) StartAccountEvents(ctx context.Context, index accountInstrumentIndex, callbacks accountEventCallbacks) (func() error, error) {
 	return backend.private(ctx, func(status backendStatus) { callbacks.Status(accountStreamStatus(backend.meta(), status)) }, callbacks.Error, func(event accountBackendEvent) {
-		// Options and inverse futures share the account; only USDC linear
-		// perps are routed.
-		if event.Kind != exchange.AccountEventBalance && !deribitServed(event.NativeSymbol) {
-			return
+		if servedAccountEvent(index, event) {
+			callbacks.Event(event)
 		}
-		callbacks.Event(event)
 	})
 }
 

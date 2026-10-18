@@ -92,7 +92,11 @@ func buildClients(accountID string, decoded *credential.Decoded, httpClient *htt
 
 	var clients []routeClient
 	for _, market := range venue.MarketsOf(exchange.Venue(decoded.Venue)) {
-		client := routeClient{key: market, markets: []venue.Market{market}}
+		if shared, ok := sharedAccountMarkets[market]; ok && shared != market {
+			// Traded by the client of the market that owns the account.
+			continue
+		}
+		client := routeClient{key: market, markets: append([]venue.Market{market}, sharedWith(market)...)}
 		var err error
 		switch credentials := decoded.Credentials.(type) {
 		case *credential.APIKeySecret:
@@ -102,6 +106,10 @@ func buildClients(accountID string, decoded *credential.Decoded, httpClient *htt
 				client.spot, err = factory.New(factory.BinanceSpotConfig(key, secret, options...))
 			case "binance:perp:USDT":
 				client.perp, err = factory.New(factory.BinanceUSDPerpConfig(key, secret, options...))
+			case "kraken:perp:USD":
+				client.perp, err = factory.New(factory.KrakenPerpConfig(key, secret, options...))
+			case "deribit:perp:USDC":
+				client.perp, err = factory.New(factory.DeribitPerpConfig(key, secret, options...))
 			case "bybit:spot":
 				client.spot, err = factory.New(factory.BybitSpotConfig(key, secret, options...))
 			case "bybit:perp:USDT":
@@ -163,6 +171,23 @@ func buildClients(accountID string, decoded *credential.Decoded, httpClient *htt
 	return clients, nil
 }
 
+// sharedAccountMarkets maps a market to the market whose client trades it,
+// for markets that are one venue account: Binance USDT and USDC perps share
+// the USD-M account, its balances and its private stream.
+var sharedAccountMarkets = map[venue.Market]venue.Market{
+	{Venue: exchange.VenueBinance, Product: exchange.ProductPerp, Settlement: "USDC"}: {Venue: exchange.VenueBinance, Product: exchange.ProductPerp, Settlement: "USDT"},
+}
+
+func sharedWith(owner venue.Market) []venue.Market {
+	var out []venue.Market
+	for market, shared := range sharedAccountMarkets {
+		if shared == owner && market != owner {
+			out = append(out, market)
+		}
+	}
+	return out
+}
+
 // brokerNatives supplies the broker client with the native instruments of the
 // markets it reaches, from the gateway's own catalog.
 func brokerNatives(catalog *market.Catalog, broker venue.Broker) factory.NativeInstrumentSource {
@@ -170,9 +195,7 @@ func brokerNatives(catalog *market.Catalog, broker venue.Broker) factory.NativeI
 		var natives []exchange.Instrument
 		for _, reached := range broker.Markets {
 			for _, instrument := range catalog.MarketInstruments(reached) {
-				if !instrument.Brokered() {
-					natives = append(natives, instrument.Native())
-				}
+				natives = append(natives, instrument.Native())
 			}
 		}
 		return natives, nil

@@ -102,15 +102,15 @@ func perpInstrument(venueName exchange.Venue, symbol, base, settle, native, step
 func brokerFixture(t *testing.T) (*runtime, *fakeBroker, *fakeSubscription, *market.Catalog) {
 	t.Helper()
 	nativeBTC := perpInstrument(exchange.VenueBinance, "BTC-USDT", "BTC", "USDT", "BTCUSDT", "0.01")
-	krakenOnly := perpInstrument(exchange.VenueKraken, "BTC-USD", "BTC", "USD", "KRAKEN_FUTURE_BTC_USD", "0.0001")
-	krakenOnly.Metadata.ClassificationSource = "crossex"
-	catalog := market.NewStaticCatalog([]exchange.Instrument{nativeBTC, krakenOnly})
+	nativeKraken := perpInstrument(exchange.VenueKraken, "BTC-USD", "BTC", "USD", "PF_XBTUSD", "0.0001")
+	catalog := market.NewStaticCatalog([]exchange.Instrument{nativeBTC, nativeKraken})
 
 	// The broker's view: the same identities, its own symbols and rules.
 	brokerBTC := perpInstrument(exchange.VenueBinance, "BTC-USDT", "BTC", "USDT", "BINANCE_FUTURE_BTC_USDT", "0.001")
 	brokerBTC.Rules.MinNotional = exchange.OptionalDecimal{Value: decimal.NewFromInt(50), Valid: true}
+	brokerKraken := perpInstrument(exchange.VenueKraken, "BTC-USD", "BTC", "USD", "KRAKEN_FUTURE_BTC_USD", "0.0001")
 	subscription := newFakeSubscription()
-	broker := &fakeBroker{instruments: []exchange.Instrument{brokerBTC, krakenOnly}}
+	broker := &fakeBroker{instruments: []exchange.Instrument{brokerBTC, brokerKraken}}
 	broker.socket = &fakeBrokerSocket{broker: broker, subscription: subscription}
 
 	crossex, _ := venue.BrokerOf(exchange.VenueCrossEx)
@@ -119,7 +119,7 @@ func brokerFixture(t *testing.T) (*runtime, *fakeBroker, *fakeSubscription, *mar
 	return rt, broker, subscription, catalog
 }
 
-func TestBrokerAccountTradesNativeAndBrokerOnlyInstrumentsWithBrokerRules(t *testing.T) {
+func TestBrokerAccountTradesEveryReachedVenueWithBrokerRules(t *testing.T) {
 	rt, broker, _, catalog := brokerFixture(t)
 	ctx := context.Background()
 	btc, _ := catalog.Get("binance:perp:BTC-USDT")
@@ -140,7 +140,7 @@ func TestBrokerAccountTradesNativeAndBrokerOnlyInstrumentsWithBrokerRules(t *tes
 	broker.mu.Lock()
 	sent := append([]exchange.PlaceOrderRequest(nil), broker.placed...)
 	broker.mu.Unlock()
-	if len(sent) != 2 || sent[0].Instrument.Identity.NativeSymbol != "BINANCE_FUTURE_BTC_USDT" || sent[1].Instrument.Identity.Venue != exchange.VenueKraken {
+	if len(sent) != 2 || sent[0].Instrument.Identity.NativeSymbol != "BINANCE_FUTURE_BTC_USDT" || sent[1].Instrument.Identity.NativeSymbol != "KRAKEN_FUTURE_BTC_USD" {
 		t.Fatalf("sent = %+v", sent)
 	}
 
@@ -157,13 +157,13 @@ func TestBrokerAccountTradesNativeAndBrokerOnlyInstrumentsWithBrokerRules(t *tes
 	}
 }
 
-func TestNativeAccountCannotTradeBrokerOnlyInstruments(t *testing.T) {
+func TestNativeAccountTradesOnlyItsOwnVenue(t *testing.T) {
 	_, _, _, catalog := brokerFixture(t)
 	key := venue.Market{Venue: exchange.VenueBinance, Product: exchange.ProductPerp, Settlement: "USDT"}
 	native := newRuntime("acc_bn", exchange.VenueBinance, []routeClient{{key: key, markets: []venue.Market{key}, perp: &fakePerp{}}}, catalog)
 	kraken, _ := catalog.Get("kraken:perp:BTC-USD")
 	if _, err := native.clientFor(kraken); err == nil {
-		t.Fatal("native account accepted a broker-only instrument")
+		t.Fatal("a Binance account accepted a Kraken instrument")
 	}
 	btc, _ := catalog.Get("binance:perp:BTC-USDT")
 	if _, err := native.clientFor(btc); err != nil {

@@ -76,18 +76,13 @@ func (rt *runtime) client(key venue.Market) (routeClient, bool) {
 	return routeClient{}, false
 }
 
-// clientFor returns the client that trades instrument. Brokered instruments
-// (no native client) are traded only by a broker account.
+// clientFor returns the client that trades instrument.
 func (rt *runtime) clientFor(instrument market.Instrument) (routeClient, error) {
 	owner := venue.MarketKey(instrument.Native())
 	for _, client := range rt.clients {
-		if !client.trades(owner) {
-			continue
+		if client.trades(owner) {
+			return client, nil
 		}
-		if instrument.Brokered() && !client.broker {
-			continue
-		}
-		return client, nil
 	}
 	return routeClient{}, fmt.Errorf("%w: instrument %s is not tradable by this account", ErrInvalidRequest, instrument.ID)
 }
@@ -435,12 +430,7 @@ func (rt *runtime) streamMarket(ctx context.Context, client routeClient) error {
 	}
 	var instruments []market.Instrument
 	for _, reached := range client.markets {
-		for _, instrument := range rt.catalog.MarketInstruments(reached) {
-			if instrument.Brokered() && !client.broker {
-				continue
-			}
-			instruments = append(instruments, instrument)
-		}
+		instruments = append(instruments, rt.catalog.MarketInstruments(reached)...)
 	}
 	if len(instruments) == 0 {
 		return fmt.Errorf("instrument catalog for %s is empty", client.key)
@@ -674,8 +664,6 @@ func (rt *runtime) Routes(ctx context.Context) ([]Route, error) {
 					if native, ok = brokered[string(native.Identity.Venue)+":"+native.Identity.Symbol]; !ok {
 						continue
 					}
-				} else if instrument.Brokered() {
-					continue
 				}
 				route := Route{Instrument: instrument.ID, TickSize: native.Rules.PriceIncrement.String(),
 					StepSize: native.Rules.QuantityIncrement.String(), MinQty: native.Rules.MinQuantity.String()}

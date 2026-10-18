@@ -5,12 +5,10 @@
 // perpetuals. The list here is the entire supported surface; anything absent
 // stays reachable through the exchange package but is not served.
 //
-// Two kinds of market exist. A native market has a public connector of its
-// own (Binance perps through Binance's API). A brokered market exists only
-// through a broker (Kraken perps through Gate CrossEx): its instruments and
-// market data come from the broker. Accounts are a separate axis — see
-// Brokers — so a native market can be traded by a native account and by a
-// broker account alike.
+// Every market has a public connector of its own: instruments and market
+// data always come from the venue whose book an instrument trades. Accounts
+// are a separate axis — see Brokers — so a market can be traded by a native
+// account and by a broker account (Gate CrossEx) alike.
 package venue
 
 import (
@@ -37,6 +35,7 @@ func (market Market) String() string {
 // Markets lists every natively served route in display order.
 var Markets = []Market{
 	{exchange.VenueBinance, exchange.ProductPerp, "USDT"},
+	{exchange.VenueBinance, exchange.ProductPerp, "USDC"},
 	{exchange.VenueBinance, exchange.ProductSpot, ""},
 	{exchange.VenueOKX, exchange.ProductPerp, "USDT"},
 	{exchange.VenueOKX, exchange.ProductSpot, ""},
@@ -52,15 +51,6 @@ var Markets = []Market{
 	{exchange.VenueHyperliquid, exchange.ProductSpot, ""},
 	{exchange.VenueLighter, exchange.ProductPerp, "USDC"},
 	{exchange.VenueLighter, exchange.ProductSpot, ""},
-}
-
-// BrokeredMarkets lists routes served only through a broker. Their
-// instruments and market data come from the broker's public data; there is
-// no native connector. Binance USDT perps appear in both lists: crypto perps
-// are native, TradFi perps exist only on the broker.
-var BrokeredMarkets = []Market{
-	{exchange.VenueBinance, exchange.ProductPerp, "USDT"},
-	{exchange.VenueBinance, exchange.ProductPerp, "USDC"},
 	{exchange.VenueKraken, exchange.ProductPerp, "USD"},
 	{exchange.VenueDeribit, exchange.ProductPerp, "USDC"},
 }
@@ -68,8 +58,7 @@ var BrokeredMarkets = []Market{
 // Broker is an account venue that trades other venues' markets.
 type Broker struct {
 	Venue exchange.Venue
-	// Markets the broker's accounts trade. It covers native markets and the
-	// brokered ones.
+	// Markets the broker's accounts trade.
 	Markets []Market
 }
 

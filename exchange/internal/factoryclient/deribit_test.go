@@ -160,8 +160,15 @@ func TestDeribitMarketData(t *testing.T) {
 	if query := stub.last("get_tradingview_chart_data").URL.Query(); query.Get("resolution") != "1" {
 		t.Fatalf("chart query = %v", query)
 	}
-	if _, err := client.Candles(ctx, exchange.CandlesRequest{Instrument: btc, Interval: "4h"}); !errors.Is(err, exchange.ErrUnsupported) {
-		t.Fatalf("4h err = %v", err)
+	hourly := []exchange.Candle{
+		{OpenTime: time.Date(2026, 10, 18, 3, 0, 0, 0, time.UTC), Open: decimal.NewFromInt(10), High: decimal.NewFromInt(12), Low: decimal.NewFromInt(9), Close: decimal.NewFromInt(11), Volume: decimal.NewFromInt(1)},
+		{OpenTime: time.Date(2026, 10, 18, 4, 0, 0, 0, time.UTC), Open: decimal.NewFromInt(11), High: decimal.NewFromInt(15), Low: decimal.NewFromInt(10), Close: decimal.NewFromInt(14), Volume: decimal.NewFromInt(2)},
+		{OpenTime: time.Date(2026, 10, 18, 5, 0, 0, 0, time.UTC), Open: decimal.NewFromInt(14), High: decimal.NewFromInt(14), Low: decimal.NewFromInt(8), Close: decimal.NewFromInt(9), Volume: decimal.NewFromInt(3)},
+	}
+	built := deribitAggregate(hourly, 4*time.Hour)
+	if len(built) != 2 || built[1].OpenTime.Hour() != 4 || !built[1].Open.Equal(decimal.NewFromInt(11)) || !built[1].High.Equal(decimal.NewFromInt(15)) ||
+		!built[1].Low.Equal(decimal.NewFromInt(8)) || !built[1].Close.Equal(decimal.NewFromInt(9)) || !built[1].Volume.Equal(decimal.NewFromInt(5)) || !built[1].CloseTime.Equal(built[1].OpenTime.Add(4*time.Hour)) {
+		t.Fatalf("4h = %+v", built)
 	}
 	rate, err := client.FundingRate(ctx, exchange.FundingRateRequest{Instrument: btc})
 	if err != nil || !rate.Rate.Equal(decimal.RequireFromString("0.0000085")) {

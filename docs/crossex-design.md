@@ -68,17 +68,12 @@ CrossEx 账户 client 的行情方法（`OrderBook`、`Candles`、`PublicTrades`
 | 股票 / ETF | D5 |
 | 分所模式、模式修改 | D3、D4 |
 
-### CrossEx 独有标的
+### 曾经的 CrossEx 独有标的（已由原生接入取代）
 
-实测（2026-10-18）：
-
-| 来源 | 数量 | 单位 | 历史 | 实时 K 线 | 盘口 |
-|---|---|---|---|---|---|
-| Kraken | 205 | 币 | 无 | **无**（`Kraken does not support kline channel`） | 仅增量，首条快照、序号连续 |
-| Deribit | 142 | 币（与原生一致） | 无 | 有 | `order_book_20` |
-| Binance TradFi + USDC | 260 | 币 | 无 | 有 | `order_book_20`（增量流无快照，不可用） |
-
-这些标的的图表从打开时开始累积，不合成历史。
+Kraken（205）、Deribit（142）、Binance TradFi + USDC（260）最初只能经 CrossEx 交易，
+行情也只能来自 CrossEx 公共流（无历史、Kraken 无 K 线）。后续为这三类市场实现了原生
+SDK 与 exchange 适配器（行情与交易），CrossEx 公共行情路径随之删除：**行情永远来自
+订单簿所在交易所的原生接口**，CrossEx 只负责账户、下单、持仓与私有流。
 
 ## 4. 标的映射（CrossEx symbol ↔ instrument id）
 
@@ -87,7 +82,7 @@ CrossEx symbol 格式 `{EXCHANGE}_{BUSINESS}_{BASE}_{QUOTE}`。映射按**原生
 
 | CrossEx | 原生 native symbol | 我们的 market | 实测覆盖 |
 |---|---|---|---|
-| `BINANCE_FUTURE_{B}_USDT` | `{B}USDT` | `binance:perp:USDT` | 563/563（另 217 TradFi 不在原生 catalog） |
+| `BINANCE_FUTURE_{B}_USDT` | `{B}USDT` | `binance:perp:USDT` | 780/780（含 TradFi 永续） |
 | `OKX_FUTURE_{B}_USDT` | `{B}-USDT-SWAP` | `okx:perp:USDT` | 494/494（另 240 USDC 未服务） |
 | `BYBIT_FUTURE_{B}_USDT` | `{B}USDT` | `bybit:perp:USDT` | 797/797 |
 | `BYBIT_FUTURE_{B}_USDC` | `{B}PERP` | `bybit:perp:USDC` | 68/68 |
@@ -95,6 +90,9 @@ CrossEx symbol 格式 `{EXCHANGE}_{BUSINESS}_{BASE}_{QUOTE}`。映射按**原生
 | `HYPERLIQUID_FUTURE_{B}_USDC`，`tag=""` | `{B}` | `hyperliquid:perp:USDC` | 178/178 |
 | `HYPERLIQUID_FUTURE_{B}_USDC`，`tag={dex}` | `{dex}:{B}` | `hyperliquid:perp:USDC` | xyz 111/111、para 22/22 |
 | `LIGHTER_FUTURE_{B}_USDC` | `{B}` | `lighter:perp:USDC` | 193/193 |
+| `BINANCE_FUTURE_{B}_USDC` | `{B}USDC` | `binance:perp:USDC` | 38/38 |
+| `KRAKEN_FUTURE_{B}_USD` | `PF_{B}USD`（`BTC` → `XBT`） | `kraken:perp:USD` | 205/205 |
+| `DERIBIT_FUTURE_{B}_USDC` | `{B}_USDC-PERPETUAL` | `deribit:perp:USDC` | 142/142 |
 
 映射在 CrossEx 规则表（`GET /crossex/rule/symbols`，公开）或原生 catalog 刷新后重建；
 `state!=live` 或映射不到的行不进入可交易集合，并计入 catalog 状态以便观测。
