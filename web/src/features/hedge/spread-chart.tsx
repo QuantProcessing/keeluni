@@ -6,6 +6,8 @@ import { api } from "@/api/client";
 import type { Candle } from "@/api/types";
 import { useCandleStream, useInstrument } from "@/state/hooks";
 import { cx } from "@/ui/primitives";
+import { dateLocale } from "@/lib/format";
+import { useT } from "@/i18n";
 import { aprText, bpsText, netFundingSeries, seriesStats, spreadSeries, tone, type Pair, type SpreadPoint } from "./model";
 
 const INTERVALS = ["1m", "5m", "15m", "1h", "4h", "1d"] as const;
@@ -18,6 +20,7 @@ type View = "spread" | "funding";
  * Funding: the net APR the pair earned at each settlement, and each leg's.
  */
 export function SpreadChart({ pair, matching }: { pair: Pair; matching: { match: "base" | "notional"; ratio: number } | undefined }) {
+  const t = useT();
   const [view, setView] = useState<View>("spread");
   const [interval, setIntervalValue] = useState<string>(() => localStorage.getItem("keeluni.hedge.interval") ?? "15m");
   const [days, setDays] = useState<number>(7);
@@ -60,7 +63,7 @@ export function SpreadChart({ pair, matching }: { pair: Pair; matching: { match:
       <div className="flex h-9 shrink-0 items-stretch gap-1 border-b border-line pr-3">
         {(["spread", "funding"] as const).map((item) => (
           <button key={item} onClick={() => setView(item)} className={cx("-mb-px border-b px-3 whitespace-nowrap", view === item ? "border-accent text-text" : "border-transparent text-muted hover:text-text")}>
-            {item === "spread" ? (bps ? "Spread" : "Price ratio") : "Net funding"}
+            {item === "spread" ? t(bps ? "spread.spread" : "spread.ratio") : t("spread.netFunding")}
           </button>
         ))}
         <div className="ml-auto flex items-center">
@@ -79,24 +82,24 @@ export function SpreadChart({ pair, matching }: { pair: Pair; matching: { match:
         <Plot view={view} spread={spread} funding={funding} bps={bps} />
         {stats && (
           <div className="pointer-events-none absolute top-2 left-3 z-10 flex gap-3 whitespace-nowrap text-muted">
-            <span>Now <span className={cx("text-text", tone(stats.last - (bps || view === "funding" ? 0 : 1)))}>{format(stats.last)}</span></span>
-            <span>Avg <span className="text-text">{format(stats.mean)}</span></span>
-            <span>Low <span className="text-text">{format(stats.low)}</span></span>
-            <span>High <span className="text-text">{format(stats.high)}</span></span>
+            <span>{t("spread.now")} <span className={cx("text-text", tone(stats.last - (bps || view === "funding" ? 0 : 1)))}>{format(stats.last)}</span></span>
+            <span>{t("spread.avg")} <span className="text-text">{format(stats.mean)}</span></span>
+            <span>{t("spread.low")} <span className="text-text">{format(stats.low)}</span></span>
+            <span>{t("spread.high")} <span className="text-text">{format(stats.high)}</span></span>
           </div>
         )}
         {(loading || failed || (view === "spread" && !loading && !spread.length && matching)) && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-muted">
-            {loading ? "Loading…" : failed ? "Candles unavailable for this pair" : "No overlapping bars"}
+            {loading ? t("common.loading") : failed ? t("spread.candlesUnavailable") : t("spread.noOverlap")}
           </div>
         )}
-        {view === "funding" && !perp[0] && !perp[1] && <div className="absolute inset-0 flex items-center justify-center text-muted">Spot legs pay no funding</div>}
+        {view === "funding" && !perp[0] && !perp[1] && <div className="absolute inset-0 flex items-center justify-center text-muted">{t("spread.spotNoFunding")}</div>}
       </div>
       {view === "funding" && (
         <div className="flex h-6 shrink-0 items-center gap-4 border-t border-line px-3 text-muted">
-          <Legend color="#50d2c1" label="Net (short receives, long pays)" />
-          {perp[0] && <Legend color="#949e9c" label={`Leg 1 ${inst0?.symbol ?? ""}`} />}
-          {perp[1] && <Legend color="#575e62" label={`Leg 2 ${inst1?.symbol ?? ""}`} dashed />}
+          <Legend color="#50d2c1" label={t("spread.legendNet")} />
+          {perp[0] && <Legend color="#949e9c" label={t("spread.legendLeg", { n: 1, symbol: inst0?.symbol ?? "" })} />}
+          {perp[1] && <Legend color="#575e62" label={t("spread.legendLeg", { n: 2, symbol: inst1?.symbol ?? "" })} dashed />}
         </div>
       )}
     </div>
@@ -131,6 +134,7 @@ function Plot({ view, spread, funding, bps }: { view: View; spread: SpreadPoint[
       rightPriceScale: { borderColor: "#273035", scaleMargins: { top: 0.12, bottom: 0.08 } },
       timeScale: { borderColor: "#273035", timeVisible: true, secondsVisible: false },
       crosshair: { mode: 0 },
+      localization: { locale: dateLocale() },
     });
     chart.current = instance;
     return () => {

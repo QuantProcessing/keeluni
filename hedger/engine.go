@@ -107,7 +107,7 @@ func (engine *Engine) Start(ctx context.Context) error {
 			return err
 		}
 		slog.Info("resuming hedge action", "group", group.ID, "action", action.ID, "kind", action.Kind)
-		_ = engine.store.AddEvent(ctx, group.ID, "info", fmt.Sprintf("Resumed %s after restart; reconciling orders with the venues", action.Kind))
+		_ = engine.store.AddEvent(ctx, group.ID, "info", textOf("event.resumed", "kind", action.Kind))
 		engine.spawn(group, action)
 	}
 	return nil
@@ -164,7 +164,7 @@ func (engine *Engine) riskOrder(accountID string, update gwclient.Order) {
 		}
 		for i, leg := range group.Legs {
 			if leg.AccountID == accountID && leg.Instrument == update.Instrument {
-				engine.event(group.ID, "error", "%s order on leg %d (%s): %s %s, status %s", label, i+1, leg.Instrument, update.Side, update.Quantity, update.Status)
+				engine.event(group.ID, "error", textOf("event.riskOrder", "origin", update.Origin, "leg", i+1, "inst", leg.Instrument, "side", update.Side, "qty", update.Quantity, "status", update.Status))
 			}
 		}
 	}
@@ -255,10 +255,11 @@ func applyVenueOrder(order *Order, update gwclient.Order) {
 		order.State = update.Status
 	}
 	if update.Status == OrderRejected && update.RejectMessage+update.RejectCode != "" {
-		order.Error = update.RejectMessage
-		if update.RejectCode != "" && !strings.Contains(order.Error, update.RejectCode) {
-			order.Error = strings.TrimSpace(order.Error + " (" + update.RejectCode + ")")
+		message := update.RejectMessage
+		if update.RejectCode != "" && !strings.Contains(message, update.RejectCode) {
+			message = strings.TrimSpace(message + " (" + update.RejectCode + ")")
 		}
+		order.Error = venueText(message)
 	}
 	if filled, err := decimal.NewFromString(update.Filled); err == nil && filled.GreaterThan(order.Filled) {
 		order.Filled = filled
@@ -332,7 +333,7 @@ func (engine *Engine) Cancel(groupID string) error {
 			return nil
 		}
 	}
-	return invalidf("no working action to cancel")
+	return invalid("invalid.noWorking")
 }
 
 // Working reports the working action of a group, if any.
@@ -347,8 +348,7 @@ func (engine *Engine) Working(groupID string) (Action, bool) {
 	return Action{}, false
 }
 
-func (engine *Engine) event(groupID, level, format string, args ...any) {
-	message := fmt.Sprintf(format, args...)
+func (engine *Engine) event(groupID, level string, message Text) {
 	if err := engine.store.AddEvent(context.Background(), groupID, level, message); err != nil {
 		slog.Warn("hedge event not stored", "group", groupID, "error", err)
 	}

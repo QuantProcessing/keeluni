@@ -7,10 +7,12 @@ import { accountName, tradingAccounts } from "@/lib/routes";
 import { useInstrument, useInstruments, useLastPrice, useNow, useStats, useTicker } from "@/state/hooks";
 import { useWorkspace } from "@/state/workspace";
 import { cx } from "@/ui/primitives";
+import { useT, type T } from "@/i18n";
 
 export { venueLabel } from "@/lib/format";
 
 export function MarketHeader() {
+  const t = useT();
   const { instrumentId, setInstrumentId } = useWorkspace();
   const instrument = useInstrument(instrumentId);
   const perp = instrument?.product === "perp";
@@ -30,19 +32,19 @@ export function MarketHeader() {
   return (
     <div className="flex h-14 shrink-0 items-center gap-6 overflow-x-auto bg-surface px-3">
       <InstrumentPicker value={instrumentId} onChange={setInstrumentId} hotkey />
-      <Stat label="Price" value={price(last, tick)} />
-      {perp && <Stat label="Mark" hint="Price used for margining and liquidation" value={price(ticker?.mark ?? stats?.mark, tick)} />}
-      {perp && ticker?.index && <Stat label="Index" hint="Spot index price" value={price(ticker.index, tick)} />}
+      <Stat label={t("market.price")} value={price(last, tick)} />
+      {perp && <Stat label={t("market.mark")} hint={t("market.markHint")} value={price(ticker?.mark ?? stats?.mark, tick)} />}
+      {perp && ticker?.index && <Stat label={t("market.index")} hint={t("market.indexHint")} value={price(ticker.index, tick)} />}
       <Stat
-        label="24h Change"
+        label={t("market.change24h")}
         value={change === undefined ? "—" : `${signed(change, tick ? Math.min(8, tick.split(".")[1]?.length ?? 0) : 2)} / ${pct(change / open)}`}
         tone={change === undefined ? undefined : change >= 0 ? "up" : "down"}
       />
-      <Stat label="24h Volume" value={stats ? compact(Number(stats.volume24h) * Number(last ?? 0)) + " " + (instrument?.quote ?? "") : "—"} />
-      {perp && ticker?.oi && <Stat label="Open Interest" value={compact(ticker.oi) + " " + (instrument?.base ?? "")} />}
+      <Stat label={t("market.volume24h")} value={stats ? compact(Number(stats.volume24h) * Number(last ?? 0)) + " " + (instrument?.quote ?? "") : "—"} />
+      {perp && ticker?.oi && <Stat label={t("market.openInterest")} value={compact(ticker.oi) + " " + (instrument?.base ?? "")} />}
       {perp && (
         <div className="shrink-0">
-          <div className="dotted text-muted" title="Rate charged at the next settlement, per settlement period / annualized (simple) / time to the settlement. Positive: longs pay shorts.">Funding / APR / Countdown</div>
+          <div className="dotted text-muted" title={t("market.fundingHint")}>{t("market.funding")}</div>
           <div className="mt-1 flex gap-3">
             <span className={Number(funding) >= 0 ? "text-up" : "text-down"}>
               {fundingRate(funding)}{fundingHours ? <span className="text-muted"> /{fundingHours}h</span> : null}
@@ -84,6 +86,7 @@ export function InstrumentPicker({ value: instrumentId, onChange, hotkey, small 
   hotkey?: boolean;
   small?: boolean;
 }) {
+  const t = useT();
   const { accounts, routes } = useWorkspace();
   const instrument = useInstrument(instrumentId);
   const { data: instruments = [] } = useInstruments();
@@ -150,7 +153,7 @@ export function InstrumentPicker({ value: instrumentId, onChange, hotkey, small 
       <Popover.Trigger className="flex shrink-0 items-center gap-2 text-left">
         <span className={cx(small ? "text-md" : "text-lg", "whitespace-nowrap")}>{instrument?.symbol ?? instrumentId.split(":").slice(2).join(":")}</span>
         <span className="text-muted">{open ? "▴" : "▾"}</span>
-        <span className="rounded-md bg-accent-soft px-1.5 py-0.5 text-accent">{venueLabel(instrument?.venue ?? "")} · {instrument?.product === "perp" ? "Perp" : "Spot"}</span>
+        <span className="rounded-md bg-accent-soft px-1.5 py-0.5 text-accent">{venueLabel(instrument?.venue ?? "")} · {t(instrument?.product === "spot" ? "common.spot" : "common.perp")}</span>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content align="start" sideOffset={8} className="z-40 w-[min(760px,calc(100vw-16px))] rounded-[10px] border border-line bg-overlay shadow-2xl">
@@ -164,19 +167,19 @@ export function InstrumentPicker({ value: instrumentId, onChange, hotkey, small 
                 if (event.key === "ArrowUp") { event.preventDefault(); setCursor((c) => Math.max(c - 1, 0)); }
                 if (event.key === "Enter") choose(filtered[cursor]);
               }}
-              placeholder="Search"
+              placeholder={t("picker.search")}
               className="h-9 w-full rounded-lg border border-line-strong bg-transparent px-3 outline-none placeholder:text-muted"
             />
           </div>
           <div className="flex gap-1 overflow-x-auto px-3">
-            {[["all", "All"], ...(accounts.length ? [["tradable", "Tradable"]] : []), ["perp", "Perps"], ["spot", "Spot"], ...venues.map((v) => [v, venueLabel(v)])].map(([value, label]) => (
+            {[["all", t("common.all")], ...(accounts.length ? [["tradable", t("picker.tradable")]] : []), ["perp", t("common.perps")], ["spot", t("common.spot")], ...venues.map((v) => [v, venueLabel(v)])].map(([value, label]) => (
               <button key={value} onClick={() => setCategory(value!)} className={cx("rounded-md px-2 py-1 whitespace-nowrap", category === value ? "bg-raised text-text" : "text-muted hover:text-text")}>
                 {label}
               </button>
             ))}
           </div>
           <div className="mt-2 grid grid-cols-[1fr_120px_80px] gap-2 px-3 py-1.5 text-muted">
-            <span>Market</span><span>Venue</span><span className="text-right">Type</span>
+            <span>{t("picker.market")}</span><span>{t("picker.venue")}</span><span className="text-right">{t("picker.type")}</span>
           </div>
           <div ref={listRef} className="max-h-[50vh] overflow-y-auto pb-2">
             {filtered.map((item, index) => {
@@ -191,23 +194,23 @@ export function InstrumentPicker({ value: instrumentId, onChange, hotkey, small 
                 >
                   <span className="truncate">
                     {item.symbol}
-                    {item.assetClass && item.assetClass !== "crypto" && <span className="ml-1.5 text-muted">{ASSET_CLASS[item.assetClass] ?? item.assetClass}</span>}
+                    {item.assetClass && item.assetClass !== "crypto" && <span className="ml-1.5 text-muted">{assetClass(t, item.assetClass)}</span>}
                   </span>
                   <span className="flex items-center gap-1.5 text-text-2">
                     {venueLabel(item.venue)}
-                    {by && <span className="size-1.5 rounded-full bg-up" title={`Tradable with ${by.join(", ")}`} aria-label="Tradable" />}
+                    {by && <span className="size-1.5 rounded-full bg-up" title={t("picker.tradableWith", { names: by.join(", ") })} aria-label={t("picker.tradable")} />}
                   </span>
-                  <span className="text-right text-muted">{item.product === "perp" ? "Perp" : "Spot"}</span>
+                  <span className="text-right text-muted">{t(item.product === "perp" ? "common.perp" : "common.spot")}</span>
                 </button>
               );
             })}
-            {filtered.length === 0 && <div className="px-3 py-6 text-center text-muted">No markets match</div>}
+            {filtered.length === 0 && <div className="px-3 py-6 text-center text-muted">{t("picker.none")}</div>}
           </div>
           <div className="flex gap-4 border-t border-line px-3 py-2 text-muted">
-            {hotkey && <span><kbd className="text-text">⌘K</kbd> Open</span>}
-            <span><kbd className="text-text">↑↓</kbd> Navigate</span>
-            <span><kbd className="text-text">Enter</kbd> Select</span>
-            <span><kbd className="text-text">Esc</kbd> Close</span>
+            {hotkey && <span><kbd className="text-text">⌘K</kbd> {t("picker.open")}</span>}
+            <span><kbd className="text-text">↑↓</kbd> {t("picker.navigate")}</span>
+            <span><kbd className="text-text">Enter</kbd> {t("picker.select")}</span>
+            <span><kbd className="text-text">Esc</kbd> {t("picker.escape")}</span>
           </div>
         </Popover.Content>
       </Popover.Portal>
@@ -215,7 +218,12 @@ export function InstrumentPicker({ value: instrumentId, onChange, hotkey, small 
   );
 }
 
-const ASSET_CLASS: Record<string, string> = { equity: "Stock", commodity: "Commodity", fx: "FX", index: "Index", pre_ipo: "Pre-IPO", rwa_other: "RWA" };
+/** A non-crypto market's asset class ("Stock", "大宗商品"); unknown classes pass through. */
+function assetClass(t: T, value: string): string {
+  const key = `asset.${value}` as Parameters<T>[0];
+  const text = t(key);
+  return text === key ? value : text;
+}
 
 const MAJORS = ["BTC", "ETH", "SOL"];
 function rank(item: Instrument, term: string, currentVenue?: string): number {

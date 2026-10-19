@@ -5,11 +5,13 @@ import { usd, venueLabel } from "@/lib/format";
 import { accountName, marginLevel, type MarginLevel } from "@/lib/routes";
 import { useTradingAccount } from "@/state/workspace";
 import { Row, cx } from "@/ui/primitives";
+import { useT } from "@/i18n";
 
 const STABLES = new Set(["USDT", "USDC", "USD", "FDUSD", "USDE", "USDT0"]);
 
 /** The trading account of the selected market: its funds and stream. */
 export function AccountSummary() {
+  const t = useT();
   const { account, live } = useTradingAccount();
   const summary = useMemo(() => {
     const balances = live.balances ?? [];
@@ -24,8 +26,8 @@ export function AccountSummary() {
 
   if (!account) return null;
   const stream = (
-    <Row label="Private Stream">
-      <span className={live.status?.connected ? "text-up" : "text-down"}>{live.status ? (live.status.connected ? "Live" : "Reconnecting") : "Connecting"}</span>
+    <Row label={t("summary.stream")}>
+      <span className={live.status?.connected ? "text-up" : "text-down"}>{live.status ? (live.status.connected ? t("summary.live") : t("status.reconnecting")) : t("status.connecting")}</span>
     </Row>
   );
   if (account.kind === "broker") {
@@ -40,46 +42,43 @@ export function AccountSummary() {
   return (
     <div className="flex-1 bg-surface p-3">
       <div className="mb-2 text-md">{accountName(account)}</div>
-      <Row label="Stablecoin Balance" hint="Sum of USDT/USDC-like balances across markets">{usd(summary.total)}</Row>
-      <Row label="Available">{usd(summary.available)}</Row>
-      <Row label="Unrealized PNL"><span className={summary.pnl >= 0 ? "text-up" : "text-down"}>{usd(summary.pnl)}</span></Row>
-      {summary.margin > 0 && <Row label="Position Margin">{usd(summary.margin)}</Row>}
+      <Row label={t("summary.stable")} hint={t("summary.stableHint")}>{usd(summary.total)}</Row>
+      <Row label={t("summary.available")}>{usd(summary.available)}</Row>
+      <Row label={t("summary.unrealized")}><span className={summary.pnl >= 0 ? "text-up" : "text-down"}>{usd(summary.pnl)}</span></Row>
+      {summary.margin > 0 && <Row label={t("summary.positionMargin")}>{usd(summary.margin)}</Row>}
       {stream}
     </div>
   );
 }
 
-const WARNING: Record<Exclude<MarginLevel, "ok">, string> = {
-  caution: "Initial margin rate is below 110%. Margin can no longer be transferred out.",
-  restricted: "Initial margin rate is below 100%. Open orders are cancelled and only closing is allowed.",
-  liquidation: "Maintenance margin rate has reached 100%. The account is being liquidated.",
-};
+const WARNING = { caution: "pool.caution", restricted: "pool.restricted", liquidation: "pool.liquidation" } as const satisfies Record<Exclude<MarginLevel, "ok">, string>;
 
 /** One margin pool backing positions on every venue the broker reaches. */
 export function MarginPool({ margin }: { margin: Margin | undefined }) {
-  if (!margin) return <div className="py-1 text-muted">Loading margin…</div>;
+  const t = useT();
+  if (!margin) return <div className="py-1 text-muted">{t("pool.loading")}</div>;
   const level = marginLevel(margin.initialMarginRate, margin.maintenanceMarginRate);
   const pnl = Number(margin.unrealizedPnl);
   const shares = (margin.byVenue ?? []).filter((share) => Number(share.equity) !== 0 || Number(share.initialMargin) !== 0);
   return (
     <>
-      <Row label="Margin Balance" hint="Equity of the shared pool across every venue">{usd(margin.equity)}</Row>
-      <Row label="Available Margin" hint="Usable for new orders on any venue">{usd(margin.available)}</Row>
-      <Row label="Unrealized PNL"><span className={pnl >= 0 ? "text-up" : "text-down"}>{usd(margin.unrealizedPnl)}</span></Row>
-      {Number(margin.initialMargin) > 0 && <Row label="Initial Margin">{usd(margin.initialMargin)}</Row>}
-      <Row label="Initial Margin Rate" hint="Margin balance over initial margin. Below 100% only closing is allowed">
+      <Row label={t("pool.balance")} hint={t("pool.balanceHint")}>{usd(margin.equity)}</Row>
+      <Row label={t("pool.available")} hint={t("pool.availableHint")}>{usd(margin.available)}</Row>
+      <Row label={t("summary.unrealized")}><span className={pnl >= 0 ? "text-up" : "text-down"}>{usd(margin.unrealizedPnl)}</span></Row>
+      {Number(margin.initialMargin) > 0 && <Row label={t("pool.initial")}>{usd(margin.initialMargin)}</Row>}
+      <Row label={t("pool.initialRate")} hint={t("pool.initialRateHint")}>
         <Rate value={margin.initialMarginRate} warn={level === "caution" || level === "restricted"} />
       </Row>
-      <Row label="Maintenance Margin Rate" hint="Margin balance over maintenance margin. At 100% the account is liquidated">
+      <Row label={t("pool.maintenanceRate")} hint={t("pool.maintenanceRateHint")}>
         <Rate value={margin.maintenanceMarginRate} warn={level === "liquidation"} />
       </Row>
       {level !== "ok" && (
-        <div role="alert" className="my-2 rounded-lg border border-down/60 bg-warn-bg px-3 py-2 text-down">{WARNING[level]}</div>
+        <div role="alert" className="my-2 rounded-lg border border-down/60 bg-warn-bg px-3 py-2 text-down">{t(WARNING[level])}</div>
       )}
       {shares.length > 0 && (
         <div className="mt-2 border-t border-line pt-2">
           <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 py-1 text-muted">
-            <span>Venue</span><span className="text-right">Equity</span><span className="text-right">In Use</span>
+            <span>{t("pool.venue")}</span><span className="text-right">{t("pool.equity")}</span><span className="text-right">{t("pool.inUse")}</span>
           </div>
           {shares.map((share) => (
             <div key={share.venue + share.asset} className="grid grid-cols-[1fr_auto_auto] gap-x-3 py-0.5 text-text-2">

@@ -7,6 +7,7 @@ import { decimals } from "@/lib/format";
 import { useCandleStream, useInstrument } from "@/state/hooks";
 import { useWorkspace } from "@/state/workspace";
 import { cx } from "@/ui/primitives";
+import { locale, useI18n } from "@/i18n";
 import { DrawingLayer, POINTS, intervalSeconds, type Anchor, type Bar, type Tool } from "./chart-drawings";
 
 const INTERVALS = ["1m", "5m", "15m", "1h", "4h", "1d"] as const;
@@ -21,6 +22,7 @@ type Gesture =
   | { kind: "drag"; id: string; handle: number | null; start: Anchor; points: Anchor[] };
 
 export function ChartPanel() {
+  const { t, lang } = useI18n();
   const { instrumentId } = useWorkspace();
   const instrument = useInstrument(instrumentId);
   const [interval, setIntervalValue] = useState<string>(() => localStorage.getItem("keeluni.interval") ?? "15m");
@@ -70,6 +72,11 @@ export function ChartPanel() {
       chart.current = null;
     };
   }, []);
+
+  // Axis dates follow the interface language.
+  useEffect(() => {
+    chart.current?.applyOptions({ localization: { locale: locale(lang) } });
+  }, [lang]);
 
   useEffect(() => {
     layer.current.load("keeluni.drawings." + instrumentId);
@@ -274,15 +281,15 @@ export function ChartPanel() {
         ))}
       </div>
       <div className="flex min-h-0 flex-1">
-        <div role="toolbar" aria-label="Drawing tools" aria-orientation="vertical" className="flex w-10 shrink-0 flex-col items-center gap-0.5 overflow-y-auto border-r border-line py-1.5">
+        <div role="toolbar" aria-label={t("chart.drawingTools")} aria-orientation="vertical" className="flex w-10 shrink-0 flex-col items-center gap-0.5 overflow-y-auto border-r border-line py-1.5">
           {TOOLS.map((item) => (
-            <ToolButton key={item.tool} label={item.label} active={tool === item.tool} onClick={() => pick(item.tool)}>
+            <ToolButton key={item.tool} label={t(item.label)} active={tool === item.tool} onClick={() => pick(item.tool)}>
               {item.icon}
             </ToolButton>
           ))}
           <div className="my-1 h-px w-6 shrink-0 bg-line" />
           <ToolButton
-            label={magnet ? "Magnet on: snap to open, high, low, close" : "Magnet off"}
+            label={magnet ? t("chart.magnetOn") : t("chart.magnetOff")}
             active={magnet}
             onClick={() => {
               localStorage.setItem("keeluni.chart.magnet", magnet ? "0" : "1");
@@ -292,7 +299,7 @@ export function ChartPanel() {
             <MagnetIcon />
           </ToolButton>
           <ToolButton
-            label={hidden ? "Show drawings" : "Hide drawings"}
+            label={hidden ? t("chart.showDrawings") : t("chart.hideDrawings")}
             active={hidden}
             disabled={!count && !hidden}
             onClick={() => {
@@ -304,7 +311,7 @@ export function ChartPanel() {
             {hidden ? <EyeOffIcon /> : <EyeIcon />}
           </ToolButton>
           <ToolButton
-            label="Remove all drawings (Delete removes the selected one)"
+            label={t("chart.removeAll")}
             disabled={!count}
             onClick={() => {
               layer.current.removeAll();
@@ -316,14 +323,14 @@ export function ChartPanel() {
         </div>
         <div className="relative min-h-0 min-w-0 flex-1">
           <div ref={host} className={cx("absolute inset-0", tool !== "cursor" && "cursor-crosshair")} />
-          {status === "loading" && <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center text-muted">Loading chart…</div>}
+          {status === "loading" && <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center text-muted">{t("chart.loading")}</div>}
           {status === "error" && (
             <div role="alert" className="absolute inset-0 z-10 flex items-center justify-center bg-surface/85 p-6">
               <div className="max-w-[360px] text-center">
-                <div className="text-md text-text">Chart history unavailable</div>
+                <div className="text-md text-text">{t("chart.unavailable")}</div>
                 {failure && <p className="mt-1.5 line-clamp-4 text-muted">{failure}</p>}
                 <button onClick={() => setAttempt((value) => value + 1)} className="mt-3 h-8 rounded-lg border border-line px-4 text-text hover:bg-raised">
-                  Retry
+                  {t("common.retry")}
                 </button>
               </div>
             </div>
@@ -382,15 +389,15 @@ function Icon({ children }: { children: ReactNode }) {
 
 const Dot = ({ x, y }: { x: number; y: number }) => <circle cx={x} cy={y} r="1.6" fill="currentColor" stroke="none" />;
 
-const TOOLS: Array<{ tool: Tool; label: string; icon: ReactNode }> = [
-  { tool: "cursor", label: "Cross", icon: <Icon><path d="M10 3v5.5M10 11.5V17M3 10h5.5M11.5 10H17" /></Icon> },
-  { tool: "trend", label: "Trend line", icon: <Icon><path d="M5 15 15 5" /><Dot x={4.5} y={15.5} /><Dot x={15.5} y={4.5} /></Icon> },
-  { tool: "ray", label: "Ray", icon: <Icon><path d="M5 15 18 3" /><Dot x={4.5} y={15.5} /><Dot x={10} y={10.4} /></Icon> },
-  { tool: "hline", label: "Horizontal line", icon: <Icon><path d="M2.5 10h15" /><Dot x={10} y={10} /></Icon> },
-  { tool: "vline", label: "Vertical line", icon: <Icon><path d="M10 2.5v15" /><Dot x={10} y={10} /></Icon> },
-  { tool: "rect", label: "Rectangle", icon: <Icon><rect x="4" y="5.5" width="12" height="9" rx="0.5" /><Dot x={4} y={5.5} /><Dot x={16} y={14.5} /></Icon> },
-  { tool: "fib", label: "Fib retracement", icon: <Icon><path d="M3 4.5h14M3 8h14M3 11.5h14M3 15.5h14" /><Dot x={4.5} y={15.5} /><Dot x={15.5} y={4.5} /></Icon> },
-  { tool: "measure", label: "Measure", icon: <Icon><path d="m3.5 13.5 10-10 3 3-10 10z" /><path d="m6 11 1.5 1.5M8.5 8.5 10 10M11 6l1.5 1.5" /></Icon> },
+const TOOLS: Array<{ tool: Tool; label: `chart.${Tool}`; icon: ReactNode }> = [
+  { tool: "cursor", label: "chart.cursor", icon: <Icon><path d="M10 3v5.5M10 11.5V17M3 10h5.5M11.5 10H17" /></Icon> },
+  { tool: "trend", label: "chart.trend", icon: <Icon><path d="M5 15 15 5" /><Dot x={4.5} y={15.5} /><Dot x={15.5} y={4.5} /></Icon> },
+  { tool: "ray", label: "chart.ray", icon: <Icon><path d="M5 15 18 3" /><Dot x={4.5} y={15.5} /><Dot x={10} y={10.4} /></Icon> },
+  { tool: "hline", label: "chart.hline", icon: <Icon><path d="M2.5 10h15" /><Dot x={10} y={10} /></Icon> },
+  { tool: "vline", label: "chart.vline", icon: <Icon><path d="M10 2.5v15" /><Dot x={10} y={10} /></Icon> },
+  { tool: "rect", label: "chart.rect", icon: <Icon><rect x="4" y="5.5" width="12" height="9" rx="0.5" /><Dot x={4} y={5.5} /><Dot x={16} y={14.5} /></Icon> },
+  { tool: "fib", label: "chart.fib", icon: <Icon><path d="M3 4.5h14M3 8h14M3 11.5h14M3 15.5h14" /><Dot x={4.5} y={15.5} /><Dot x={15.5} y={4.5} /></Icon> },
+  { tool: "measure", label: "chart.measure", icon: <Icon><path d="m3.5 13.5 10-10 3 3-10 10z" /><path d="m6 11 1.5 1.5M8.5 8.5 10 10M11 6l1.5 1.5" /></Icon> },
 ];
 
 function MagnetIcon() {

@@ -15,7 +15,9 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5173,
     proxy: { "/api": { target: TRADER, ws: true, changeOrigin: false } },
+    // Tests read hedger/text.go to check the dictionaries against the hedger.
+    fs: { allow: [".."] },
   },
   build: { target: "es2023" },
-  test: { environment: "jsdom", include: ["src/**/*.test.ts"] },
+  test: { environment: "jsdom", include: ["src/**/*.test.ts"], setupFiles: ["src/test-setup.ts"] },
 });

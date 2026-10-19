@@ -7,6 +7,7 @@ import { useAccountStreams, useInstrument, useInstruments, type AccountLive } fr
 import { useToast } from "@/ui/toast";
 import { instrumentName, num, venueLabel } from "@/lib/format";
 import { accountName, brokersReaching, chooseAccount, marketOf, tradingAccounts } from "@/lib/routes";
+import { translate } from "@/i18n";
 
 const DEFAULT_INSTRUMENT = "binance:perp:BTC-USDT";
 
@@ -100,20 +101,21 @@ function terminal(status: Order["status"]) {
 
 /** Toast text for an order the venue rejected after accepting it. */
 export function rejectionNotice(order: Order): { title: string; detail: string } {
-  const verb = order.side === "buy" ? "Buy" : "Sell";
-  const title = `${verb} ${num(order.qty)} ${instrumentName(order.inst)} rejected`;
+  const verb = translate(order.side === "buy" ? "common.buy" : "common.sell");
+  const title = translate("order.rejectedAfter", { verb, qty: num(order.qty), name: instrumentName(order.inst) });
+  // The venue's own words are shown as they are, never translated.
   const detail = order.rejectMessage
     ? order.rejectCode && !order.rejectMessage.includes(order.rejectCode) ? `${order.rejectMessage} (${order.rejectCode})` : order.rejectMessage
-    : order.rejectCode ?? "The exchange refused the order after it was accepted.";
+    : order.rejectCode ?? translate("order.refusedAfterAccept");
   return { title, detail };
 }
 
 /** Label for an order the venue's risk engine placed. */
 export function originLabel(origin: Order["origin"]): string | undefined {
   switch (origin) {
-    case "liquidation": return "Liquidation";
-    case "adl": return "Auto-deleverage";
-    case "settlement": return "Delisting";
+    case "liquidation": return translate("origin.liquidation");
+    case "adl": return translate("origin.adl");
+    case "settlement": return translate("origin.settlement");
   }
   return undefined;
 }
@@ -201,7 +203,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const notice = rejectionNotice(order);
       toast.push({ kind: "error", title: notice.title, detail: `${notice.detail} · ${nameOf(accountId)}` });
     } else if (order.origin && order.status !== "rejected") {
-      toast.push({ kind: "error", title: `${originLabel(order.origin)} order on ${instrumentName(order.inst)}`, detail: `${order.side === "buy" ? "Buy" : "Sell"} ${num(order.qty)} placed by the exchange's risk engine · ${nameOf(accountId)}` });
+      toast.push({
+        kind: "error",
+        title: translate("order.riskOrder", { origin: originLabel(order.origin) ?? order.origin, name: instrumentName(order.inst) }),
+        detail: translate("order.riskOrderDetail", { side: translate(order.side === "buy" ? "common.buy" : "common.sell"), qty: num(order.qty), account: nameOf(accountId) }),
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryClient, toast]);
@@ -211,8 +217,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       current.some((item) => item.fillId === fill.fillId) ? current : [fill, ...current].slice(0, 200));
     toast.push({
       kind: fill.side === "buy" ? "long" : "short",
-      title: `${fill.side === "buy" ? "Bought" : "Sold"} ${num(fill.qty)} ${instrumentName(fill.inst)}`,
-      detail: `at ${num(fill.price)} · ${nameOf(accountId)}`,
+      title: translate(fill.side === "buy" ? "order.bought" : "order.sold", { qty: num(fill.qty), name: instrumentName(fill.inst) }),
+      detail: translate("order.fillAt", { price: num(fill.price), account: nameOf(accountId) }),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryClient, toast]);
@@ -239,7 +245,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [instrument, venues, accounts]);
 
   useEffect(() => {
-    if (fallback) toast.push({ kind: "info", title: `${instrumentName(savedInstrument)} is unavailable`, detail: `${venueLabel(savedInstrument.split(":")[0] ?? "")} cannot be reached from this network. Showing ${fallback.symbol} on ${venueLabel(fallback.venue)}.` });
+    if (fallback) toast.push({
+      kind: "info",
+      title: translate("fallback.title", { name: instrumentName(savedInstrument) }),
+      detail: translate("fallback.detail", { venue: venueLabel(savedInstrument.split(":")[0] ?? ""), symbol: fallback.symbol, fallback: venueLabel(fallback.venue) }),
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fallback?.id, savedInstrument]);
 

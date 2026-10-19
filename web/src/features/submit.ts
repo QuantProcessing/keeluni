@@ -1,5 +1,6 @@
 import { api, newClientOrderId } from "@/api/client";
 import type { Order, PlaceRequest, PlaceResult } from "@/api/types";
+import { translate } from "@/i18n";
 
 export type Outcome =
   | { kind: "accepted"; order: Order }
@@ -44,7 +45,7 @@ export async function submitOrder(
   }
   if (result?.status === "accepted" && result.order) return { kind: "accepted", order: result.order };
   if (result?.status === "rejected") {
-    const text = result.message || result.venueMessage || "Order rejected";
+    const text = result.message || result.venueMessage || translate("order.rejected");
     return { kind: "rejected", message: result.venueCode && !text.includes(result.venueCode) ? `${text} (${result.venueCode})` : text };
   }
   return resolveUnknown(accountId, order.inst, clientOrderId, deps);
@@ -56,10 +57,10 @@ async function resolveUnknown(accountId: string, inst: string, clientOrderId: st
     try {
       const lookup = await deps.lookup(accountId, inst, clientOrderId);
       if (lookup.status === "found" && lookup.order) return { kind: "accepted", order: lookup.order };
-      if (lookup.status === "not_found") return { kind: "rejected", message: "Order was not placed" };
+      if (lookup.status === "not_found") return { kind: "rejected", message: translate("order.notPlaced") };
     } catch {
       // Try again.
     }
   }
-  return { kind: "unknown", message: `Outcome unknown — check open orders before retrying (client id ${clientOrderId})` };
+  return { kind: "unknown", message: translate("order.unknownCheck", { id: clientOrderId }) };
 }

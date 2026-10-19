@@ -5,6 +5,7 @@ import { num, price, time } from "@/lib/format";
 import { useBook, useInstrument, useTrades } from "@/state/hooks";
 import { useWorkspace } from "@/state/workspace";
 import { Tabs } from "@/ui/primitives";
+import { useT } from "@/i18n";
 
 const ROW_HEIGHT = 24;
 /** Levels the gateway keeps per side; the panel never shows more. */
@@ -22,10 +23,11 @@ export function rowsFor(height: number): { asks: number; bids: number } {
 }
 
 export function BookPanel() {
+  const t = useT();
   const [tab, setTab] = useState<"book" | "trades">("book");
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-surface">
-      <Tabs value={tab} onChange={setTab} options={[{ value: "book", label: "Order Book" }, { value: "trades", label: "Trades" }]} className="[&>button]:flex-1" />
+      <Tabs value={tab} onChange={setTab} options={[{ value: "book", label: t("book.orderBook") }, { value: "trades", label: t("book.trades") }]} className="[&>button]:flex-1" />
       {tab === "book" ? <OrderBook /> : <TradesList />}
     </div>
   );
@@ -42,6 +44,7 @@ function cumulate(levels: Level[], rows: number): Row[] {
 }
 
 function OrderBook() {
+  const t = useT();
   const { instrumentId, hintLimitPrice } = useWorkspace();
   const instrument = useInstrument(instrumentId);
   const book = useBook(instrumentId);
@@ -97,18 +100,18 @@ function OrderBook() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="grid h-7 shrink-0 grid-cols-3 items-center px-3 text-right text-muted">
-        <span className="text-left">Price</span>
-        <span>Size ({instrument?.base ?? ""})</span>
-        <span>Total ({instrument?.base ?? ""})</span>
+        <span className="text-left">{t("common.price")}</span>
+        <span>{t("book.sizeIn", { base: instrument?.base ?? "" })}</span>
+        <span>{t("book.totalIn", { base: instrument?.base ?? "" })}</span>
       </div>
       {!book ? (
-        <div className="flex flex-1 items-center justify-center text-muted">Loading book…</div>
+        <div className="flex flex-1 items-center justify-center text-muted">{t("book.loading")}</div>
       ) : (
         <div ref={body} className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {blank(rows.asks - asks.length, "ask-blank")}
           <div className="flex shrink-0 flex-col-reverse">{asks.map((level) => row(level, "ask"))}</div>
           <div className="flex h-6 shrink-0 items-center justify-center gap-6 bg-raised">
-            <span>Spread</span>
+            <span>{t("common.spread")}</span>
             <span>{spread === undefined ? "—" : price(spread, tick)}</span>
             <span>{spreadPct === undefined ? "" : spreadPct.toFixed(3) + "%"}</span>
           </div>
@@ -121,18 +124,19 @@ function OrderBook() {
 }
 
 function TradesList() {
+  const t = useT();
   const { instrumentId } = useWorkspace();
   const instrument = useInstrument(instrumentId);
   const trades = useTrades(instrumentId);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="grid h-7 shrink-0 grid-cols-3 items-center px-3 text-right text-muted">
-        <span className="text-left">Price</span>
-        <span>Size ({instrument?.base ?? ""})</span>
-        <span>Time</span>
+        <span className="text-left">{t("common.price")}</span>
+        <span>{t("book.sizeIn", { base: instrument?.base ?? "" })}</span>
+        <span>{t("common.time")}</span>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {trades.length === 0 && <div className="p-6 text-center text-muted">Waiting for trades…</div>}
+        {trades.length === 0 && <div className="p-6 text-center text-muted">{t("book.waitingTrades")}</div>}
         {trades.map((trade, index) => (
           <div key={index} className="grid h-6 grid-cols-3 items-center px-3 text-right">
             <span className={trade.side === "buy" ? "text-left text-up" : "text-left text-down"}>{price(trade.p, instrument?.tickSize)}</span>

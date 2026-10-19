@@ -1,4 +1,5 @@
 import * as RadixDialog from "@radix-ui/react-dialog";
+import { translate } from "@/i18n";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 export function cx(...classes: Array<string | false | null | undefined>) {
@@ -77,7 +78,7 @@ export function Dialog({ open, onOpenChange, title, description, children, width
           ) : (
             <RadixDialog.Description className="sr-only">{title}</RadixDialog.Description>
           )}
-          <RadixDialog.Close aria-label="Close" className="absolute top-4 right-4 flex size-6 items-center justify-center text-muted hover:text-text">
+          <RadixDialog.Close aria-label={translate("common.close")} className="absolute top-4 right-4 flex size-6 items-center justify-center text-muted hover:text-text">
             ✕
           </RadixDialog.Close>
           <div className="mt-5">{children}</div>

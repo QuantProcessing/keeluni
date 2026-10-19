@@ -1,6 +1,7 @@
-# BolterTrader
+# KeelUni
 
-A self-hosted, multi-venue trading stack for one operator.
+A self-hosted, one-stop trading stack for one operator: every connected
+venue's perps and spot (options and commodities next) through one terminal.
 
 ```text
 web        React terminal (Hyperliquid-style, see DESIGN.md): Trade + Hedge
@@ -83,7 +84,7 @@ scripts/dev.sh` creates its role and database; later runs reuse them. Without
 it, `scripts/dev.sh` runs gateway and trader only.
 
 The first start prints a generated password once. Change it with
-`go run ./cmd/trader passwd` (or `docker compose run --rm trader passwd`).
+`go run ./cmd/trader passwd` (or `docker compose run --rm -it --no-deps trader passwd`).
 Connect exchanges from the **Connect** button in the app.
 
 ## Safety

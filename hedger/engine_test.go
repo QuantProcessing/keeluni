@@ -365,7 +365,7 @@ func TestBothLegsRejectedFailsCleanly(t *testing.T) {
 		t.Fatal(err)
 	}
 	failed := rig.waitStatus(t, group.ID, StatusFailed)
-	if failed.Problem == "" {
+	if failed.Problem.IsZero() {
 		t.Fatal("failed group has no reason")
 	}
 }
@@ -400,7 +400,7 @@ func TestHoldPolicyLeavesTheGroupBrokenAndRehedgeRepairsIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	broken := rig.waitStatus(t, group.ID, StatusBroken)
-	if broken.Problem == "" {
+	if broken.Problem.IsZero() {
 		t.Fatal("broken group has no problem text")
 	}
 	if _, err := rig.engine.Rehedge(rig.ctx, group.ID); err != nil {
@@ -685,7 +685,7 @@ func TestALateFillOnAFinishedActionRechecksTheGroup(t *testing.T) {
 	late := gwclient.Order{ClientOrderID: orders[0].ClientOrderID, OrderID: orders[0].VenueOrderID, Filled: "0.02", AvgPrice: "65000.5", Status: "filled"}
 	rig.engine.OnOrder(orders[0].AccountID, late)
 	broken := rig.waitStatus(t, group.ID, StatusBroken)
-	if broken.Problem == "" {
+	if broken.Problem.IsZero() {
 		t.Fatal("no problem text")
 	}
 }
@@ -794,7 +794,7 @@ func TestAsynchronousHedgeRejectionStopsTheAction(t *testing.T) {
 	}
 	orders, _ := rig.store.Orders(rig.ctx, group.ID)
 	for _, order := range orders {
-		if order.Role == RoleHedge && (order.State != OrderRejected || order.Error == "") {
+		if order.Role == RoleHedge && (order.State != OrderRejected || order.Error.IsZero()) {
 			t.Fatalf("hedge order = %+v", order)
 		}
 	}
@@ -875,8 +875,8 @@ func TestVenuePositionMismatchMarksTheGroupUnhedged(t *testing.T) {
 	clock = clock.Add(venueMismatchAfter + time.Second)
 	rig.engine.ReconcileVenue(rig.ctx)
 	got, _ := rig.store.Group(rig.ctx, group.ID)
-	if got.Status != StatusBroken || !strings.Contains(got.Problem, "leg 2") {
-		t.Fatalf("group = %s %q", got.Status, got.Problem)
+	if got.Status != StatusBroken || !strings.Contains(got.Problem.Message, "leg 2") {
+		t.Fatalf("group = %s %q", got.Status, got.Problem.Message)
 	}
 	// A venue holding more than the hedge (other trades) is not a mismatch.
 	other, _ := rig.engine.Open(rig.ctx, rig.market, openRequest(ModeMarket))
@@ -888,6 +888,6 @@ func TestVenuePositionMismatchMarksTheGroupUnhedged(t *testing.T) {
 	clock = clock.Add(time.Hour)
 	rig.engine.ReconcileVenue(rig.ctx)
 	if got, _ := rig.store.Group(rig.ctx, other.ID); got.Status != StatusOpen {
-		t.Fatalf("larger venue position flagged: %s %q", got.Status, got.Problem)
+		t.Fatalf("larger venue position flagged: %s %q", got.Status, got.Problem.Message)
 	}
 }

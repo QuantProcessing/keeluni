@@ -4,6 +4,7 @@ import { countdown, num, price } from "@/lib/format";
 import { useBook, useFunding, useInstrument, useNow } from "@/state/hooks";
 import { cx } from "@/ui/primitives";
 import { aprText, rateText, tone, type LegChoice } from "./model";
+import { useT } from "@/i18n";
 
 const ROW = 20;
 
@@ -17,6 +18,7 @@ export function bookRows(height: number): number {
  * instrument is chosen in the pair bar and its account in the ticket.
  */
 export function LegPanel({ index, leg }: { index: 0 | 1; leg: LegChoice }) {
+  const t = useT();
   const instrument = useInstrument(leg.inst);
   const perp = instrument?.product === "perp";
   const book = useBook(leg.inst);
@@ -47,34 +49,34 @@ export function LegPanel({ index, leg }: { index: 0 | 1; leg: LegChoice }) {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-surface">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line px-3">
-        <span className={leg.side === "buy" ? "text-up" : "text-down"}>{leg.side === "buy" ? "Long" : "Short"}</span>
-        <span className="truncate text-muted">Leg {index + 1}</span>
+        <span className={cx("shrink-0 whitespace-nowrap", leg.side === "buy" ? "text-up" : "text-down")}>{t(leg.side === "buy" ? "common.long" : "common.short")}</span>
+        <span className="shrink-0 whitespace-nowrap text-muted">{t("common.leg", { n: index + 1 })}</span>
         {perp ? (
-          <span className="ml-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap" title={continuous ? "Funding accrues continuously; shown per hour" : "Rate at the next settlement / period · annualized · time to settlement"}>
+          <span className="ml-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap" title={continuous ? t("leg.fundingContinuousHint") : t("leg.fundingHint")}>
             <span className={tone(funding?.rate)}>{rateText(funding?.rate)}</span>
             {funding?.intervalHours ? <span className="text-muted">/{funding.intervalHours}h</span> : null}
             <span className={tone(funding?.apr)}>{aprText(funding?.apr)}</span>
-            <span className="text-muted">{continuous ? "continuous" : countdown(funding?.nextFunding, now)}</span>
-            {funding?.stale && <span className="text-down" title="Funding collection for this venue is behind">stale</span>}
+            <span className="text-muted">{continuous ? t("leg.continuous") : countdown(funding?.nextFunding, now)}</span>
+            {funding?.stale && <span className="text-down" title={t("leg.staleHint")}>{t("leg.stale")}</span>}
           </span>
         ) : (
-          <span className="ml-auto text-muted">Spot · no funding</span>
+          <span className="ml-auto text-muted">{t("leg.spotNoFunding")}</span>
         )}
       </div>
       <div className="grid h-6 shrink-0 grid-cols-2 items-center px-3 text-muted">
-        <span>Price ({instrument?.quote})</span>
-        <span className="text-right">Size ({instrument?.base})</span>
+        <span>{t("leg.priceIn", { quote: instrument?.quote ?? "" })}</span>
+        <span className="text-right">{t("leg.sizeIn", { base: instrument?.base ?? "" })}</span>
       </div>
       <div ref={body} className="flex min-h-0 flex-1 flex-col justify-center overflow-hidden">
         {!book ? (
-          <div className="py-6 text-center text-muted">Loading book…</div>
+          <div className="py-6 text-center text-muted">{t("book.loading")}</div>
         ) : (
           <>
             {/* Fewer levels than fit: blank rows on the outside keep the spread row centred, level with the other leg's. */}
             {blank(rows - asks.length, "a")}
             <div className="flex flex-col-reverse">{asks.map(([p, q]) => <Level key={"a" + p} priceText={price(p, tick)} size={q} width={Number(q) / maxSize} ask />)}</div>
             <div className="flex h-6 items-center justify-center gap-4 bg-raised">
-              <span className="text-muted">Spread</span>
+              <span className="text-muted">{t("common.spread")}</span>
               <span>{spread === undefined ? "—" : price(spread, tick)}</span>
               <span className="text-muted">{spread && bestAsk ? ((spread / bestAsk) * 10_000).toFixed(1) + " bps" : ""}</span>
             </div>

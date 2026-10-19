@@ -10,30 +10,26 @@ import { Dialog, PrimaryButton, Tabs, cx } from "@/ui/primitives";
 import { useToast } from "@/ui/toast";
 import { aprText, bpsText, makePrice, rateText, takePrice, tone } from "./model";
 import { useBook } from "@/state/hooks";
+import { useHedgerText, useT, type T } from "@/i18n";
 
 type Filter = "active" | "history";
 
-const STATUS: Record<GroupView["status"], { text: string; className: string }> = {
-  opening: { text: "Opening", className: "text-accent" },
-  open: { text: "Open", className: "text-text" },
-  closing: { text: "Closing", className: "text-accent" },
-  closed: { text: "Closed", className: "text-muted" },
-  failed: { text: "Failed", className: "text-muted" },
-  broken: { text: "Unhedged", className: "text-down" },
+const STATUS_CLASS: Record<GroupView["status"], string> = {
+  opening: "text-accent", open: "text-text", closing: "text-accent", closed: "text-muted", failed: "text-muted", broken: "text-down",
 };
 
 /** Column heads, one line each; the hint explains the shorter ones. */
-const HEADS: Array<[string, string?]> = [
-  ["Hedge"],
-  ["Status"],
-  ["Size", "Leg 1 quantity and the value of one side"],
-  ["Exposure", "Directional exposure left after both legs"],
-  ["Spread", "Leg 2 over leg 1 in bps: at the average entry → at the marks now"],
-  ["Funding", "Net funding APR at current rates"],
-  ["Next", "Time to the next settlement and its expected amount"],
-  ["Earned", "Funding received minus paid since open (estimated)"],
-  ["Fees"],
-  ["Net PnL", "Unrealized + realized − fees + funding"],
+const HEADS: Array<[Parameters<T>[0] | "", Parameters<T>[0]?]> = [
+  ["groups.head.hedge"],
+  ["common.status"],
+  ["groups.head.size", "groups.head.sizeHint"],
+  ["groups.head.exposure", "groups.head.exposureHint"],
+  ["groups.head.spread", "groups.head.spreadHint"],
+  ["groups.head.funding", "groups.head.fundingHint"],
+  ["groups.head.next", "groups.head.nextHint"],
+  ["groups.head.earned", "groups.head.earnedHint"],
+  ["common.fees"],
+  ["groups.head.netPnl", "groups.head.netPnlHint"],
   [""],
 ];
 
@@ -41,6 +37,7 @@ const active = (group: GroupView) => group.status !== "closed" && group.status !
 
 /** Every hedge as one row: the pair, its exposure, spread, funding and PnL. */
 export function GroupsPanel({ groups, state }: { groups: GroupView[] | undefined; state: HedgeConnection }) {
+  const t = useT();
   const [filter, setFilter] = useState<Filter>("active");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [closing, setClosing] = useState<GroupView | null>(null);
@@ -59,24 +56,24 @@ export function GroupsPanel({ groups, state }: { groups: GroupView[] | undefined
           value={filter}
           onChange={setFilter}
           options={[
-            { value: "active", label: `Hedges${activeCount ? ` (${activeCount})` : ""}` },
-            { value: "history", label: "History (7d)" },
+            { value: "active", label: `${t("groups.hedges")}${activeCount ? ` (${activeCount})` : ""}` },
+            { value: "history", label: t("groups.history") },
           ]}
           className="border-b-0"
         />
-        {broken > 0 && <span className="ml-3 rounded-md bg-warn-bg px-2 py-0.5 text-down">{broken} unhedged</span>}
+        {broken > 0 && <span className="ml-3 rounded-md bg-warn-bg px-2 py-0.5 text-down">{t("groups.unhedgedBadge", { n: broken })}</span>}
         <div className="ml-auto flex shrink-0 items-center gap-5">
           <span className={cx("flex items-center gap-1.5 whitespace-nowrap", state === "online" ? "text-up" : "text-down")}>
             <span className={cx("size-1.5 rounded-full", state === "online" ? "bg-up" : "bg-down")} />
-            {state === "online" ? "Hedger live" : state === "connecting" ? "Connecting" : "Hedger offline"}
+            {state === "online" ? t("groups.live") : state === "connecting" ? t("status.connecting") : t("groups.offline")}
           </span>
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
         {groups === undefined ? (
-          <div className="px-3 py-2.5 text-muted">Loading hedges…</div>
+          <div className="px-3 py-2.5 text-muted">{t("groups.loading")}</div>
         ) : list.length === 0 ? (
-          <div className="px-3 py-2.5">{filter === "active" ? "No open hedges" : "No hedges closed in the last 7 days"}</div>
+          <div className="px-3 py-2.5">{filter === "active" ? t("groups.noneOpen") : t("groups.noneClosed")}</div>
         ) : (
           <table className="w-full min-w-[1040px] border-collapse">
             <thead className="sticky top-0 z-20 bg-surface">
@@ -84,10 +81,10 @@ export function GroupsPanel({ groups, state }: { groups: GroupView[] | undefined
                 {HEADS.map(([head, hint], i) => (
                   <th
                     key={head + i}
-                    title={hint}
+                    title={hint ? t(hint) : undefined}
                     className={cx("h-8 px-3 font-normal whitespace-nowrap", i === 0 ? "text-left" : "text-right", hint && "dotted", i === HEADS.length - 1 && "sticky right-0 bg-surface")}
                   >
-                    {head}
+                    {head ? t(head) : ""}
                   </th>
                 ))}
               </tr>
@@ -109,7 +106,7 @@ export function GroupsPanel({ groups, state }: { groups: GroupView[] | undefined
             {filter === "active" && activeCount > 1 && (
               <tfoot className="sticky bottom-0 z-10 bg-surface text-text">
                 <tr className="border-t border-line">
-                  <td className="h-8 px-3 text-muted">Total · {activeCount} hedges</td>
+                  <td className="h-8 px-3 text-muted">{t("groups.totalRow", { n: activeCount })}</td>
                   <td className={td} />
                   <td className={td}>{usd(totals.notional, 0)}</td>
                   <td className={td} colSpan={4} />
@@ -136,21 +133,24 @@ const td = "h-8 px-3 text-right whitespace-nowrap";
  * id while accounts load or after it was removed.
  */
 function useLegPlace() {
+  const t = useT();
   const { accounts } = useWorkspace();
   return (leg: { venue: string; accountId: string }) => {
     const account = accounts.find((item) => item.id === leg.accountId);
     if (!account) return `${venueLabel(leg.venue)} · ${leg.accountId}`;
-    return account.venue === leg.venue ? accountName(account) : `${venueLabel(leg.venue)} via ${accountName(account)}`;
+    return account.venue === leg.venue ? accountName(account) : t("groups.via", { venue: venueLabel(leg.venue), account: accountName(account) });
   };
 }
 
 function GroupRow({ group, expanded, onToggle, onClose }: { group: GroupView; expanded: boolean; onToggle: () => void; onClose: () => void }) {
+  const t = useT();
+  const text = useHedgerText();
   const toast = useToast();
   const place = useLegPlace();
   const now = useNow();
   const [busy, setBusy] = useState("");
   const [leg0, leg1] = group.legView;
-  const status = STATUS[group.status];
+  const statusClass = STATUS_CLASS[group.status];
   const nextFunding = [leg0, leg1].filter((leg) => leg.nextFunding && Number(leg.held) > 0).sort((a, b) => (a.nextFunding ?? 0) - (b.nextFunding ?? 0))[0];
   const nextCash = [leg0, leg1].reduce((sum, leg) => (leg.nextFunding === nextFunding?.nextFunding ? sum + Number(leg.nextFundingCash) : sum), 0);
   const run = async (name: string, action: () => Promise<unknown>) => {
@@ -158,7 +158,7 @@ function GroupRow({ group, expanded, onToggle, onClose }: { group: GroupView; ex
     try {
       await action();
     } catch (error) {
-      toast.push({ kind: "error", title: `${name} failed`, detail: (error as Error).message });
+      toast.push({ kind: "error", title: t("groups.actionFailed", { action: name }), detail: (error as Error).message });
     } finally {
       setBusy("");
     }
@@ -172,49 +172,49 @@ function GroupRow({ group, expanded, onToggle, onClose }: { group: GroupView; ex
         <span className="mr-1.5 text-muted">{expanded ? "▾" : "▸"}</span>
         <span className="text-text">{group.label}</span>
         <div className="ml-4 text-muted">
-          <span className={leg0.side === "buy" ? "text-up" : "text-down"}>{leg0.side === "buy" ? "L" : "S"}</span> {leg0.inst.split(":").slice(2).join(":")} {place(leg0)}
+          <span className={leg0.side === "buy" ? "text-up" : "text-down"}>{t(leg0.side === "buy" ? "common.long" : "common.short")}</span> {leg0.inst.split(":").slice(2).join(":")} {place(leg0)}
           {" / "}
-          <span className={leg1.side === "buy" ? "text-up" : "text-down"}>{leg1.side === "buy" ? "L" : "S"}</span> {leg1.inst.split(":").slice(2).join(":")} {place(leg1)}
+          <span className={leg1.side === "buy" ? "text-up" : "text-down"}>{t(leg1.side === "buy" ? "common.long" : "common.short")}</span> {leg1.inst.split(":").slice(2).join(":")} {place(leg1)}
         </div>
       </td>
-      <td className={cx(td, status.className)} title={group.problem}>
-        {status.text}
-        {working && <div className="text-muted">{working.kind}{working.mode === "limit" ? " · limit" : ""}</div>}
+      <td className={cx(td, statusClass)} title={text(group.problem) || undefined}>
+        {t(`groups.status.${group.status}`)}
+        {working && <div className="text-muted">{t(`groups.action.${working.kind}`)}{working.mode === "limit" ? t("groups.limitSuffix") : ""}</div>}
       </td>
       <td className={td}>
         {num(leg0.held)} {leg0.base}
         <div className="text-muted">{usd(Number(group.notional) / 2, 0)}</div>
       </td>
-      <td className={cx(td, Math.abs(exposure) > 0 && !group.balanced ? "text-down" : "")} title="Directional exposure left after both legs, in leg 1 units">
-        {group.balanced ? "Hedged" : `${exposure > 0 ? "+" : ""}${num(group.exposure)} ${leg0.base}`}
+      <td className={cx(td, Math.abs(exposure) > 0 && !group.balanced ? "text-down" : "")} title={t("groups.exposureHint")}>
+        {group.balanced ? t("groups.hedged") : `${exposure > 0 ? "+" : ""}${num(group.exposure)} ${leg0.base}`}
         {!group.balanced && <div className="text-muted">{usd(group.exposureValue)}</div>}
       </td>
-      <td className={td} title="Leg 2 over leg 1 in bps: average entry → mark now. For a long-leg-1 hedge the spread narrowing is profit.">
+      <td className={td} title={t("groups.spreadHint")}>
         {group.match === "base" ? <>{bpsText(group.entrySpreadBps, 1)} → {bpsText(group.spreadBps, 1)}</> : "—"}
       </td>
       <td className={cx(td, tone(group.netFundingApr))}>{aprText(group.netFundingApr)}</td>
       <td className={td}>
         {nextFunding ? <>{countdown(nextFunding.nextFunding, now)}<div className={tone(nextCash)}>{usd(nextCash, 4)}</div></> : "—"}
       </td>
-      <td className={cx(td, tone(group.fundingEarned))} title="Estimated from the quoted rate at each settlement">{usd(group.fundingEarned)}</td>
+      <td className={cx(td, tone(group.fundingEarned))} title={t("groups.earnedHint")}>{usd(group.fundingEarned)}</td>
       <td className={td}>{usd(Number(group.fees) * -1)}</td>
-      <td className={cx(td, tone(group.netPnl))} title="Unrealized + realized − fees + funding">
+      <td className={cx(td, tone(group.netPnl))} title={t("groups.head.netPnlHint")}>
         {usd(group.netPnl)}
-        {group.estimated && <span className="text-muted" title="Some fill prices are estimates"> *</span>}
+        {group.estimated && <span className="text-muted" title={t("groups.estimated")}> *</span>}
       </td>
       <td className={cx(td, "sticky right-0", group.status === "broken" ? "bg-[#1f1219]" : "bg-surface")} onClick={(event) => event.stopPropagation()}>
         <div className="flex justify-end gap-3">
-          {working?.mode === "limit" && <LinkButton onClick={() => run("Cancel", () => hedgeApi.cancel(group.id))} busy={busy === "Cancel"}>Cancel</LinkButton>}
+          {working?.mode === "limit" && <LinkButton onClick={() => run(t("groups.cancel"), () => hedgeApi.cancel(group.id))} busy={busy === t("groups.cancel")}>{t("groups.cancel")}</LinkButton>}
           {group.status === "broken" && !working && (
             <>
-              <LinkButton title="Top up the smaller leg at market: back to full size" onClick={() => run("Rehedge", () => hedgeApi.rehedge(group.id))} busy={busy === "Rehedge"}>Rehedge</LinkButton>
-              <LinkButton title="Reduce the larger leg at market to match the smaller one" onClick={() => run("Trim", () => hedgeApi.trim(group.id))} busy={busy === "Trim"}>Trim</LinkButton>
+              <LinkButton title={t("groups.rehedgeHint")} onClick={() => run(t("groups.rehedge"), () => hedgeApi.rehedge(group.id))} busy={busy === t("groups.rehedge")}>{t("groups.rehedge")}</LinkButton>
+              <LinkButton title={t("groups.trimHint")} onClick={() => run(t("groups.trim"), () => hedgeApi.trim(group.id))} busy={busy === t("groups.trim")}>{t("groups.trim")}</LinkButton>
             </>
           )}
           {(group.status === "broken" || group.status === "open") && !working && (
-            <LinkButton title="Close both legs completely at market" onClick={() => run("Unwind", () => hedgeApi.unwind(group.id))} busy={busy === "Unwind"} danger>Unwind</LinkButton>
+            <LinkButton title={t("groups.unwindHint")} onClick={() => run(t("groups.unwind"), () => hedgeApi.unwind(group.id))} busy={busy === t("groups.unwind")} danger>{t("groups.unwind")}</LinkButton>
           )}
-          {group.status === "open" && !working && <LinkButton onClick={onClose}>Close</LinkButton>}
+          {group.status === "open" && !working && <LinkButton onClick={onClose}>{t("groups.close")}</LinkButton>}
         </div>
       </td>
     </tr>
@@ -231,6 +231,8 @@ function LinkButton({ onClick, busy, danger, title, children }: { onClick: () =>
 
 /** The two legs side by side, then orders, events and funding. */
 function GroupDetailView({ group }: { group: GroupView }) {
+  const t = useT();
+  const text = useHedgerText();
   const [tab, setTab] = useState<"orders" | "events" | "funding" | "note">("orders");
   const detail = useQuery({
     queryKey: ["hedgeGroup", group.id, group.updatedAt, group.working?.id, group.legView[0].held, group.legView[1].held],
@@ -239,22 +241,23 @@ function GroupDetailView({ group }: { group: GroupView }) {
   });
   return (
     <div className="flex flex-col gap-2">
-      {group.problem && <div className="rounded-md border border-down/60 bg-warn-bg px-3 py-2 text-down">{group.problem}</div>}
+      {text(group.problem) && <div className="rounded-md border border-down/60 bg-warn-bg px-3 py-2 text-down">{text(group.problem)}</div>}
       <div className="grid grid-cols-2 gap-[3px]">
         {group.legView.map((leg) => <LegCard key={leg.leg} leg={leg} />)}
       </div>
       <Tabs value={tab} onChange={setTab} options={[
-        { value: "orders", label: `Orders${detail.data ? ` (${detail.data.orders.length})` : ""}` },
-        { value: "events", label: "Activity" },
-        { value: "funding", label: "Funding" },
-        { value: "note", label: "Note" },
+        { value: "orders", label: `${t("groups.tab.orders")}${detail.data ? ` (${detail.data.orders.length})` : ""}` },
+        { value: "events", label: t("groups.tab.activity") },
+        { value: "funding", label: t("groups.tab.funding") },
+        { value: "note", label: t("groups.tab.note") },
       ]} />
-      {!detail.data ? <div className="text-muted">Loading…</div> : tab === "orders" ? <Orders detail={detail.data} /> : tab === "events" ? <Events detail={detail.data} /> : tab === "funding" ? <FundingLog detail={detail.data} /> : <Note group={group} />}
+      {!detail.data ? <div className="text-muted">{t("common.loading")}</div> : tab === "orders" ? <Orders detail={detail.data} /> : tab === "events" ? <Events detail={detail.data} /> : tab === "funding" ? <FundingLog detail={detail.data} /> : <Note group={group} />}
     </div>
   );
 }
 
 function LegCard({ leg }: { leg: LegView }) {
+  const t = useT();
   const now = useNow();
   const place = useLegPlace();
   const continuous = leg.venue === "deribit";
@@ -266,41 +269,41 @@ function LegCard({ leg }: { leg: LegView }) {
   return (
     <div className="rounded-md bg-surface p-2.5">
       <div className="mb-1.5 flex items-center gap-2">
-        <span className={leg.side === "buy" ? "text-up" : "text-down"}>{leg.side === "buy" ? "Long" : "Short"}</span>
+        <span className={leg.side === "buy" ? "text-up" : "text-down"}>{t(leg.side === "buy" ? "common.long" : "common.short")}</span>
         <span className="text-text">{leg.inst.split(":").slice(2).join(":")}</span>
         <span className="text-muted">{place(leg)}</span>
-        <span className={cx("ml-auto size-1.5 rounded-full", leg.accountLive ? "bg-up" : "bg-down")} title={leg.accountLive ? "Account stream live" : "Account stream offline"} />
+        <span className={cx("ml-auto size-1.5 rounded-full", leg.accountLive ? "bg-up" : "bg-down")} title={leg.accountLive ? t("accounts.streamLive") : t("accounts.streamDown")} />
       </div>
       <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5">
-        <K>Held</K><V>{num(leg.held)} {leg.base} <span className="text-muted">({usd(leg.notional)})</span></V>
-        <K>Entry · Mark</K><V>{price(leg.avgEntry, tick)} · {price(leg.mark, tick)}</V>
-        <K>Unrealized</K><V className={tone(leg.unrealizedPnl)}>{usd(leg.unrealizedPnl)}</V>
-        {Number(leg.closed) > 0 && <><K>Closed · Realized</K><V>{num(leg.closed)} @ {price(leg.avgClose, tick)} · <span className={tone(leg.realizedPnl)}>{usd(leg.realizedPnl)}</span></V></>}
-        <K>Fees</K><V>{usd(leg.fees)}{leg.feesOther ? Object.entries(leg.feesOther).map(([asset, value]) => ` + ${num(value)} ${asset}`).join("") : ""}</V>
+        <K>{t("groups.held")}</K><V>{num(leg.held)} {leg.base} <span className="text-muted">({usd(leg.notional)})</span></V>
+        <K>{t("groups.entryMark")}</K><V>{price(leg.avgEntry, tick)} · {price(leg.mark, tick)}</V>
+        <K>{t("groups.unrealized")}</K><V className={tone(leg.unrealizedPnl)}>{usd(leg.unrealizedPnl)}</V>
+        {Number(leg.closed) > 0 && <><K>{t("groups.closedRealized")}</K><V>{num(leg.closed)} @ {price(leg.avgClose, tick)} · <span className={tone(leg.realizedPnl)}>{usd(leg.realizedPnl)}</span></V></>}
+        <K>{t("common.fees")}</K><V>{usd(leg.fees)}{leg.feesOther ? Object.entries(leg.feesOther).map(([asset, value]) => ` + ${num(value)} ${asset}`).join("") : ""}</V>
         {leg.product === "perp" && (
           <>
-            <K>Funding</K>
+            <K>{t("common.funding")}</K>
             <V>
               <span className={tone(leg.fundingRate)}>{rateText(leg.fundingRate)}</span>{leg.fundingHours ? <span className="text-muted">/{leg.fundingHours}h</span> : null}
               {" · "}<span className={tone(leg.fundingApr)}>{aprText(leg.fundingApr)}</span>
               {continuous
-                ? <span className="text-muted" title="Deribit accrues funding continuously"> · continuous</span>
-                : <>{" · next "}{countdown(leg.nextFunding, now)} <span className={tone(leg.nextFundingCash)}>{usd(leg.nextFundingCash, 4)}</span></>}
-              {leg.fundingStale && <span className="text-down"> stale</span>}
+                ? <span className="text-muted" title={t("groups.continuousHint")}> · {t("leg.continuous")}</span>
+                : <>{t("groups.next")}{countdown(leg.nextFunding, now)} <span className={tone(leg.nextFundingCash)}>{usd(leg.nextFundingCash, 4)}</span></>}
+              {leg.fundingStale && <span className="text-down"> {t("leg.stale")}</span>}
             </V>
-            <K>Earned</K><V className={tone(leg.fundingEarned)}>{usd(leg.fundingEarned)}</V>
+            <K>{t("groups.earned")}</K><V className={tone(leg.fundingEarned)}>{usd(leg.fundingEarned)}</V>
           </>
         )}
-        <K>Liquidation</K>
+        <K>{t("groups.liquidation")}</K>
         <V className={Number(leg.liquidationPct) > 0 && Number(leg.liquidationPct) < 15 ? "text-down" : ""}>
-          {Number(leg.liquidationPrice) > 0 ? `${price(leg.liquidationPrice, tick)} · ${num(leg.liquidationPct, 1)}% away` : "—"}
+          {Number(leg.liquidationPrice) > 0 ? `${price(leg.liquidationPrice, tick)} · ${t("groups.away", { pct: num(leg.liquidationPct, 1) })}` : "—"}
           {leg.leverage ? <span className="text-muted"> · {num(leg.leverage, 0)}x</span> : null}
         </V>
-        <K>Venue position</K>
+        <K>{t("groups.venuePosition")}</K>
         <V className={short ? "text-down" : ""} >
-          {Number(leg.venueSize) > 0 ? `${leg.venueSide === "short" ? "-" : ""}${num(leg.venueSize)}` : "flat"}
-          {short && <span> (less than the hedge holds)</span>}
-          {!short && venue !== undefined && venue > Number(leg.held) && <span className="text-muted"> (includes trades outside this hedge)</span>}
+          {Number(leg.venueSize) > 0 ? `${leg.venueSide === "short" ? "-" : ""}${num(leg.venueSize)}` : t("groups.flat")}
+          {short && <span>{t("groups.lessThanHedge")}</span>}
+          {!short && venue !== undefined && venue > Number(leg.held) && <span className="text-muted">{t("groups.outsideHedge")}</span>}
         </V>
       </div>
     </div>
@@ -311,29 +314,31 @@ const K = ({ children }: { children: ReactNode }) => <span className="text-muted
 const V = ({ children, className }: { children: ReactNode; className?: string }) => <span className={cx("text-right", className)}>{children}</span>;
 
 function Orders({ detail }: { detail: GroupDetail }) {
+  const t = useT();
+  const text = useHedgerText();
   const actions = new Map(detail.actions.map((action) => [action.id, action]));
-  if (!detail.orders.length) return <div className="text-muted">No orders</div>;
+  if (!detail.orders.length) return <div className="text-muted">{t("groups.noOrders")}</div>;
   return (
     <table className="w-full border-collapse">
-      <thead><tr className="text-muted">{["Time", "Action", "Leg", "Role", "Side", "Type", "Qty", "Filled", "Avg price", "Slippage", "State"].map((head, i) => <th key={head} className={cx("h-6 px-2 font-normal", i === 0 ? "text-left" : "text-right")}>{head}</th>)}</tr></thead>
+      <thead><tr className="text-muted">{(["groups.orders.time", "groups.orders.action", "groups.orders.leg", "groups.orders.role", "common.side", "common.type", "groups.orders.qty", "groups.orders.filled", "groups.orders.avg", "groups.orders.slippage", "groups.orders.state"] as const).map((key) => t(key)).map((head, i) => <th key={head + i} className={cx("h-6 px-2 font-normal", i === 0 ? "text-left" : "text-right")}>{head}</th>)}</tr></thead>
       <tbody>
         {[...detail.orders].reverse().map((order) => {
           const ref = Number(order.refPrice);
           const avg = Number(order.avgPrice);
           const slip = order.type === "market" && ref > 0 && avg > 0 ? ((avg - ref) / ref) * 10_000 * (order.side === "buy" ? 1 : -1) : undefined;
           return (
-            <tr key={order.clientOrderId} className="hover:bg-raised" title={order.error || `client ${order.clientOrderId}${order.orderId ? ` · venue ${order.orderId}` : ""}`}>
+            <tr key={order.clientOrderId} className="hover:bg-raised" title={text(order.error) || t("groups.orders.client", { id: order.clientOrderId }) + (order.orderId ? t("groups.orders.venue", { id: order.orderId }) : "")}>
               <td className="h-6 px-2 text-left">{time(Date.parse(order.createdAt))}</td>
-              <td className="px-2 text-right">{actions.get(order.actionId)?.kind ?? ""}</td>
+              <td className="px-2 text-right">{(() => { const kind = actions.get(order.actionId)?.kind; return kind ? t(`groups.action.${kind}`) : ""; })()}</td>
               <td className="px-2 text-right">{order.leg + 1}</td>
-              <td className="px-2 text-right text-muted">{order.role}</td>
-              <td className={cx("px-2 text-right", order.side === "buy" ? "text-up" : "text-down")}>{order.side}</td>
-              <td className="px-2 text-right">{order.type}{Number(order.price) > 0 ? ` @ ${num(order.price)}` : ""}</td>
+              <td className="px-2 text-right text-muted">{t(`role.${order.role}`)}</td>
+              <td className={cx("px-2 text-right", order.side === "buy" ? "text-up" : "text-down")}>{t(order.side === "buy" ? "common.buy" : "common.sell")}</td>
+              <td className="px-2 text-right">{t(order.type === "limit" ? "common.limit" : "common.market")}{Number(order.price) > 0 ? ` @ ${num(order.price)}` : ""}</td>
               <td className="px-2 text-right">{num(order.qty)}</td>
               <td className="px-2 text-right">{num(order.filled)}</td>
               <td className="px-2 text-right">{avg > 0 ? num(order.avgPrice) : "—"}</td>
               <td className={cx("px-2 text-right", slip !== undefined && slip > 5 ? "text-down" : "")}>{slip === undefined ? "—" : bpsText(slip, 1)}</td>
-              <td className={cx("px-2 text-right", order.state === "rejected" || order.state === "unknown" || order.state === "unresolved" ? "text-down" : "")}>{order.state}</td>
+              <td className={cx("px-2 text-right", order.state === "rejected" || order.state === "unknown" || order.state === "unresolved" ? "text-down" : "")}>{stateLabel(t, order.state)}</td>
             </tr>
           );
         })}
@@ -343,12 +348,13 @@ function Orders({ detail }: { detail: GroupDetail }) {
 }
 
 function Events({ detail }: { detail: GroupDetail }) {
+  const text = useHedgerText();
   return (
     <div className="max-h-56 overflow-y-auto">
       {detail.events.map((event) => (
         <div key={event.id} className="flex gap-3 py-0.5">
           <span className="shrink-0 text-muted">{time(Date.parse(event.at))}</span>
-          <span className={event.level === "error" ? "text-down" : event.level === "warn" ? "text-text" : "text-text-2"}>{event.message}</span>
+          <span className={event.level === "error" ? "text-down" : event.level === "warn" ? "text-text" : "text-text-2"}>{text(event.message)}</span>
         </div>
       ))}
     </div>
@@ -356,10 +362,11 @@ function Events({ detail }: { detail: GroupDetail }) {
 }
 
 function FundingLog({ detail }: { detail: GroupDetail }) {
-  if (!detail.funding.length) return <div className="text-muted">No settlements yet. Funding is estimated from the quoted rate at each settlement.</div>;
+  const t = useT();
+  if (!detail.funding.length) return <div className="text-muted">{t("groups.noSettlements")}</div>;
   return (
     <table className="w-full border-collapse">
-      <thead><tr className="text-muted">{["Settled", "Leg", "Rate", "Size", "Price", "Amount"].map((head, i) => <th key={head} className={cx("h-6 px-2 font-normal", i === 0 ? "text-left" : "text-right")}>{head}</th>)}</tr></thead>
+      <thead><tr className="text-muted">{(["groups.funding.settled", "groups.orders.leg", "groups.funding.rate", "common.size", "common.price", "groups.funding.amount"] as const).map((key) => t(key)).map((head, i) => <th key={head + i} className={cx("h-6 px-2 font-normal", i === 0 ? "text-left" : "text-right")}>{head}</th>)}</tr></thead>
       <tbody>
         {detail.funding.map((row) => (
           <tr key={row.settledAt + row.leg}>
@@ -377,6 +384,7 @@ function FundingLog({ detail }: { detail: GroupDetail }) {
 }
 
 function Note({ group }: { group: GroupView }) {
+  const t = useT();
   const toast = useToast();
   const [label, setLabel] = useState(group.label);
   const [note, setNote] = useState(group.note);
@@ -387,7 +395,7 @@ function Note({ group }: { group: GroupView }) {
     try {
       await hedgeApi.edit(group.id, label, note);
     } catch (error) {
-      toast.push({ kind: "error", title: "Not saved", detail: (error as Error).message });
+      toast.push({ kind: "error", title: t("groups.notSaved"), detail: (error as Error).message });
     } finally {
       setSaving(false);
     }
@@ -395,14 +403,15 @@ function Note({ group }: { group: GroupView }) {
   return (
     <div className="flex max-w-xl flex-col gap-2">
       <input value={label} maxLength={80} onChange={(event) => setLabel(event.target.value)} className="h-8 rounded-lg border border-line bg-transparent px-3 outline-none focus:border-line-strong" />
-      <textarea value={note} maxLength={2000} rows={3} onChange={(event) => setNote(event.target.value)} placeholder="Why this hedge, exit plan…" className="rounded-lg border border-line bg-transparent px-3 py-2 outline-none placeholder:text-faint focus:border-line-strong" />
-      <button onClick={save} disabled={saving} className="h-8 w-24 rounded-lg bg-raised hover:bg-line-strong/40 disabled:opacity-50">{saving ? "Saving…" : "Save"}</button>
+      <textarea value={note} maxLength={2000} rows={3} onChange={(event) => setNote(event.target.value)} placeholder={t("groups.notePlaceholder")} className="rounded-lg border border-line bg-transparent px-3 py-2 outline-none placeholder:text-faint focus:border-line-strong" />
+      <button onClick={save} disabled={saving} className="h-8 w-24 rounded-lg bg-raised hover:bg-line-strong/40 disabled:opacity-50">{saving ? t("common.saving") : t("common.save")}</button>
     </div>
   );
 }
 
 /** Close a fraction of the hedge at market, or rest one leg and hedge fills. */
 function CloseDialog({ group, onDone }: { group: GroupView; onDone: () => void }) {
+  const t = useT();
   const toast = useToast();
   const queryClient = useQueryClient();
   const [percent, setPercent] = useState(100);
@@ -428,7 +437,7 @@ function CloseDialog({ group, onDone }: { group: GroupView; onDone: () => void }
       void queryClient.invalidateQueries({ queryKey: ["hedgeGroup"] });
       onDone();
     } catch (error) {
-      toast.push({ kind: "error", title: "Close not started", detail: (error as Error).message });
+      toast.push({ kind: "error", title: t("closeHedge.notStarted"), detail: (error as Error).message });
     } finally {
       setBusy(false);
     }
@@ -438,7 +447,7 @@ function CloseDialog({ group, onDone }: { group: GroupView; onDone: () => void }
     if (value) setLimitPrice(String(value));
   };
   return (
-    <Dialog open onOpenChange={(open) => !open && onDone()} title="Close hedge" description={group.label}>
+    <Dialog open onOpenChange={(open) => !open && onDone()} title={t("closeHedge.title")} description={group.label}>
       <div className="flex flex-col gap-3 text-left">
         <div className="flex items-center gap-3">
           <input type="range" min={1} max={100} value={percent} onChange={(event) => setPercent(Number(event.target.value))} className="range flex-1" style={{ ["--fill" as string]: `${percent}%` }} />
@@ -446,31 +455,31 @@ function CloseDialog({ group, onDone }: { group: GroupView; onDone: () => void }
         </div>
         <div className="flex gap-1">{[25, 50, 75, 100].map((value) => <button key={value} onClick={() => setPercent(value)} className={cx("h-7 flex-1 rounded-md", percent === value ? "bg-line-strong/60" : "bg-raised")}>{value}%</button>)}</div>
         <div className="text-muted">
-          Closes ≈ {num(exit0)} {group.legView[0].base} on leg 1 and the matching amount on leg 2.
-          {group.match === "base" && <> Exit spread now {bpsText(group.exitSpreadBps, 1)} (entry {bpsText(group.entrySpreadBps, 1)}).</>}
+          {t("closeHedge.explain", { qty: num(exit0), base: group.legView[0].base })}
+          {group.match === "base" && t("closeHedge.exitSpread", { exit: bpsText(group.exitSpreadBps, 1), entry: bpsText(group.entrySpreadBps, 1) })}
         </div>
-        <Tabs value={mode} onChange={setMode} options={[{ value: "market", label: "Market both" }, { value: "limit", label: "Limit + hedge" }]} className="[&>button]:flex-1" />
+        <Tabs value={mode} onChange={setMode} options={[{ value: "market", label: t("hticket.marketBoth") }, { value: "limit", label: t("hticket.limitHedge") }]} className="[&>button]:flex-1" />
         {mode === "limit" && (
           <>
             <div className="grid h-8 grid-cols-2 rounded-lg bg-raised p-0.5">
               {([0, 1] as const).map((leg) => (
-                <button key={leg} onClick={() => setMaker(leg)} className={cx("rounded-md", maker === leg ? "bg-line-strong/60 text-text" : "text-muted")}>Rest leg {leg + 1} · {venueLabel(group.legView[leg].venue)}</button>
+                <button key={leg} onClick={() => setMaker(leg)} className={cx("rounded-md", maker === leg ? "bg-line-strong/60 text-text" : "text-muted")}>{t("hticket.restLeg", { n: leg + 1, venue: venueLabel(group.legView[leg].venue) })}</button>
               ))}
             </div>
             <label className="flex h-10 items-center gap-2 rounded-lg border border-line px-3">
-              <span className="text-muted">{closeSide === "buy" ? "Buy" : "Sell"} price</span>
+              <span className="text-muted">{t("closeHedge.price", { side: t(closeSide === "buy" ? "common.buy" : "common.sell") })}</span>
               <input inputMode="decimal" value={limitPrice} onChange={(event) => setLimitPrice(event.target.value.replace(/[^\d.]/g, ""))} className="min-w-0 flex-1 bg-transparent text-right outline-none" />
-              <button onClick={() => fill("join")} className="text-accent">{closeSide === "buy" ? "Bid" : "Ask"}</button>
-              <button onClick={() => fill("touch")} className="text-accent">{closeSide === "buy" ? "Ask" : "Bid"}</button>
+              <button onClick={() => fill("join")} className="text-accent">{t(closeSide === "buy" ? "hticket.join.buy" : "hticket.join.sell")}</button>
+              <button onClick={() => fill("touch")} className="text-accent">{t(closeSide === "buy" ? "hticket.join.sell" : "hticket.join.buy")}</button>
             </label>
-            <label className="flex items-center gap-2" title="The resting order is cancelled rather than filled at once if it would cross the book. The hedge leg always trades at market.">
+            <label className="flex items-center gap-2" title={t("hticket.postOnlyHint")}>
               <input type="checkbox" checked={postOnly} onChange={(event) => setPostOnly(event.target.checked)} className="accent-[#50d2c1]" />
-              Post only
-              <span className="text-muted">· {venueLabel(makerLeg.venue)} resting order only</span>
+              {t("hticket.postOnly")}
+              <span className="text-muted">{t("hticket.postOnlyScope", { venue: venueLabel(makerLeg.venue) })}</span>
             </label>
           </>
         )}
-        <PrimaryButton onClick={submit} disabled={busy || (mode === "limit" && !(Number(limitPrice) > 0))}>{busy ? "Starting…" : mode === "market" ? `Close ${percent}% at market` : `Place close ${percent}%`}</PrimaryButton>
+        <PrimaryButton onClick={submit} disabled={busy || (mode === "limit" && !(Number(limitPrice) > 0))}>{busy ? t("closeHedge.starting") : t(mode === "market" ? "closeHedge.closeMarket" : "closeHedge.placeClose", { pct: percent })}</PrimaryButton>
       </div>
     </Dialog>
   );
@@ -485,4 +494,11 @@ export function legVenueHeld(leg: Pick<LegView, "product" | "accountLive" | "ven
   const size = Number(leg.venueSize) || 0;
   if (size === 0) return 0;
   return (leg.venueSide === "long") === (leg.side === "buy") ? size : -size;
+}
+
+/** An order state in the interface language; unknown states pass through. */
+function stateLabel(t: T, state: string): string {
+  const key = `state.${state}` as Parameters<T>[0];
+  const text = t(key);
+  return text === key ? state : text;
 }

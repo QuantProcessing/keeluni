@@ -1,7 +1,6 @@
 package hedger
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/shopspring/decimal"
@@ -40,7 +39,7 @@ type SizePlan struct {
 	// Mismatch is leg 1's notional minus leg 0's at the reference prices: the
 	// directional exposure left by rounding to two different steps.
 	Mismatch decimal.Decimal `json:"mismatch"`
-	Problems []string        `json:"problems,omitempty"`
+	Problems []Text          `json:"problems,omitempty"`
 }
 
 // PlanSize sizes both legs. Leg quantities are floored to their steps; with
@@ -48,11 +47,11 @@ type SizePlan struct {
 // one side than the operator asked for.
 func PlanSize(input SizeInput, legs [2]Leg) (SizePlan, error) {
 	if !input.Size.IsPositive() {
-		return SizePlan{}, invalidf("size must be positive")
+		return SizePlan{}, invalid("invalid.sizePositive")
 	}
 	for i := range legs {
 		if !input.Price[i].IsPositive() {
-			return SizePlan{}, invalidf("no price for leg %d (%s)", i+1, legs[i].Instrument)
+			return SizePlan{}, invalid("invalid.noPrice", "leg", i+1, "inst", legs[i].Instrument)
 		}
 	}
 	base0 := input.Size
@@ -61,7 +60,7 @@ func PlanSize(input SizeInput, legs [2]Leg) (SizePlan, error) {
 	case UnitQuote:
 		base0 = input.Size.Div(input.Price[0])
 	default:
-		return SizePlan{}, invalidf("unit must be base or quote")
+		return SizePlan{}, invalid("invalid.unit")
 	}
 	var plan SizePlan
 	switch input.Match {
@@ -71,7 +70,7 @@ func PlanSize(input SizeInput, legs [2]Leg) (SizePlan, error) {
 			ratio = decimal.NewFromInt(1)
 		}
 		if !ratio.IsPositive() {
-			return SizePlan{}, invalidf("ratio must be positive")
+			return SizePlan{}, invalid("invalid.ratio")
 		}
 		plan.Ratio = ratio
 		// Round leg 0, derive leg 1, round it, then re-derive leg 0 from the
@@ -89,7 +88,7 @@ func PlanSize(input SizeInput, legs [2]Leg) (SizePlan, error) {
 			plan.Ratio = q1.Div(q0)
 		}
 	default:
-		return SizePlan{}, invalidf("match must be base or notional")
+		return SizePlan{}, invalid("invalid.match")
 	}
 	for i := range legs {
 		plan.Notional[i] = plan.Qty[i].Mul(input.Price[i])
@@ -100,17 +99,16 @@ func PlanSize(input SizeInput, legs [2]Leg) (SizePlan, error) {
 }
 
 // checkMinimums lists every venue minimum the quantities violate.
-func checkMinimums(qty [2]decimal.Decimal, price [2]decimal.Decimal, legs [2]Leg) []string {
-	var problems []string
+func checkMinimums(qty [2]decimal.Decimal, price [2]decimal.Decimal, legs [2]Leg) []Text {
+	var problems []Text
 	for i, leg := range legs {
-		label := fmt.Sprintf("leg %d (%s)", i+1, leg.Instrument)
 		switch {
 		case !qty[i].IsPositive():
-			problems = append(problems, fmt.Sprintf("%s: size rounds to zero at step %s", label, leg.StepSize))
+			problems = append(problems, textOf("sizing.roundsToZero", "leg", i+1, "step", leg.StepSize))
 		case leg.MinQty.IsPositive() && qty[i].LessThan(leg.MinQty):
-			problems = append(problems, fmt.Sprintf("%s: %s is below the minimum size %s", label, qty[i], leg.MinQty))
+			problems = append(problems, textOf("sizing.belowMinQty", "leg", i+1, "qty", qty[i], "min", leg.MinQty))
 		case leg.MinNotional.IsPositive() && qty[i].Mul(price[i]).LessThan(leg.MinNotional):
-			problems = append(problems, fmt.Sprintf("%s: value %s is below the minimum %s %s", label, qty[i].Mul(price[i]).StringFixed(2), leg.MinNotional, leg.Quote))
+			problems = append(problems, textOf("sizing.belowMinNotional", "leg", i+1, "value", qty[i].Mul(price[i]).StringFixed(2), "min", leg.MinNotional, "quote", leg.Quote))
 		}
 	}
 	return problems

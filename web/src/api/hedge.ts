@@ -5,6 +5,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, api } from "./client";
 import type { FundingQuote } from "./types";
+import { currentLang } from "@/i18n";
+import { hedgerText, type HedgerText } from "@/i18n/hedger";
+
+export type { HedgerText };
 
 export type GroupStatus = "opening" | "open" | "closing" | "closed" | "failed" | "broken";
 export type ActionKind = "open" | "close" | "unwind" | "rehedge";
@@ -37,7 +41,7 @@ export interface HedgeAction {
   tif?: string;
   target: [string, string];
   status: "working" | "done" | "canceled" | "failed";
-  error?: string;
+  error?: HedgerText;
   createdAt: string;
   updatedAt: string;
 }
@@ -80,7 +84,8 @@ export interface GroupView {
   policy: "unwind" | "hold";
   match: "base" | "notional";
   ratio: string;
-  problem?: string;
+  /** Why a group is unhedged or failed; empty when there is none. */
+  problem?: HedgerText;
   legs: [HedgeLeg, HedgeLeg];
   createdAt: string;
   updatedAt: string;
@@ -119,7 +124,7 @@ export interface HedgeOrder {
   orderId?: string;
   filled: string;
   avgPrice: string;
-  error?: string;
+  error?: HedgerText;
   createdAt: string;
 }
 
@@ -138,7 +143,7 @@ export interface HedgeEvent {
   id: number;
   at: string;
   level: "info" | "warn" | "error";
-  message: string;
+  message: HedgerText;
 }
 
 export interface FundingAccrual {
@@ -198,7 +203,7 @@ export interface Preview {
   notional: [string, string];
   ratio: string;
   mismatch: string;
-  problems?: string[];
+  problems?: HedgerText[];
   price: [string, string];
   sweep: [Sweep, Sweep];
   spreadBps: string;
@@ -227,7 +232,9 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const error = payload.error ?? {};
-    throw new ApiError(response.status, error.code ?? "HTTP_" + response.status, error.message ?? response.statusText);
+    // A refused request carries a coded text: render it in the reader's language.
+    const message = error.text ? hedgerText(error.text as HedgerText, currentLang()) : error.message;
+    throw new ApiError(response.status, error.code ?? "HTTP_" + response.status, message ?? response.statusText);
   }
   return payload as T;
 }

@@ -1,6 +1,6 @@
 ---
-name: Bolter
-description: Single-operator multi-venue trading terminal. Visual language and interaction model follow app.hyperliquid.xyz/trade.
+name: KeelUni
+description: One-stop trading terminal for one operator across every connected venue. Visual language and interaction model follow app.hyperliquid.xyz/trade.
 source: extracted 2026-10-15 from app.hyperliquid.xyz/trade (computed styles + screenshots)
 colors:
   bg: "#1b2429"            # page canvas, shows through the gaps between panels
@@ -50,7 +50,13 @@ breakpoints:
   mobile: "480px"
 ---
 
-# Bolter trading terminal
+# KeelUni trading terminal
+
+**KeelUni** = Keel (the steady spine under a hull) + Uni (one place for every
+market: perps, spot, and later options and commodities). Always written
+KeelUni; in the wordmark "Keel" is `text` and "Uni" is `accent`. Tagline:
+"一站式交易终端，连接你所有的交易所。" / "One terminal for every connected
+exchange."
 
 ## Overview
 
@@ -100,15 +106,19 @@ explain a concept are dotted-underlined (tooltip affordance).
 
 ## Components
 
-**Mark** — a teal (`accent`) rounded tile (28/32, radius 8) split by a bolt
-cut out of it (`web/src/ui/logo.tsx`, `web/public/favicon.svg`). Wordmark:
-mark + "Bolter" 17px semibold, `text`. No other brand colours.
+**Mark** — a teal (`accent`) rounded tile (28/32, radius 8) with a U cut
+out of it: a hull in cross-section whose bottom narrows into a small keel
+point. One figure for both halves of the name (Uni, Keel); the U's arms also
+read as a hedge's two legs on one keel (`web/src/ui/logo.tsx`,
+`web/public/favicon.svg`). Wordmark: mark + "Keel" (`text`) "Uni" (`accent`)
+17px semibold. No other brand colours.
 
 **Top bar** — 56px, `surface`, flush with the panels below. Wordmark left,
 then nav items (12px, padding 8×10px): active = `accent`, hover =
 `accent-hover`, no underline or background. **More** has a 14px chevron that
 flips when open; its menu (`overlay`, 10px radius, items 12px/24px, padding
-5×10px, hover = `accent-hover` text) holds the project links.
+5×10px, hover = `accent-hover` text) holds two links: Docs and API, both on
+the documentation site (GitHub Pages).
 Right: the **Accounts** summary (a status dot — pink when any account's
 stream is down — then "3 Accounts" or the single account's name, then total
 equity in `muted`) or a teal **Connect** button when no account exists, then
@@ -118,9 +128,12 @@ a 32px icon button (1px `border`, radius lg, `muted` icon; hover/open =
 Available with a dot and "Native" / "Cross-exchange" under each name, a
 Total row, and "+ Connect exchange". Clicking an account filters the
 blotter to it; ✕ (on row hover) removes it after an inline confirm.
+The session menu holds "Signed in to this trader", the **language** switch
+(a two-part segmented control 中文 · English; Chinese is the default, the
+choice is remembered in the browser) and Sign out.
 
 **Sign-in page** — `surface` page, a 320px left-aligned column centred on
-screen: mark 40px, "Sign in to Bolter" 20px, one muted line, a labelled
+screen: mark 40px, "登录 KeelUni" / "Sign in to KeelUni" 20px, the tagline, a labelled
 password field with show/hide toggle and Caps Lock hint, full-width primary
 button. Errors replace the hint under the field and turn its border pink.
 The footer tells where the first-run password is printed.
@@ -309,6 +322,18 @@ the pair, laid out like the trade page:
   Note.
 - The Hedge menu appears only when the trader serves a hedger. Below 1000px
   everything stacks: pair bar, chart, books, ticket, hedges.
+
+## Language
+
+Chinese is the default, English the alternative; every interface string is in
+both (`web/src/i18n`, a missing translation fails the type check). Terms
+follow mainstream Chinese exchanges: 永续 / 现货 / 资金费率 / 标记价格 /
+强平价格 / 只减仓 / 只做 Maker / 全仓. Numbers keep `82,817.3` grouping in
+both languages; dates are `MM/DD HH:mm:ss`; chart axes follow the language.
+Venue names, symbols and a venue's own rejection text are never translated.
+The hedger sends its messages (activity log, problems, refusals) as codes
+with parameters, rendered in the reader's language; texts the hedger wrote
+before codes existed show as stored.
 
 ## Interaction rules
 
