@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { api } from "@/api/client";
 import type { Account, Instrument, Order } from "@/api/types";
-import { instrumentName, num, price, snapToStep, usd } from "@/lib/format";
+import { instrumentName, num, price, snapToStep, usd, venueLabel } from "@/lib/format";
 import { rulesFor, type Rules } from "@/lib/routes";
 import { useInstrument, useLastPrice, useStats, useTicker } from "@/state/hooks";
 import { useTradingAccount, useWorkspace } from "@/state/workspace";
@@ -301,7 +301,7 @@ function AccountRow({ account }: { account: Account }) {
   return <AccountPicker instrument={instrument} account={account} candidates={candidates} unconnectedBrokers={unconnectedBrokers} onChoose={chooseTradingAccount} />;
 }
 
-function LeverageDialog({ open, onOpenChange, instrument, accountId, current, onApplied }: {
+export function LeverageDialog({ open, onOpenChange, instrument, accountId, current, onApplied }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   instrument: Instrument;
@@ -330,7 +330,7 @@ function LeverageDialog({ open, onOpenChange, instrument, accountId, current, on
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="Adjust Leverage" description={`Control the leverage used for ${instrument.base} positions on ${instrument.venue}. The venue enforces its own maximum.`}>
+    <Dialog open={open} onOpenChange={onOpenChange} title="Adjust Leverage" description={`Control the leverage used for ${instrument.base} positions on ${venueLabel(instrument.venue)}. The venue enforces its own maximum.`}>
       <div className="flex items-center gap-4">
         <input type="range" min={1} max={max} value={value} onChange={(e) => setValue(Number(e.target.value))} className="range flex-1" style={{ ["--fill" as string]: `${((value - 1) / (max - 1)) * 100}%` }} />
         <div className="flex h-9 w-20 items-center gap-1 rounded-lg border border-line px-2">

@@ -1,5 +1,5 @@
 import * as Popover from "@radix-ui/react-popover";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import type { Account, Instrument } from "@/api/types";
 import { usd, venueLabel } from "@/lib/format";
@@ -32,7 +32,7 @@ export function AccountPicker({ instrument, account, candidates, unconnectedBrok
   candidates: Account[];
   unconnectedBrokers: string[];
   onChoose: (id: string) => void;
-  label?: string;
+  label?: ReactNode;
   ariaLabel?: string;
 }) {
   const { live, openConnect } = useWorkspace();

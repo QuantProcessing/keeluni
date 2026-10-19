@@ -187,8 +187,8 @@ func (engine *Engine) Open(ctx context.Context, market *Market, request OpenRequ
 		return Group{}, invalidf("the two legs are the same instrument on the same account")
 	}
 	match, ratio := MatchLegs(legs)
-	if legs[0].Side == legs[1].Side && match == MatchBase {
-		return Group{}, invalidf("both legs are %s: a same-underlying hedge needs one long and one short leg", legs[0].Side)
+	if legs[0].Side == legs[1].Side {
+		return Group{}, invalidf("both legs are %s: a hedge is one long and one short leg", legs[0].Side)
 	}
 	tif, err := validateMode(request.Mode, request.Maker, request.Price, request.TIF)
 	if err != nil {

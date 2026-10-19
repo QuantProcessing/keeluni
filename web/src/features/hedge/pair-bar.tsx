@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "@/api/client";
-import { useMatching } from "@/api/hedge";
-import { venueLabel } from "@/lib/format";
 import { useBook, useFunding, useInstrument } from "@/state/hooks";
+import { cx } from "@/ui/primitives";
+import { InstrumentPicker } from "../market-header";
 import { averageApr, aprText, bpsText, netFundingApr, spreadBps, takePrice, tone, type Pair } from "./model";
 
 const WEEK = 7 * 24 * 3600 * 1000;
@@ -22,12 +22,19 @@ function useWeekApr(inst: string, perp: boolean): number | undefined {
 }
 
 /**
- * The numbers that decide whether a pair is worth trading, side by side:
- * the basis spread at which an entry would execute now, net funding now,
- * and net funding averaged over the last 7 days (a one-period spike is not
- * a carry).
+ * The pair and the numbers that decide whether to trade it. Each leg's
+ * market is picked here; one leg is always long and the other short, and ⇄
+ * swaps which. Then: the spread at which a market entry would trade now, net
+ * funding now and averaged over 7 days (a one-period spike is not a carry),
+ * and the size ratio when the legs' contracts differ.
  */
-export function PairBar({ pair, onSwap, onFlip }: { pair: Pair; onSwap: () => void; onFlip: () => void }) {
+export function PairBar({ pair, matching, onInstrument, onFlip, canFlip }: {
+  pair: Pair;
+  matching: { match: "base" | "notional"; ratio: number } | undefined;
+  onInstrument: (index: 0 | 1, inst: string) => void;
+  onFlip: () => void;
+  canFlip: boolean;
+}) {
   const leg0 = useInstrument(pair[0].inst);
   const leg1 = useInstrument(pair[1].inst);
   const perp0 = leg0?.product === "perp";
@@ -39,11 +46,9 @@ export function PairBar({ pair, onSwap, onFlip }: { pair: Pair; onSwap: () => vo
   const week0 = useWeekApr(pair[0].inst, perp0);
   const week1 = useWeekApr(pair[1].inst, perp1);
 
-  const matching = useMatching(pair[0].inst, pair[1].inst);
   const entry = matching?.match === "base"
     ? spreadBps(takePrice(book0, pair[0].side) ?? 0, takePrice(book1, pair[1].side) ?? 0, matching.ratio)
     : undefined;
-  const sameSide = pair[0].side === pair[1].side;
   const netNow = netFundingApr([
     { side: pair[0].side, apr: funding0?.apr !== undefined ? Number(funding0.apr) : undefined, spot: !perp0 },
     { side: pair[1].side, apr: funding1?.apr !== undefined ? Number(funding1.apr) : undefined, spot: !perp1 },
@@ -52,31 +57,37 @@ export function PairBar({ pair, onSwap, onFlip }: { pair: Pair; onSwap: () => vo
     { side: pair[0].side, apr: week0, spot: !perp0 },
     { side: pair[1].side, apr: week1, spot: !perp1 },
   ]);
-  const label = (side: string) => (side === "buy" ? "Long" : "Short");
 
   return (
     <div className="flex min-h-14 flex-wrap items-center gap-x-6 gap-y-2 bg-surface px-3 py-2">
-      <div className="flex items-center gap-2 text-md">
-        <span className={pair[0].side === "buy" ? "text-up" : "text-down"}>{label(pair[0].side)}</span>
-        <span>{leg0?.symbol ?? pair[0].inst.split(":").slice(2).join(":")}</span>
-        <span className="text-muted">{venueLabel(leg0?.venue ?? "")}</span>
-        <span className="text-muted">/</span>
-        <span className={pair[1].side === "buy" ? "text-up" : "text-down"}>{label(pair[1].side)}</span>
-        <span>{leg1?.symbol ?? pair[1].inst.split(":").slice(2).join(":")}</span>
-        <span className="text-muted">{venueLabel(leg1?.venue ?? "")}</span>
+      <div className="flex items-center gap-3">
+        <Side side={pair[0].side} />
+        <InstrumentPicker value={pair[0].inst} onChange={(inst) => onInstrument(0, inst)} />
+        <button
+          onClick={onFlip}
+          disabled={!canFlip}
+          aria-label="Swap long and short"
+          title={canFlip ? "Swap which leg is long and which is short" : "A spot leg can only be long"}
+          className="flex size-8 items-center justify-center rounded-lg bg-raised text-text-2 hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          ⇄
+        </button>
+        <Side side={pair[1].side} />
+        <InstrumentPicker value={pair[1].inst} onChange={(inst) => onInstrument(1, inst)} />
       </div>
-      <div className="flex gap-1">
-        <button onClick={onFlip} title="Swap which leg is long and which is short" className="h-7 rounded-md bg-raised px-2 text-text-2 hover:text-text">Flip sides</button>
-        <button onClick={onSwap} title="Swap leg 1 and leg 2" className="h-7 rounded-md bg-raised px-2 text-text-2 hover:text-text">Swap legs</button>
+      <div className="ml-auto flex flex-wrap items-center gap-x-6 gap-y-2">
+        {matching?.match === "base" && <Metric label="Entry spread" hint="Leg 2 over leg 1 at the prices a market entry would trade at (ask for the long leg, bid for the short leg), in basis points of leg 1." value={bpsText(entry)} />}
+        {matching?.match === "base" && matching.ratio !== 1 && <Metric label="Ratio" hint="Leg-2 contracts per leg-1 unit, from the contract multipliers (e.g. 1000PEPE against PEPE)" value={String(matching.ratio)} />}
+        {matching?.match === "notional" && <Metric label="Matching" hint="Different underlyings are sized to equal notional at entry" value="By notional" />}
+        <Metric label="Net funding" hint="What the pair earns per year at the current rates: the short leg receives its rate, the long leg pays it. Annualized so hourly and 8-hourly venues compare." value={aprText(netNow)} className={tone(netNow)} />
+        <Metric label="Net funding 7d" hint="The same, using each leg's average settled rate over the last 7 days." value={aprText(netWeek)} className={tone(netWeek)} />
       </div>
-      {sameSide && matching?.match === "base" && <span className="rounded-md bg-warn-bg px-2 py-1 text-down">Both legs are {label(pair[0].side).toLowerCase()} — not a hedge</span>}
-      <Metric label="Entry spread" hint="Price of leg 2 over leg 1 at the prices a market entry would trade at (ask for the long leg, bid for the short leg), in basis points of leg 1. Same underlying only." value={bpsText(entry)} />
-      <Metric label="Net funding" hint="What the pair earns per year from funding at the current rates: the short leg receives its rate, the long leg pays it. Annualized so hourly and 8-hourly venues compare." value={aprText(netNow)} className={tone(netNow)} />
-      <Metric label="Net funding 7d" hint="The same, using each leg's average settled rate over the last 7 days." value={aprText(netWeek)} className={tone(netWeek)} />
-      {matching?.match === "base" && matching.ratio !== 1 && <Metric label="Ratio" hint="Leg-2 contracts per leg-1 unit (e.g. 1000PEPE against PEPE)" value={String(matching.ratio)} />}
-      {matching?.match === "notional" && <Metric label="Matching" hint="Different underlyings are sized to equal notional at entry" value="By notional" />}
     </div>
   );
+}
+
+function Side({ side }: { side: "buy" | "sell" }) {
+  return <span className={cx("w-9 shrink-0", side === "buy" ? "text-up" : "text-down")}>{side === "buy" ? "Long" : "Short"}</span>;
 }
 
 function Metric({ label, value, hint, className }: { label: string; value: string; hint: string; className?: string }) {

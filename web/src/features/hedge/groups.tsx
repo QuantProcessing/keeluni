@@ -22,6 +22,21 @@ const STATUS: Record<GroupView["status"], { text: string; className: string }> =
   broken: { text: "Unhedged", className: "text-down" },
 };
 
+/** Column heads, one line each; the hint explains the shorter ones. */
+const HEADS: Array<[string, string?]> = [
+  ["Hedge"],
+  ["Status"],
+  ["Size", "Leg 1 quantity and the value of one side"],
+  ["Exposure", "Directional exposure left after both legs"],
+  ["Spread", "Leg 2 over leg 1 in bps: at the average entry → at the marks now"],
+  ["Funding", "Net funding APR at current rates"],
+  ["Next", "Time to the next settlement and its expected amount"],
+  ["Earned", "Funding received minus paid since open (estimated)"],
+  ["Fees"],
+  ["Net PnL", "Unrealized + realized − fees + funding"],
+  [""],
+];
+
 const active = (group: GroupView) => group.status !== "closed" && group.status !== "failed";
 
 /** Every hedge as one row: the pair, its exposure, spread, funding and PnL. */
@@ -50,15 +65,8 @@ export function GroupsPanel({ groups, state }: { groups: GroupView[] | undefined
           className="border-b-0"
         />
         {broken > 0 && <span className="ml-3 rounded-md bg-warn-bg px-2 py-0.5 text-down">{broken} unhedged</span>}
-        <div className="ml-auto flex items-center gap-5">
-          {activeCount > 0 && (
-            <>
-              <span className="text-muted">Capital <span className="text-text">{usd(totals.notional, 0)}</span></span>
-              <span className="text-muted">Funding <span className={tone(totals.funding)}>{usd(totals.funding)}</span></span>
-              <span className="text-muted">Net PnL <span className={tone(totals.pnl)}>{usd(totals.pnl)}</span></span>
-            </>
-          )}
-          <span className={cx("flex items-center gap-1.5", state === "online" ? "text-up" : "text-down")}>
+        <div className="ml-auto flex shrink-0 items-center gap-5">
+          <span className={cx("flex items-center gap-1.5 whitespace-nowrap", state === "online" ? "text-up" : "text-down")}>
             <span className={cx("size-1.5 rounded-full", state === "online" ? "bg-up" : "bg-down")} />
             {state === "online" ? "Hedger live" : state === "connecting" ? "Connecting" : "Hedger offline"}
           </span>
@@ -70,11 +78,17 @@ export function GroupsPanel({ groups, state }: { groups: GroupView[] | undefined
         ) : list.length === 0 ? (
           <div className="px-3 py-2.5">{filter === "active" ? "No open hedges" : "No hedges closed in the last 7 days"}</div>
         ) : (
-          <table className="w-full min-w-[980px] border-collapse">
-            <thead className="sticky top-0 z-10 bg-surface">
+          <table className="w-full min-w-[1040px] border-collapse">
+            <thead className="sticky top-0 z-20 bg-surface">
               <tr className="text-muted">
-                {["Hedge", "Status", "Size", "Net exposure", "Spread entry → now", "Net funding", "Next funding", "Funding earned", "Fees", "Net PnL", ""].map((head, i) => (
-                  <th key={head + i} className={cx("h-8 px-3 font-normal", i === 0 ? "text-left" : "text-right")}>{head}</th>
+                {HEADS.map(([head, hint], i) => (
+                  <th
+                    key={head + i}
+                    title={hint}
+                    className={cx("h-8 px-3 font-normal whitespace-nowrap", i === 0 ? "text-left" : "text-right", hint && "dotted", i === HEADS.length - 1 && "sticky right-0 bg-surface")}
+                  >
+                    {head}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -92,6 +106,20 @@ export function GroupsPanel({ groups, state }: { groups: GroupView[] | undefined
                 </Fragment>
               ))}
             </tbody>
+            {filter === "active" && activeCount > 1 && (
+              <tfoot className="sticky bottom-0 z-10 bg-surface text-text">
+                <tr className="border-t border-line">
+                  <td className="h-8 px-3 text-muted">Total · {activeCount} hedges</td>
+                  <td className={td} />
+                  <td className={td}>{usd(totals.notional, 0)}</td>
+                  <td className={td} colSpan={4} />
+                  <td className={cx(td, tone(totals.funding))}>{usd(totals.funding)}</td>
+                  <td className={td} />
+                  <td className={cx(td, tone(totals.pnl))}>{usd(totals.pnl)}</td>
+                  <td className="sticky right-0 bg-surface" />
+                </tr>
+              </tfoot>
+            )}
           </table>
         )}
       </div>
@@ -174,7 +202,7 @@ function GroupRow({ group, expanded, onToggle, onClose }: { group: GroupView; ex
         {usd(group.netPnl)}
         {group.estimated && <span className="text-muted" title="Some fill prices are estimates"> *</span>}
       </td>
-      <td className={td} onClick={(event) => event.stopPropagation()}>
+      <td className={cx(td, "sticky right-0", group.status === "broken" ? "bg-[#1f1219]" : "bg-surface")} onClick={(event) => event.stopPropagation()}>
         <div className="flex justify-end gap-3">
           {working?.mode === "limit" && <LinkButton onClick={() => run("Cancel", () => hedgeApi.cancel(group.id))} busy={busy === "Cancel"}>Cancel</LinkButton>}
           {group.status === "broken" && !working && (

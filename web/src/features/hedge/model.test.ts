@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Account, Instrument } from "@/api/types";
 import { legVenueHeld } from "./groups";
-import { aprText, averageApr, breakevenDays, bpsText, legAccount, legAvailable, netFundingApr, spreadBps } from "./model";
+import { aprText, averageApr, breakevenDays, bpsText, flipPair, legAccount, legAvailable, legLeverage, marginCheck, netFundingApr, netFundingSeries, normalizePair, seriesStats, spreadBps, spreadSeries, type Pair } from "./model";
 
 describe("leg accounts", () => {
   const instrument = { id: "okx:perp:BTC-USDT-SWAP", venue: "okx", product: "perp", base: "BTC", quote: "USDT", settle: "USDT" } as Instrument;
@@ -66,5 +66,62 @@ describe("legVenueHeld", () => {
   it("knows nothing for spot legs or a stream that is down", () => {
     expect(legVenueHeld({ ...leg, product: "spot" })).toBeUndefined();
     expect(legVenueHeld({ ...leg, accountLive: false })).toBeUndefined();
+  });
+});
+
+describe("pair", () => {
+  const pair = [{ inst: "a", accountId: "", side: "buy" }, { inst: "b", accountId: "", side: "buy" }] as Pair;
+  it("is always one long and one short leg", () => {
+    expect(normalizePair(pair).map((leg) => leg.side)).toEqual(["buy", "sell"]);
+    expect(normalizePair(pair, [false, true]).map((leg) => leg.side)).toEqual(["sell", "buy"]);
+    expect(flipPair(normalizePair(pair))!.map((leg) => leg.side)).toEqual(["sell", "buy"]);
+    // A spot leg cannot become the short one.
+    expect(flipPair(normalizePair(pair, [true, false]), [true, false])).toBeUndefined();
+  });
+});
+
+describe("spread history", () => {
+  const bars = (closes: Array<[number, string]>) => closes.map(([t, c]) => ({ t, c }));
+  it("joins the legs by bar time", () => {
+    const series = spreadSeries(bars([[1, "100"], [2, "100"], [3, "100"]]), bars([[2, "100.5"], [3, "99"], [4, "1"]]), "base", 1);
+    expect(series.map((point) => point.t)).toEqual([2, 3]);
+    expect(series[0]!.value).toBeCloseTo(50, 8);
+    expect(series[1]!.value).toBeCloseTo(-100, 8);
+    // 1000PEPE against PEPE: leg 2 is quoted per 1000.
+    expect(spreadSeries(bars([[1, "0.00001"]]), bars([[1, "0.01001"]]), "base", 1000)[0]!.value).toBeCloseTo(10, 6);
+    expect(spreadSeries(bars([[1, "2"]]), bars([[1, "3"]]), "notional", 0)[0]!.value).toBe(1.5);
+    expect(seriesStats([{ t: 1, value: -2 }, { t: 2, value: 4 }])).toEqual({ last: 4, mean: 1, low: -2, high: 4 });
+  });
+  it("carries each leg's last settled APR into the net", () => {
+    const net = netFundingSeries([
+      { side: "buy", points: [{ t: 0, apr: "0.1" }, { t: 8, apr: "0.2" }] },
+      { side: "sell", points: [{ t: 0, apr: "0.3" }, { t: 4, apr: "0.5" }, { t: 8, apr: "0.4" }] },
+    ]);
+    expect(net.map((point) => point.t)).toEqual([0, 4, 8]);
+    expect(net[0]!.value).toBeCloseTo(0.2, 10);
+    expect(net[1]!.value).toBeCloseTo(0.4, 10);
+    expect(net[2]!.value).toBeCloseTo(0.2, 10);
+  });
+});
+
+describe("leverage and margin", () => {
+  it("uses the set leverage, else the position's, else 1x", () => {
+    expect(legLeverage(false, { leverage: "10" } as never, undefined)).toEqual({ value: 10, source: "position" });
+    expect(legLeverage(false, { leverage: "10" } as never, 3)).toEqual({ value: 3, source: "set" });
+    expect(legLeverage(false, undefined, undefined)).toEqual({ value: 1, source: "default" });
+    expect(legLeverage(true, { leverage: "5" } as never, 5).value).toBe(1);
+  });
+  it("adds both legs up against a shared pool", () => {
+    const shared = marginCheck([
+      { accountId: "cx", shared: true, notional: 10_000, leverage: 5, available: 2_500 },
+      { accountId: "cx", shared: true, notional: 10_000, leverage: 10, available: 2_500 },
+    ]);
+    expect(shared.need).toEqual([2000, 1000]);
+    expect(shared.short).toContain("pool");
+    const separate = marginCheck([
+      { accountId: "a", shared: false, notional: 1000, leverage: 1, available: 2000 },
+      { accountId: "b", shared: false, notional: 1000, leverage: 1, available: 500 },
+    ]);
+    expect(separate.short).toContain("Leg 2");
   });
 });

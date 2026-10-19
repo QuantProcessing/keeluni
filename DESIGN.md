@@ -245,38 +245,62 @@ account lives in the Accounts popover with a confirm.
 ## Hedge page (`/hedge`)
 
 A hedge is two legs traded as one position, so the page is organised around
-the pair, not around an instrument:
+the pair, laid out like the trade page:
 
 ```
-┌ pair bar: Long X venue / Short Y venue · Flip · Swap · entry spread · net funding · 7d ┐ ticket
-├ leg 1 panel                           ┬ leg 2 panel                         ┤ 340px
-│ instrument · Long/Short · account      │ (same)                              │
-│ available · funding /period · APR · next│                                     │
-│ venue position · compact book          │                                     │
-├ hedges table: one row per hedge, expandable to both legs + orders/activity/funding ┤
-└ status bar ─────────────────────────────────────────────────────────────────────┘
+┌ pair bar 56px: Long [market ▾] ⇄ Short [market ▾] ··· entry spread · ratio · net funding · 7d ┬ ticket 340px ┐
+├ spread chart (tabs: Spread · Net funding)  ┬ leg 1 book    ┬ leg 2 book    ┤ leg accounts  │
+│ Now · Avg · Low · High overlay              │ side · funding│ (same)        │ mode · size   │
+│                                             │ 8–20 levels   │               │ preview       │
+├ hedges table (full width, one row per hedge, expandable) ──────────────────┤ primary       │
+│                                                                            │ the money     │
+└ status bar ─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- The pair bar carries only the numbers that decide whether to trade the
-  pair: entry spread at executable prices (bps), net funding APR now and over
-  7 days. Funding is always shown as rate per period plus APR; raw rates of
-  different periods are never compared.
-- The ticket: Market both / Limit + hedge tabs, size in quote (default) or
-  base, a live preview (per-leg quantity and value, expected average price and
-  slippage, entry spread, rounding mismatch, crossing cost, net funding,
-  breakeven days), and the failure policy. The primary button names the
-  action; problems from the preview appear under it in pink.
-- Hedges table columns: Hedge (label + both legs, L/S coloured), Status,
-  Size, Net exposure ("Hedged", or the residual in pink), Spread entry → now,
-  Net funding, Next funding (countdown + amount), Funding earned, Fees, Net
+- **One long, one short, always.** Each leg's market is picked in the pair
+  bar with the trade page's instrument selector; the sides are not chosen per
+  leg. ⇄ swaps which leg is long (disabled when a spot leg would become
+  short). The bar then shows only the numbers that decide whether to trade:
+  entry spread at executable prices (bps, same underlying), the size ratio
+  when contracts differ (from the hedger), net funding APR now and over 7 days.
+- **Spread chart** — the pair over time on one lightweight chart. Spread:
+  leg 2 over leg 1 per bar from both legs' candles (bps through the ratio;
+  a plain price ratio for different underlyings), drawn as a baseline series
+  (teal above zero, pink below), intervals 1m–1d, live with the candle
+  streams. Net funding: the net APR at each settlement (each leg's last
+  settled APR carried to the next), with both legs' APR as thin grey lines;
+  7d / 30d. Now · Avg · Low · High sit over the plot's top-left corner.
+- **Leg books** — one compact column per leg: side and funding on one line
+  (rate /period, APR, countdown; "continuous" for Deribit), then the book.
+  Blank rows pad venues that stream fewer levels so both spread rows line up.
+- **Ticket** — first where each leg trades: "L Leg 1" / "S Leg 2" with the
+  shared account picker (no default; a choice that can no longer trade the
+  market is cleared, never swapped) and a leverage chip. The chip shows the
+  leverage margin is estimated with: one set here (applied on the venue via
+  the Adjust Leverage dialog), else the account's position in the market,
+  else 1x in muted text. Then Market both / Limit + hedge, size (quote or
+  base), the preview (each leg on two lines: side, quantity and value; then
+  expected price and slippage), entry spread, size mismatch, crossing cost,
+  net funding, breakeven, and **Margin required / available**. Margin beyond
+  what the account (or the shared pool, for both legs together) has blocks
+  the button and says why in pink. Failure policy and label come last.
+- **The money** — under the ticket: when both legs trade from one broker
+  account, the pool (margin balance, available, margin rates with their
+  warnings, equity per venue); else each leg account's available.
+- **Hedges table** — one-line heads with dotted hints: Hedge (label, both
+  legs L/S coloured with where each trades: "Binance · main", "OKX via Gate
+  CrossEx"), Status, Size, Exposure ("Hedged", or the residual in pink),
+  Spread (entry → now), Funding, Next (countdown + amount), Earned, Fees, Net
   PnL, actions (Close / Unwind; Rehedge / Trim when unhedged; Cancel for a
-  working limit). An unhedged row has the warning background; a badge in the
-  tab bar counts them.
+  working limit). The actions column is pinned right; with more than one
+  hedge a Total row sits at the bottom. An unhedged row has the warning
+  background; a badge in the tab bar counts them.
 - Expanded row: two leg cards side by side (held, entry · mark, unrealized,
   fees, funding, liquidation distance, venue position, account stream dot),
   then tabs Orders (with slippage per market order) · Activity · Funding ·
   Note.
-- The Hedge menu appears only when the trader serves a hedger.
+- The Hedge menu appears only when the trader serves a hedger. Below 1000px
+  everything stacks: pair bar, chart, books, ticket, hedges.
 
 ## Interaction rules
 
