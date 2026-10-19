@@ -1,107 +1,44 @@
 # KeelUni
 
-A self-hosted, one-stop trading stack for one operator: every connected
-venue's perps and spot (options and commodities next) through one terminal.
+一站式交易终端：自托管、单人使用，用一个终端交易你连接的每个交易所——永续与现货，之后是期权与大宗商品。
+
+**文档：<https://quantprocessing.github.io/keeluni/>**（设计方案、实现细节与 API 参考）
 
 ```text
-web        React terminal (Hyperliquid-style, see DESIGN.md): Trade + Hedge
-  │  cookie session, same origin
-trader     password login, session, proxy to apps, serves web      — no database
-  │  bearer token, internal network only
-hedger     hedge app: two legs traded as one position               — its own PostgreSQL database
+web        React 终端（交易 + 对冲），默认中文、可切换英文
+  │  同源 cookie 会话
+trader     登录、会话、反向代理、提供前端                — 无数据库
+  │  bearer token，仅内网
+hedger     对冲应用：两条腿作为一个仓位                   — 自己的 PostgreSQL
   │  bearer token
-gateway    venue-neutral REST + WebSocket API                       — one encrypted file
+gateway    与交易所无关的 REST + WebSocket API          — 只有一个加密文件
   │
-exchange   normalized clients and models
+exchange   规范化的客户端契约与模型
   │
-sdk        native venue APIs
+sdk        各交易所原生 API
 ```
 
-- **sdk/** implements each venue's native API faithfully.
-- **exchange/** normalizes venues into one typed client contract.
-- **gateway/** exposes that contract over HTTP/WebSocket (see below).
-- **trader/** is the manual-trading app. Other apps (hedging, arbitrage) talk to
-  the gateway directly and own their own storage.
-- **hedger/** is the hedge app: it opens, tracks and closes two legs on
-  (possibly) different venues as one hedge, in PostgreSQL. It deploys on its
-  own; the trader serves its UI when `HEDGER_URL` is set. See
-  [docs/hedger.md](docs/hedger.md).
-- **gwclient/** is the Go client of the gateway API for apps.
+支持：Binance、OKX、Bybit、Bitget、Gate（现货 + USDT 永续；Binance/Bybit/Bitget 另有 USDC 永续，Binance 含 TradFi 永续）、Hyperliquid 与 Lighter（现货 + 永续）、Kraken Futures（USD 永续）、Deribit（USDC 永续）。Gate CrossEx 是一种经纪账户：一个保证金池交易 Binance、OKX、Bybit、Gate、Hyperliquid、Lighter、Kraken、Deribit 的永续。
 
-## What the gateway is
-
-Three rules decide whether something belongs in the gateway or in an app:
-
-1. **The only way out to a venue.** Every venue request — public or private,
-   REST or WebSocket — leaves through the gateway. Rate limits, connections,
-   proxies and credentials exist only there, so one budget per venue is shared
-   and prioritised: orders and cancels first, interactive reads next, resident
-   collection last (at most 25% of a venue's request budget). Apps never call a
-   venue directly.
-2. **Current venue facts only.** The gateway may hold facts in memory — the
-   instrument catalog, position snapshots, market-wide datasets such as funding
-   — as long as a restart can rebuild them from the venue. It accumulates no
-   history the venue cannot return again, keeps no order ledger (idempotency is
-   the venue's `clientOrderId`, and the venue is the source of truth), and needs
-   no database: trading keeps working when an app's database is down.
-3. **Normalisation, not business.** The gateway makes every venue speak the
-   same identifiers, units and meanings (e.g. one funding rate convention, with
-   its interval and annualised value). Anything relating two instruments or
-   venues, any strategy, and any multi-order workflow belongs to an app.
-
-Resident collection therefore splits by whether data must accumulate: current
-market-wide facts are gateway datasets; time series kept beyond what a venue
-retains, and anything derived across instruments, live in an app with its own
-database.
-
-Supported: Binance, OKX, Bybit, Bitget, Gate (spot + USDT perps; Binance/Bybit/Bitget
-also USDC perps), Hyperliquid and Lighter (spot + perps), Kraken Futures (USD perps) and
-Deribit (USDC perps). Gate CrossEx is a broker account: one margin pool trading Binance,
-OKX, Bybit, Gate, Hyperliquid, Lighter, Kraken and Deribit perps
-(design: [docs/crossex-design.md](docs/crossex-design.md)).
-
-API and security contract: [docs/gateway-api.md](docs/gateway-api.md).
-Exchange library: [docs/exchange/README.md](docs/exchange/README.md).
-
-## Run
-
-Locally (Go 1.26, Node 22):
-
-```sh
-scripts/dev.sh                                   # http://127.0.0.1:8080
-HTTPS_PROXY=http://127.0.0.1:7892 scripts/dev.sh # if venues need a proxy
-```
-
-With Docker (gateway, trader, hedger and an internal PostgreSQL):
+## 运行
 
 ```sh
 docker compose up -d --build --force-recreate
-docker compose logs trader | grep password       # first-run password, shown once
+docker compose logs trader | grep password       # 首次启动的初始密码，只打印一次
 ```
 
-Locally the hedge app needs a PostgreSQL once: `POSTGRES_ADMIN_URL=postgres://…
-scripts/dev.sh` creates its role and database; later runs reuse them. Without
-it, `scripts/dev.sh` runs gateway and trader only.
+打开 <http://127.0.0.1:8080>。本地开发（Go 1.26、Node 22）：`scripts/dev.sh`。详见[快速开始](https://quantprocessing.github.io/keeluni/guide/quick-start)与[部署与运维](https://quantprocessing.github.io/keeluni/guide/deploy)。
 
-The first start prints a generated password once. Change it with
-`go run ./cmd/trader passwd` (or `docker compose run --rm -it --no-deps trader passwd`).
-Connect exchanges from the **Connect** button in the app.
+## 安全
 
-## Safety
+每一笔订单都会进入真实交易所。请使用**没有提现权限**的 API Key，并从小额开始。凭证只写不读：经交易所验证后加密保存（`data/gateway/accounts.enc`，主密钥 `data/gateway/master.key`），任何接口与日志都不返回凭证。请备份 `master.key`。默认只绑定 `127.0.0.1`。详见[安全](https://quantprocessing.github.io/keeluni/guide/security)。
 
-Every order reaches a real exchange. Use keys without withdrawal permission and
-start small. Credentials are write-only: they are verified against the venue,
-stored encrypted (`data/gateway/accounts.enc`, key in `data/gateway/master.key`),
-and never returned by any API or written to logs. Back up `master.key`; without it
-the stored accounts cannot be decrypted.
-
-Only `127.0.0.1` is bound by default. For remote access use an SSH tunnel or a
-VPN, or put a TLS reverse proxy in front and set `TRADER_SECURE_COOKIE=1`.
-
-## Test
+## 测试
 
 ```sh
 make test
 HEDGER_TEST_DATABASE_URL=postgres://postgres:pw@127.0.0.1:5432/postgres?sslmode=disable \
-  go test ./hedger/                              # hedger tests against a real PostgreSQL
+  go test ./hedger/                              # hedger 对真实 PostgreSQL 的场景测试
 ```
+
+界面规范见 [DESIGN.md](DESIGN.md)。

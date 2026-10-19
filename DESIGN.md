@@ -339,8 +339,8 @@ before codes existed show as stored.
 
 - Market orders submit immediately on click (no confirmation dialog), like
   Hyperliquid. The button shows a spinner; the result arrives as a toast
-  (bottom-left): "Filled 0.01 ETH at 2,354.1" / "Order rejected: <venue
-  message>" / "Outcome unknown — checking…" followed by the lookup result.
+  (bottom-left): "Filled 0.01 ETH at 2,354.1" / "Order rejected" with the
+  venue's message / "Outcome unknown, checking" followed by the lookup result.
 - Positions/balances update only from the account stream's full snapshots;
   never optimistic.
 - Keyboard: ⌘K instrument search; Esc closes dialogs/popovers.

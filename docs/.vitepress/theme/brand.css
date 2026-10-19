@@ -1,0 +1,40 @@
+/* KeelUni brand: the terminal's teal accent on its near-black teal surfaces. */
+:root {
+  --vp-c-brand-1: #1a9c8b;
+  --vp-c-brand-2: #168677;
+  --vp-c-brand-3: #1a9c8b;
+  --vp-c-brand-soft: rgba(80, 210, 193, 0.14);
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(90deg, var(--vp-c-text-1) 0 58%, #1a9c8b 58% 100%);
+  --vp-button-brand-bg: #1a9c8b;
+  --vp-button-brand-hover-bg: #168677;
+}
+
+.dark {
+  --vp-c-bg: #0f1a1f;
+  --vp-c-bg-alt: #0b1418;
+  --vp-c-bg-soft: #1b2429;
+  --vp-c-bg-elv: #1b2429;
+  --vp-c-divider: #273035;
+  --vp-c-gutter: #0b1418;
+  --vp-c-text-1: #f6fefd;
+  --vp-c-text-2: #d2dad7;
+  --vp-c-text-3: #949e9c;
+  --vp-c-brand-1: #50d2c1;
+  --vp-c-brand-2: #97fce4;
+  --vp-c-brand-3: #50d2c1;
+  --vp-c-brand-soft: rgba(80, 210, 193, 0.16);
+  --vp-code-block-bg: #1b2429;
+  --vp-button-brand-bg: #50d2c1;
+  --vp-button-brand-text: #04060c;
+  --vp-button-brand-hover-bg: #97fce4;
+  --vp-button-brand-hover-text: #04060c;
+  --vp-button-brand-active-bg: #50d2c1;
+  --vp-home-hero-name-background: linear-gradient(90deg, #f6fefd 0 58%, #50d2c1 58% 100%);
+}
+
+/* Code blocks hold ASCII diagrams with CJK text: a font whose CJK glyphs are
+   two Latin columns wide keeps the columns lined up. */
+.vp-doc div[class*="language-"] code {
+  font-family: "Sarasa Mono SC", "Noto Sans Mono CJK SC", "SF Mono", Menlo, Consolas, monospace;
+}
