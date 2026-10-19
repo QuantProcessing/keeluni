@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useHedgeGroups } from "@/api/hedge";
-import { useAccountStream } from "@/state/hooks";
+import { canTrade } from "@/lib/routes";
+import { useInstruments } from "@/state/hooks";
 import { useWorkspace } from "@/state/workspace";
 import { cx } from "@/ui/primitives";
 import { GroupsPanel } from "./groups";
@@ -19,7 +20,8 @@ import { HedgeTicket } from "./ticket";
  * with the ticket on the right, always in reach.
  */
 export function HedgeApp() {
-  const { accounts } = useWorkspace();
+  const { accounts, routes } = useWorkspace();
+  const { data: instruments } = useInstruments();
   const [pair, setPair] = useState<Pair>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("bolter.hedge.pair") ?? "null") as Pair | null;
@@ -39,28 +41,28 @@ export function HedgeApp() {
     savePair(next);
   };
 
-  // Default each leg's account to the first account on its venue.
+  // A leg's account is always the user's choice: there is no default, and a
+  // choice that can no longer trade the leg's instrument (another market
+  // chosen, the account removed, a broker route gone) is cleared, never
+  // swapped for another account.
   useEffect(() => {
+    if (!instruments || !accounts.length) return;
     let changed = false;
     const next: Pair = [{ ...pair[0] }, { ...pair[1] }];
-    for (const index of [0, 1] as const) {
-      const venue = next[index].inst.split(":")[0];
-      const valid = accounts.some((account) => account.id === next[index].accountId && account.venue === venue);
-      if (!valid) {
-        const fallback = accounts.find((account) => account.venue === venue && account.active)?.id ?? "";
-        if (fallback !== next[index].accountId) {
-          next[index].accountId = fallback;
-          changed = true;
-        }
+    for (const leg of next) {
+      if (!leg.accountId) continue;
+      const instrument = instruments.find((item) => item.id === leg.inst);
+      const account = accounts.find((item) => item.id === leg.accountId);
+      if (!instrument) continue;
+      if (!account || !canTrade(account, instrument, routes[account.id])) {
+        leg.accountId = "";
+        changed = true;
       }
     }
     if (changed) savePair(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accounts, pair[0].inst, pair[1].inst]);
+  }, [accounts, routes, instruments, pair[0].inst, pair[1].inst, pair[0].accountId, pair[1].accountId]);
 
-  const live0 = useAccountStream(pair[0].accountId);
-  const live1 = useAccountStream(pair[1].accountId === pair[0].accountId ? "" : pair[1].accountId);
-  const lives = useMemo(() => [live0, pair[1].accountId === pair[0].accountId ? live0 : live1] as const, [live0, live1, pair]);
   const { groups, state } = useHedgeGroups();
 
   return (
@@ -70,11 +72,11 @@ export function HedgeApp() {
       </div>
       {([0, 1] as const).map((index) => (
         <div key={index} className={cx("flex min-h-[300px] overflow-hidden rounded-md", index === 0 ? "min-[1001px]:col-start-1" : "min-[1001px]:col-start-2", "min-[1001px]:row-start-2")}>
-          <LegPanel index={index} leg={pair[index]} live={lives[index]} onChange={(change) => setLeg(index, change)} />
+          <LegPanel index={index} leg={pair[index]} other={pair[1 - index]!} onChange={(change) => setLeg(index, change)} />
         </div>
       ))}
       <aside className="overflow-y-auto rounded-md min-[1001px]:col-start-3 min-[1001px]:row-span-3 min-[1001px]:row-start-1">
-        <HedgeTicket pair={pair} lives={lives} />
+        <HedgeTicket pair={pair} />
       </aside>
       <div className="flex min-h-[240px] overflow-hidden rounded-md min-[1001px]:col-span-2 min-[1001px]:row-start-3">
         <GroupsPanel groups={groups} state={state} />

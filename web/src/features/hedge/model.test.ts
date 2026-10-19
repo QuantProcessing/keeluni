@@ -1,25 +1,25 @@
 import { describe, expect, it } from "vitest";
 
-import { aprText, averageApr, breakevenDays, bpsText, inferMatch, netFundingApr, spreadBps, underlying } from "./model";
+import type { Account, Instrument } from "@/api/types";
+import { legVenueHeld } from "./groups";
+import { aprText, averageApr, breakevenDays, bpsText, legAccount, legAvailable, netFundingApr, spreadBps } from "./model";
 
-describe("underlying", () => {
-  it("splits venue contract multipliers off the base", () => {
-    expect(underlying("1000PEPE")).toEqual({ root: "PEPE", multiplier: 1000 });
-    expect(underlying("kPEPE")).toEqual({ root: "PEPE", multiplier: 1000 });
-    expect(underlying("1000000MOG")).toEqual({ root: "MOG", multiplier: 1_000_000 });
-    expect(underlying("ETH")).toEqual({ root: "ETH", multiplier: 1 });
+describe("leg accounts", () => {
+  const instrument = { id: "okx:perp:BTC-USDT-SWAP", venue: "okx", product: "perp", base: "BTC", quote: "USDT", settle: "USDT" } as Instrument;
+  const okx = { id: "a1", venue: "okx", kind: "native", label: "main", active: true, markets: ["okx:perp:USDT", "okx:spot"], createdAt: "1" } as Account;
+  const cx = { id: "a2", venue: "crossex", kind: "broker", label: "cx", active: true, markets: ["okx:perp:USDT", "binance:perp:USDT"], createdAt: "2" } as Account;
+  const bn = { id: "a3", venue: "binance", kind: "native", label: "bn", active: true, markets: ["binance:perp:USDT"], createdAt: "3" } as Account;
+  it("keeps only the user's choice, and only while it trades the instrument", () => {
+    expect(legAccount([okx, cx, bn], {}, instrument, "")).toBeUndefined();
+    expect(legAccount([okx, cx, bn], {}, instrument, "a2")?.id).toBe("a2");
+    expect(legAccount([okx, cx, bn], {}, instrument, "a3")).toBeUndefined();
+    // A broker whose routes do not list the instrument cannot carry it.
+    expect(legAccount([okx, cx], { a2: [] }, instrument, "a2")).toBeUndefined();
   });
-});
-
-describe("inferMatch", () => {
-  it("matches the same underlying by quantity through the multiplier", () => {
-    expect(inferMatch("ETH", "ETH")).toEqual({ match: "base", ratio: 1 });
-    // 1 PEPE on leg 1 is hedged by 0.001 of 1000PEPE on leg 2.
-    expect(inferMatch("PEPE", "1000PEPE")).toEqual({ match: "base", ratio: 0.001 });
-    expect(inferMatch("1000PEPE", "kPEPE")).toEqual({ match: "base", ratio: 1 });
-  });
-  it("matches different underlyings by notional", () => {
-    expect(inferMatch("BTC", "ETH")).toEqual({ match: "notional", ratio: 1 });
+  it("reads a broker's pool and a native account's margin asset", () => {
+    expect(legAvailable(cx, instrument, { margin: { available: "1200" } as never }, "buy")).toEqual({ amount: 1200, asset: "USD" });
+    expect(legAvailable(okx, instrument, { balances: [{ market: "okx:perp:USDT", asset: "USDT", total: "9", available: "7" } as never] }, "sell")).toEqual({ amount: 7, asset: "USDT" });
+    expect(legAvailable(okx, instrument, {}, "buy")).toBeUndefined();
   });
 });
 
@@ -53,5 +53,18 @@ describe("averages and costs", () => {
     expect(bpsText(2.234)).toBe("+2.23 bps");
     expect(aprText(-0.1052)).toBe("−10.52%");
     expect(aprText(undefined)).toBe("—");
+  });
+});
+
+describe("legVenueHeld", () => {
+  const leg = { product: "perp", accountLive: true, venueSize: "0.01", venueSide: "short", side: "sell" } as const;
+  it("signs the venue position by the leg's direction", () => {
+    expect(legVenueHeld(leg)).toBe(0.01);
+    expect(legVenueHeld({ ...leg, venueSide: "long" })).toBe(-0.01);
+    expect(legVenueHeld({ ...leg, venueSize: "0" })).toBe(0);
+  });
+  it("knows nothing for spot legs or a stream that is down", () => {
+    expect(legVenueHeld({ ...leg, product: "spot" })).toBeUndefined();
+    expect(legVenueHeld({ ...leg, accountLive: false })).toBeUndefined();
   });
 });

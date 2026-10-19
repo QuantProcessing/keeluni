@@ -1,13 +1,14 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
-import { hedgeApi, type OpenRequest, type Preview } from "@/api/hedge";
-import { num, price, snapToStep, usd } from "@/lib/format";
-import { useBook, useInstrument, type AccountLive } from "@/state/hooks";
+import { hedgeApi, useMatching, type OpenRequest, type Preview } from "@/api/hedge";
+import { num, price, snapToStep, usd, venueLabel } from "@/lib/format";
+import { accountName, rulesFor } from "@/lib/routes";
+import { useBook, useInstrument } from "@/state/hooks";
 import { useWorkspace } from "@/state/workspace";
 import { PrimaryButton, Row, Tabs, cx } from "@/ui/primitives";
 import { useToast } from "@/ui/toast";
-import { aprText, bpsText, breakevenDays, inferMatch, legAvailable, legPosition, makePrice, takePrice, tone, type Pair } from "./model";
+import { aprText, bpsText, breakevenDays, legAccount, legAvailable, legPosition, makePrice, takePrice, tone, type Pair } from "./model";
 
 type Mode = "market" | "limit";
 type Unit = "base" | "quote";
@@ -17,12 +18,18 @@ type Unit = "base" | "quote";
  * at the limit price; every fill is hedged at market on the other leg, so the
  * position is never more than one fill away from flat.
  */
-export function HedgeTicket({ pair, lives }: { pair: Pair; lives: readonly [AccountLive, AccountLive] }) {
+export function HedgeTicket({ pair }: { pair: Pair }) {
   const toast = useToast();
   const queryClient = useQueryClient();
-  const { setConnectOpen } = useWorkspace();
+  const { accounts, routes, live } = useWorkspace();
   const inst0 = useInstrument(pair[0].inst);
   const inst1 = useInstrument(pair[1].inst);
+  const account0 = legAccount(accounts, routes, inst0, pair[0].accountId);
+  const account1 = legAccount(accounts, routes, inst1, pair[1].accountId);
+  const legAccounts = [account0, account1] as const;
+  const lives = [account0 ? live[account0.id] ?? {} : {}, account1 ? live[account1.id] ?? {} : {}] as const;
+  // Both legs on one broker account trade from one margin pool.
+  const sharedPool = !!account0 && account0.id === account1?.id && account0.kind === "broker";
   const book0 = useBook(pair[0].inst);
   const book1 = useBook(pair[1].inst);
   const [mode, setMode] = useState<Mode>("market");
@@ -37,35 +44,39 @@ export function HedgeTicket({ pair, lives }: { pair: Pair; lives: readonly [Acco
   const [previewError, setPreviewError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // Memoized on the bases: the books re-render this ticket every 100 ms, and
-  // a fresh object here would restart the preview debounce forever.
   const base0 = inst0?.base;
   const base1 = inst1?.base;
-  const matching = useMemo(() => (base0 && base1 ? inferMatch(base0, base1) : undefined), [base0, base1]);
+  const matching = useMatching(pair[0].inst, pair[1].inst);
   const makerInst = maker === 0 ? inst0 : inst1;
   const makerBook = maker === 0 ? book0 : book1;
-  const ready = !!inst0 && !!inst1 && !!pair[0].accountId && !!pair[1].accountId;
+  // The resting leg's prices follow its account's rules (a broker can be finer).
+  const makerTick = (makerInst && rulesFor(makerInst, legAccounts[maker] ? routes[legAccounts[maker]!.id] : undefined).tickSize) ?? makerInst?.tickSize;
+  const missing = ([0, 1] as const).filter((i) => !legAccounts[i]);
+  const ready = !!inst0 && !!inst1 && missing.length === 0;
   const sameSide = pair[0].side === pair[1].side && matching?.match === "base";
 
   useEffect(() => { setLimitPrice(""); }, [maker, pair[0].inst, pair[1].inst]);
 
   // The preview needs only the instruments; opening also needs both accounts.
-  const legKey = `${pair[0].inst}|${pair[0].accountId}|${pair[0].side}|${pair[1].inst}|${pair[1].accountId}|${pair[1].side}`;
+  // Previews size with each leg's account rules once chosen.
+  const id0 = account0?.id ?? "";
+  const id1 = account1?.id ?? "";
+  const legKey = `${pair[0].inst}|${id0}|${pair[0].side}|${pair[1].inst}|${id1}|${pair[1].side}`;
   const draft = useMemo<OpenRequest | null>(() => {
-    if (!base0 || !base1 || !matching || !(Number(size) > 0)) return null;
+    if (!base0 || !base1 || !(Number(size) > 0)) return null;
     if (mode === "limit" && !(Number(limitPrice) > 0)) return null;
     return {
       legs: [
-        { accountId: pair[0].accountId, inst: pair[0].inst, side: pair[0].side },
-        { accountId: pair[1].accountId, inst: pair[1].inst, side: pair[1].side },
+        { accountId: id0, inst: pair[0].inst, side: pair[0].side },
+        { accountId: id1, inst: pair[1].inst, side: pair[1].side },
       ],
-      size, unit, match: matching.match, ratio: matching.match === "base" ? String(matching.ratio) : undefined,
+      size, unit,
       mode, makerLeg: maker, limitPrice: mode === "limit" ? limitPrice : undefined,
       tif: mode === "limit" ? (postOnly ? "post_only" : "gtc") : undefined,
       policy, label: label.trim() || undefined,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [base0, base1, matching, size, unit, mode, maker, limitPrice, postOnly, policy, label, legKey]);
+  }, [base0, base1, size, unit, mode, maker, limitPrice, postOnly, policy, label, legKey]);
   const request = ready ? draft : null;
 
   // Preview against the live books, debounced, then refreshed while the
@@ -85,7 +96,7 @@ export function HedgeTicket({ pair, lives }: { pair: Pair; lives: readonly [Acco
     return () => { clearTimeout(first); clearInterval(refresh); };
   }, [draft]);
 
-  const available = [legAvailable(inst0, lives[0].balances, pair[0].side), legAvailable(inst1, lives[1].balances, pair[1].side)];
+  const available = [legAvailable(account0, inst0, lives[0], pair[0].side), legAvailable(account1, inst1, lives[1], pair[1].side)];
   // Venues net positions per account and instrument: a hedge leg on an
   // instrument the account already holds shares that position.
   const shared = ([0, 1] as const).filter((i) => !!legPosition(lives[i].positions, pair[i].inst));
@@ -122,7 +133,7 @@ export function HedgeTicket({ pair, lives }: { pair: Pair; lives: readonly [Acco
     const join = makePrice(makerBook, side);
     const touch = takePrice(makerBook, side);
     const value = kind === "join" ? join : kind === "touch" ? touch : join && touch ? (join + touch) / 2 : undefined;
-    if (value) setLimitPrice(snapToStep(value.toFixed(12), makerInst.tickSize));
+    if (value) setLimitPrice(snapToStep(value.toFixed(12), makerTick ?? makerInst.tickSize));
   };
 
   const units = { base: inst0?.base ?? "Base", quote: inst0?.quote ?? "Quote" };
@@ -139,7 +150,7 @@ export function HedgeTicket({ pair, lives }: { pair: Pair; lives: readonly [Acco
             <div className="grid h-8 grid-cols-2 rounded-lg bg-raised p-0.5">
               {([0, 1] as const).map((leg) => (
                 <button key={leg} onClick={() => setMaker(leg)} className={cx("truncate rounded-md px-2", maker === leg ? "bg-line-strong/60 text-text" : "text-muted")}>
-                  Leg {leg + 1} · {(leg === 0 ? inst0 : inst1)?.venue ?? ""}
+                  Leg {leg + 1} · {venueLabel((leg === 0 ? inst0 : inst1)?.venue ?? "")}
                 </button>
               ))}
             </div>
@@ -175,8 +186,17 @@ export function HedgeTicket({ pair, lives }: { pair: Pair; lives: readonly [Acco
       <p className="-mt-2 text-muted">{unit === "quote" ? `Notional per leg, in ${units.quote}` : `Quantity of leg 1, in ${units.base}`}{matching?.match === "notional" ? "; legs are matched by notional" : ""}</p>
 
       <div>
-        <Row label="Leg 1 available">{available[0] ? `${num(available[0].amount)} ${available[0].asset}` : "—"}</Row>
-        <Row label="Leg 2 available">{available[1] ? `${num(available[1].amount)} ${available[1].asset}` : "—"}</Row>
+        {sharedPool ? (
+          <Row label="Pool available" hint={`Both legs trade from ${accountName(account0!)}: one cross-exchange margin pool backs them`}>
+            {available[0] ? `${num(available[0].amount)} ${available[0].asset}` : "—"}
+          </Row>
+        ) : (
+          ([0, 1] as const).map((i) => (
+            <Row key={i} label={`Leg ${i + 1} · ${legAccounts[i] ? accountName(legAccounts[i]!) : "no account"}`}>
+              {available[i] ? `${num(available[i]!.amount)} ${available[i]!.asset}` : "—"}
+            </Row>
+          ))
+        )}
       </div>
 
       <label className="flex items-center justify-between gap-2">
@@ -191,8 +211,8 @@ export function HedgeTicket({ pair, lives }: { pair: Pair; lives: readonly [Acco
         <input value={label} maxLength={80} onChange={(event) => setLabel(event.target.value)} placeholder="optional" className="min-w-0 flex-1 bg-transparent text-right outline-none placeholder:text-faint" />
       </label>
 
-      <PrimaryButton onClick={ready ? submit : () => setConnectOpen(true)} disabled={ready && (!request || submitting || problems.length > 0 || !!previewError || sameSide)}>
-        {!ready ? "Connect both venues" : submitting ? "Opening…" : sameSide ? "Legs must be opposite sides" : mode === "market" ? "Open at market" : "Place limit + hedge"}
+      <PrimaryButton onClick={submit} disabled={!ready || !request || submitting || problems.length > 0 || !!previewError || sameSide}>
+        {!ready ? `Choose an account for ${missing.map((i) => `leg ${i + 1}`).join(" and ")}` : submitting ? "Opening…" : sameSide ? "Legs must be opposite sides" : mode === "market" ? "Open at market" : "Place limit + hedge"}
       </PrimaryButton>
       {shared.length > 0 && (
         <div className="rounded-md border border-line px-3 py-2 text-text-2">
@@ -214,18 +234,21 @@ export function HedgeTicket({ pair, lives }: { pair: Pair; lives: readonly [Acco
                   <span className={pair[i].side === "buy" ? "text-up" : "text-down"}>{pair[i].side === "buy" ? "Long" : "Short"} {num(preview.qty[i])} {instrument?.base}</span>
                   <span>{usd(preview.notional[i])}</span>
                 </div>
-                <div className="flex justify-between text-muted">
-                  <span>{instrument?.venue}</span>
-                  <span>
-                    {isMaker ? `rests @ ${price(limitPrice, instrument?.tickSize)}` : sweep?.avgPrice && Number(sweep.avgPrice) > 0 ? `≈ ${price(sweep.avgPrice, instrument?.tickSize)} · ${bpsText(sweep.slippageBps)}` : "—"}
+                <div className="flex justify-between gap-2 text-muted">
+                  <span className="min-w-0 truncate" title={legAccounts[i] ? accountName(legAccounts[i]!) : undefined}>
+                    {venueLabel(instrument?.venue ?? "")}{legAccounts[i] && legAccounts[i]!.venue !== instrument?.venue ? ` via ${accountName(legAccounts[i]!)}` : ""}
+                  </span>
+                  <span className="shrink-0 text-right">
+                    {isMaker ? `rests @ ${price(limitPrice, preview.legs?.[i]?.tickSize || instrument?.tickSize)}` : sweep?.avgPrice && Number(sweep.avgPrice) > 0 ? `≈ ${price(sweep.avgPrice, instrument?.tickSize)} · ${bpsText(sweep.slippageBps)}` : "—"}
                     {sweep?.short && !isMaker ? <span className="text-down"> · book too thin</span> : null}
                   </span>
                 </div>
               </div>
             );
           })}
+          {matching?.match === "base" && matching.ratio !== 1 && <Row label="Ratio" hint="Leg-2 contracts per leg-1 unit, from the contract multipliers">{String(matching.ratio)}</Row>}
           {matching?.match === "base" && <Row label="Entry spread" hint="Leg 2 over leg 1 at the entry prices">{bpsText(preview.spreadBps)}</Row>}
-          <Row label="Size mismatch" hint="Leg 2 notional minus leg 1 notional after rounding both legs to their venue steps: the directional exposure the hedge keeps">{usd(preview.mismatch)}</Row>
+          <Row label="Size mismatch" hint="Leg 2 notional minus leg 1 notional after rounding both legs to their accounts' steps: the directional exposure the hedge keeps">{usd(preview.mismatch)}</Row>
           <Row label="Crossing cost" hint="Slippage from the touch for the taker legs, weighted by notional (fees not included)">{bpsText(costBps)}</Row>
           <Row label="Net funding" hint="Per year at current rates; positive earns">
             <span className={tone(preview.netFundingApr)}>{aprText(preview.netFundingApr)}</span>

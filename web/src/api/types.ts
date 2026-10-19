@@ -116,8 +116,6 @@ export interface FundingQuote {
   intervalHours?: number;
   apr?: string;
   nextFunding?: number;
-  rateCap?: string;
-  rateFloor?: string;
   observedAt: number;
   stale: boolean;
 }

@@ -3,6 +3,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState, type ReactNode } from "react";
 
 import { api } from "@/api/client";
+import { useHedgeHoldings, type HedgeHolding } from "@/api/hedge";
+import { navigate } from "@/state/route";
 import type { Account, Balance, Order, Position } from "@/api/types";
 import { instrumentName, marketLabel, num, price, time, usd, venueLabel } from "@/lib/format";
 import { accountName } from "@/lib/routes";
@@ -165,6 +167,7 @@ function Positions({ positions, loading, many }: { positions: AccountPosition[];
   const tick = useTick();
   const { setInstrumentId } = useWorkspace();
   const [closing, setClosing] = useState<AccountPosition | null>(null);
+  const holdings = useHedgeHoldings();
   if (loading && !positions.length) return <Empty><span className="text-muted">Loading positions…</span></Empty>;
   if (!positions.length) return <Empty>No open positions yet</Empty>;
   return (
@@ -181,6 +184,7 @@ function Positions({ positions, loading, many }: { positions: AccountPosition[];
               <td className={tdFirst}>
                 <Coin inst={position.inst} className={color} onClick={() => setInstrumentId(position.inst)} />
                 {position.leverage && <span className="ml-1.5 text-muted">{num(position.leverage, 0)}x</span>}
+                <HedgeMark holdings={holdings.get(`${position.account}|${position.inst}`)} />
               </td>
               {many && <AccountCell id={position.account} />}
               <td className={cx(td, color)}>{(position.side === "short" ? "-" : "") + num(position.size)}</td>
@@ -199,13 +203,32 @@ function Positions({ positions, loading, many }: { positions: AccountPosition[];
           );
         })}
       </Table>
-      {closing && <ClosePosition position={closing} onDone={() => setClosing(null)} />}
+      {closing && <ClosePosition position={closing} hedges={holdings.get(`${closing.account}|${closing.inst}`)} onDone={() => setClosing(null)} />}
     </>
   );
 }
 
-/** Closes on the account that holds the position, never another one. */
-function ClosePosition({ position, onDone }: { position: AccountPosition; onDone: () => void }) {
+/** "Hedge · label": the position is (partly) a leg of an open hedge. */
+function HedgeMark({ holdings }: { holdings: HedgeHolding[] | undefined }) {
+  if (!holdings?.length) return null;
+  const names = holdings.map((item) => item.label).join(", ");
+  return (
+    <button
+      onClick={(event) => { event.stopPropagation(); navigate("/hedge"); }}
+      title={`Leg of hedge ${names}: ${holdings.map((item) => `${num(item.held)} in ${item.label}`).join(", ")}. Open the hedge app`}
+      className={cx("ml-1.5 rounded px-1 text-muted hover:text-text", holdings.some((item) => item.status === "broken") && "text-down")}
+    >
+      Hedge · {names}
+    </button>
+  );
+}
+
+/**
+ * Closes on the account that holds the position, never another one. A
+ * position that is a hedge leg can still be closed here, after a warning:
+ * the hedge is then left one-sided and the hedger marks it Unhedged.
+ */
+function ClosePosition({ position, hedges, onDone }: { position: AccountPosition; hedges?: HedgeHolding[]; onDone: () => void }) {
   const account = useAccount()(position.account);
   const toast = useToast();
   const [busy, setBusy] = useState(false);
@@ -226,6 +249,12 @@ function ClosePosition({ position, onDone }: { position: AccountPosition; onDone
   return (
     <Dialog open onOpenChange={(open) => !open && onDone()} title="Market Close"
       description={`This will close your ${position.side} ${num(position.size)} ${instrumentName(position.inst)} on ${account ? accountName(account) : position.account} at market with a reduce-only order.`}>
+      {hedges?.length ? (
+        <div role="alert" className="mb-3 rounded-lg border border-down/60 bg-warn-bg px-3 py-2 text-down">
+          This position is a leg of hedge {hedges.map((item) => item.label).join(", ")}. Closing it here leaves the other leg open and the hedge is marked Unhedged. To close both legs together, close the hedge in the hedge app.
+          <button onClick={() => { onDone(); navigate("/hedge"); }} className="mt-1 block text-accent hover:underline">Open the hedge app</button>
+        </div>
+      ) : null}
       <PrimaryButton onClick={close} disabled={busy || !account}>{busy ? "Closing…" : "Market Close"}</PrimaryButton>
     </Dialog>
   );

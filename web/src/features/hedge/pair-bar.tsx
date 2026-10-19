@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "@/api/client";
+import { useMatching } from "@/api/hedge";
+import { venueLabel } from "@/lib/format";
 import { useBook, useFunding, useInstrument } from "@/state/hooks";
-import { averageApr, aprText, bpsText, inferMatch, netFundingApr, spreadBps, takePrice, tone, type Pair } from "./model";
+import { averageApr, aprText, bpsText, netFundingApr, spreadBps, takePrice, tone, type Pair } from "./model";
 
 const WEEK = 7 * 24 * 3600 * 1000;
 
@@ -37,7 +39,7 @@ export function PairBar({ pair, onSwap, onFlip }: { pair: Pair; onSwap: () => vo
   const week0 = useWeekApr(pair[0].inst, perp0);
   const week1 = useWeekApr(pair[1].inst, perp1);
 
-  const matching = leg0 && leg1 ? inferMatch(leg0.base, leg1.base) : undefined;
+  const matching = useMatching(pair[0].inst, pair[1].inst);
   const entry = matching?.match === "base"
     ? spreadBps(takePrice(book0, pair[0].side) ?? 0, takePrice(book1, pair[1].side) ?? 0, matching.ratio)
     : undefined;
@@ -57,11 +59,11 @@ export function PairBar({ pair, onSwap, onFlip }: { pair: Pair; onSwap: () => vo
       <div className="flex items-center gap-2 text-md">
         <span className={pair[0].side === "buy" ? "text-up" : "text-down"}>{label(pair[0].side)}</span>
         <span>{leg0?.symbol ?? pair[0].inst.split(":").slice(2).join(":")}</span>
-        <span className="text-muted">{leg0?.venue}</span>
+        <span className="text-muted">{venueLabel(leg0?.venue ?? "")}</span>
         <span className="text-muted">/</span>
         <span className={pair[1].side === "buy" ? "text-up" : "text-down"}>{label(pair[1].side)}</span>
         <span>{leg1?.symbol ?? pair[1].inst.split(":").slice(2).join(":")}</span>
-        <span className="text-muted">{leg1?.venue}</span>
+        <span className="text-muted">{venueLabel(leg1?.venue ?? "")}</span>
       </div>
       <div className="flex gap-1">
         <button onClick={onFlip} title="Swap which leg is long and which is short" className="h-7 rounded-md bg-raised px-2 text-text-2 hover:text-text">Flip sides</button>

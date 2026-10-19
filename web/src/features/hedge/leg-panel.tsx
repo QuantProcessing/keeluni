@@ -1,12 +1,13 @@
-import * as Popover from "@radix-ui/react-popover";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
-import type { Instrument } from "@/api/types";
-import { countdown, num, price, venueLabel } from "@/lib/format";
-import { useBook, useFunding, useInstrument, useInstruments, useNow, type AccountLive } from "@/state/hooks";
+import { countdown, num, price, usd } from "@/lib/format";
+import { rulesFor } from "@/lib/routes";
+import { useBook, useFunding, useInstrument, useNow } from "@/state/hooks";
 import { useWorkspace } from "@/state/workspace";
 import { cx } from "@/ui/primitives";
-import { aprText, legAvailable, legPosition, rateText, tone, type LegChoice } from "./model";
+import { AccountPicker, NoAccount, useAccountChoices } from "../account-picker";
+import { InstrumentPicker } from "../market-header";
+import { aprText, legAccount, legAvailable, legPosition, rateText, tone, type LegChoice } from "./model";
 
 const ROW = 20;
 
@@ -15,10 +16,11 @@ export function bookRows(height: number): number {
   return Math.max(1, Math.min(20, Math.floor((height - 24) / 2 / ROW)));
 }
 
-export function LegPanel({ index, leg, live, onChange }: {
+export function LegPanel({ index, leg, other, onChange }: {
   index: 0 | 1;
   leg: LegChoice;
-  live: AccountLive;
+  /** The other leg: a broker account shared by both legs is one pool. */
+  other: LegChoice;
   onChange: (change: Partial<LegChoice>) => void;
 }) {
   const instrument = useInstrument(leg.inst);
@@ -26,11 +28,15 @@ export function LegPanel({ index, leg, live, onChange }: {
   const book = useBook(leg.inst);
   const funding = useFunding(leg.inst, perp);
   const now = useNow();
-  const { accounts } = useWorkspace();
-  const venueAccounts = accounts.filter((account) => account.venue === instrument?.venue);
-  const available = legAvailable(instrument, live.balances, leg.side);
-  const position = legPosition(live.positions, leg.inst);
-  const tick = instrument?.tickSize;
+  const { accounts, routes, live } = useWorkspace();
+  const { candidates, unconnectedBrokers } = useAccountChoices(instrument);
+  const account = legAccount(accounts, routes, instrument, leg.accountId);
+  const state = account ? live[account.id] : undefined;
+  const available = legAvailable(account, instrument, state, leg.side);
+  const position = legPosition(state?.positions, leg.inst);
+  const rules = instrument ? rulesFor(instrument, account ? routes[account.id] : undefined) : undefined;
+  const sharedPool = account?.kind === "broker" && other.accountId === account.id;
+  const tick = rules?.tickSize ?? instrument?.tickSize;
   const body = useRef<HTMLDivElement>(null);
   const [rows, setRows] = useState(6);
   useLayoutEffect(() => {
@@ -49,12 +55,14 @@ export function LegPanel({ index, leg, live, onChange }: {
   const bestBid = Number(bids[0]?.[0]);
   const spread = bestAsk && bestBid ? bestAsk - bestBid : undefined;
   const maxSize = Math.max(...asks.map((level) => Number(level[1])), ...bids.map((level) => Number(level[1])), 1);
+  // Deribit accrues funding continuously; the gateway quotes it per hour.
+  const continuous = instrument?.venue === "deribit";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-surface">
       <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
         <span className="text-muted">Leg {index + 1}</span>
-        <InstrumentSelect value={leg.inst} onChange={(inst) => onChange({ inst })} />
+        <InstrumentPicker value={leg.inst} onChange={(inst) => onChange({ inst })} small />
         <div className="ml-auto grid h-7 grid-cols-2 rounded-md bg-raised p-0.5">
           <button onClick={() => onChange({ side: "buy" })} className={cx("rounded px-2.5", leg.side === "buy" ? "bg-up text-on-accent" : "text-text-2")}>Long</button>
           <button
@@ -68,28 +76,35 @@ export function LegPanel({ index, leg, live, onChange }: {
         </div>
       </div>
 
+      <div className="border-b border-line px-3 py-1">
+        {instrument && candidates.length === 0 ? (
+          <div className="flex h-8 items-center gap-2">
+            <span className="shrink-0 text-muted">Account</span>
+            <span className="ml-auto min-w-0"><NoAccount instrument={instrument} unconnectedBrokers={unconnectedBrokers} compact /></span>
+          </div>
+        ) : (
+          <AccountPicker instrument={instrument} account={account} candidates={candidates} unconnectedBrokers={unconnectedBrokers} onChoose={(accountId) => onChange({ accountId })} ariaLabel={`Leg ${index + 1} account`} />
+        )}
+      </div>
+
       <div className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 border-b border-line px-3 py-2">
-        <Line label="Account">
-          {venueAccounts.length === 0 ? (
-            <span className="text-down">No {venueLabel(instrument?.venue ?? "")} account</span>
-          ) : (
-            <select value={leg.accountId} onChange={(event) => onChange({ accountId: event.target.value })} className="max-w-[180px] bg-transparent text-right outline-none">
-              {venueAccounts.map((account) => <option key={account.id} value={account.id}>{account.label} · {account.id}</option>)}
-            </select>
-          )}
+        <Line label="Available" hint={sharedPool ? "Both legs draw on this one cross-exchange pool" : account?.kind === "broker" ? "The cross-exchange pool's available margin" : undefined}>
+          {available ? `${num(available.amount)} ${available.asset}` : "—"}
+          {sharedPool && <span className="text-muted"> · shared</span>}
         </Line>
-        <Line label="Available">{available ? `${num(available.amount)} ${available.asset}` : "—"}</Line>
+        {account?.kind === "broker" && rules && (
+          <Line label="Min size" hint="The broker's own rules for this market">{rules.minQty}{rules.minNotional ? ` · ${usd(rules.minNotional, 0)}` : ""}</Line>
+        )}
         {perp ? (
           <>
-            <Line label="Funding" hint="Rate at the next settlement / settlement period">
+            <Line label="Funding" hint={continuous ? "Deribit accrues funding continuously; shown per hour" : "Rate at the next settlement / settlement period"}>
               <span className={tone(funding?.rate)}>{rateText(funding?.rate)}</span>
               {funding?.intervalHours ? <span className="text-muted"> /{funding.intervalHours}h</span> : null}
               {funding?.stale && <span className="ml-1 text-down" title="Funding collection for this venue is behind">stale</span>}
             </Line>
-            <Line label="APR · Next" hint="Annualized (simple) · time to the next settlement">
+            <Line label={continuous ? "APR" : "APR · Next"} hint={continuous ? "Annualized (simple)" : "Annualized (simple) · time to the next settlement"}>
               <span className={tone(funding?.apr)}>{aprText(funding?.apr)}</span>
-              <span className="text-muted"> · </span>
-              {countdown(funding?.nextFunding, now)}
+              {continuous ? <span className="text-muted"> · continuous</span> : <><span className="text-muted"> · </span>{countdown(funding?.nextFunding, now)}</>}
             </Line>
           </>
         ) : (
@@ -114,13 +129,13 @@ export function LegPanel({ index, leg, live, onChange }: {
           <div className="py-6 text-center text-muted">Loading book…</div>
         ) : (
           <>
-            <div className="flex flex-col-reverse">{asks.map(([p, q]) => <Level key={"a" + p} priceText={price(p, tick)} size={q} width={Number(q) / maxSize} ask />)}</div>
+            <div className="flex flex-col-reverse">{asks.map(([p, q]) => <Level key={"a" + p} priceText={price(p, instrument?.tickSize)} size={q} width={Number(q) / maxSize} ask />)}</div>
             <div className="flex h-6 items-center justify-center gap-4 bg-raised">
               <span className="text-muted">Spread</span>
-              <span>{spread === undefined ? "—" : price(spread, tick)}</span>
+              <span>{spread === undefined ? "—" : price(spread, instrument?.tickSize)}</span>
               <span className="text-muted">{spread && bestAsk ? ((spread / bestAsk) * 10_000).toFixed(1) + " bps" : ""}</span>
             </div>
-            <div>{bids.map(([p, q]) => <Level key={"b" + p} priceText={price(p, tick)} size={q} width={Number(q) / maxSize} />)}</div>
+            <div>{bids.map(([p, q]) => <Level key={"b" + p} priceText={price(p, instrument?.tickSize)} size={q} width={Number(q) / maxSize} />)}</div>
           </>
         )}
       </div>
@@ -145,77 +160,4 @@ function Level({ priceText, size, width, ask }: { priceText: string; size: strin
       <span className="relative text-right">{num(size)}</span>
     </div>
   );
-}
-
-/** Searchable instrument picker over every venue's perps and spot. */
-function InstrumentSelect({ value, onChange }: { value: string; onChange: (inst: string) => void }) {
-  const { data: instruments = [] } = useInstruments();
-  const current = instruments.find((item) => item.id === value);
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const [cursor, setCursor] = useState(0);
-  const list = useRef<HTMLDivElement>(null);
-  const filtered = useMemo(() => {
-    const term = search.trim().toUpperCase().replace(/[\s/]+/g, "-");
-    return instruments
-      .filter((item) => !term || item.symbol.includes(term) || item.base.toUpperCase().startsWith(term) || item.venue.toUpperCase().startsWith(term))
-      .sort((a, b) => rank(a, term) - rank(b, term) || a.venue.localeCompare(b.venue) || a.symbol.localeCompare(b.symbol))
-      .slice(0, 150);
-  }, [instruments, search]);
-  const choose = (item: Instrument | undefined) => {
-    if (!item) return;
-    onChange(item.id);
-    setOpen(false);
-    setSearch("");
-  };
-  return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger className="flex items-center gap-2">
-        <span className="text-md">{current?.symbol ?? value.split(":").slice(2).join(":")}</span>
-        <span className="rounded-md bg-accent-soft px-1.5 py-0.5 text-accent">{venueLabel(current?.venue ?? value.split(":")[0] ?? "")} · {current?.product === "spot" ? "Spot" : "Perp"}</span>
-        <span className="text-muted">▾</span>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content align="start" sideOffset={6} className="z-40 w-[min(520px,calc(100vw-16px))] rounded-[10px] border border-line bg-overlay shadow-2xl">
-          <div className="p-2">
-            <input
-              autoFocus
-              value={search}
-              placeholder="Search coin or venue"
-              onChange={(event) => { setSearch(event.target.value); setCursor(0); }}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowDown") { event.preventDefault(); setCursor((c) => Math.min(c + 1, filtered.length - 1)); }
-                if (event.key === "ArrowUp") { event.preventDefault(); setCursor((c) => Math.max(c - 1, 0)); }
-                if (event.key === "Enter") choose(filtered[cursor]);
-              }}
-              className="h-8 w-full rounded-lg border border-line-strong bg-transparent px-3 outline-none placeholder:text-muted"
-            />
-          </div>
-          <div ref={list} className="max-h-[50vh] overflow-y-auto pb-2">
-            {filtered.map((item, i) => (
-              <button
-                key={item.id}
-                onMouseEnter={() => setCursor(i)}
-                onClick={() => choose(item)}
-                className={cx("grid w-full grid-cols-[1fr_110px_50px] gap-2 px-3 py-1 text-left", i === cursor && "bg-raised", item.id === value && "text-accent")}
-              >
-                <span className="truncate">{item.symbol}</span>
-                <span className="text-text-2">{venueLabel(item.venue)}</span>
-                <span className="text-right text-muted">{item.product === "perp" ? "Perp" : "Spot"}</span>
-              </button>
-            ))}
-            {filtered.length === 0 && <div className="px-3 py-4 text-center text-muted">No markets match</div>}
-          </div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
-  );
-}
-
-function rank(item: Instrument, term: string): number {
-  let score = 0;
-  if (term && item.base.toUpperCase() === term) score -= 100;
-  if (item.product === "perp") score -= 10;
-  if (item.symbol.includes(":")) score += 5;
-  return score;
 }

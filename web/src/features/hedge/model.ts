@@ -1,6 +1,8 @@
 // Pure hedge helpers shared by the ticket, the leg panels and the book.
 
-import type { Balance, FundingPoint, Instrument, Position } from "@/api/types";
+import type { Account, FundingPoint, Instrument, Position, Route } from "@/api/types";
+import { marketOf, tradingAccounts } from "@/lib/routes";
+import type { AccountLive } from "@/state/hooks";
 
 export type Side = "buy" | "sell";
 
@@ -19,38 +21,6 @@ export const DEFAULT_PAIR: Pair = [
 
 /** +1 for a long leg, -1 for a short one. */
 export const direction = (side: Side) => (side === "buy" ? 1 : -1);
-
-// Venues list contracts of cheap coins in multiples: Binance 1000PEPE,
-// Hyperliquid kPEPE, Bybit 1000000MOG… The multiplier is part of the base.
-const MULTIPLIERS: Array<[RegExp, number]> = [
-  [/^1000000(.+)$/, 1_000_000],
-  [/^1M(.+)$/, 1_000_000],
-  [/^10000(.+)$/, 10_000],
-  [/^1000(.+)$/, 1_000],
-  [/^100(.+)$/, 100],
-  [/^k([A-Z].*)$/, 1_000],
-];
-
-/** Splits a base into its underlying and contract multiplier. */
-export function underlying(base: string): { root: string; multiplier: number } {
-  for (const [pattern, multiplier] of MULTIPLIERS) {
-    const match = pattern.exec(base);
-    if (match?.[1]) return { root: match[1].toUpperCase(), multiplier };
-  }
-  return { root: base.toUpperCase(), multiplier: 1 };
-}
-
-/**
- * How two legs are matched: the same underlying is matched by quantity
- * through the multiplier ratio (leg-2 base per leg-1 base); different
- * underlyings are matched by notional.
- */
-export function inferMatch(base0: string, base1: string): { match: "base" | "notional"; ratio: number } {
-  const a = underlying(base0);
-  const b = underlying(base1);
-  if (a.root !== b.root) return { match: "notional", ratio: 1 };
-  return { match: "base", ratio: a.multiplier / b.multiplier };
-}
 
 /**
  * Net funding a hedge earns per year, as a fraction of one side's notional:
@@ -90,15 +60,32 @@ export function breakevenDays(costBps: number, aprFraction: number | undefined):
   return costBps / perDayBps;
 }
 
-/** Margin asset available to a leg on its account. */
-export function legAvailable(instrument: Instrument | undefined, balances: Balance[] | undefined, side: Side): { amount: number; asset: string } | undefined {
-  if (!instrument || !balances) return undefined;
+/**
+ * What a leg can spend on its account: a broker's shared pool (in USD), or
+ * the native account's margin asset. Undefined until the account streams.
+ */
+export function legAvailable(account: Account | undefined, instrument: Instrument | undefined, live: AccountLive | undefined, side: Side): { amount: number; asset: string } | undefined {
+  if (!account || !instrument || !live) return undefined;
+  if (account.kind === "broker") {
+    return live.margin ? { amount: Number(live.margin.available) || 0, asset: "USD" } : undefined;
+  }
+  if (!live.balances) return undefined;
   const perp = instrument.product === "perp";
   const asset = perp ? instrument.settle || instrument.quote : side === "buy" ? instrument.quote : instrument.base;
-  const market = perp ? `${instrument.venue}:perp:${instrument.settle || instrument.quote}` : `${instrument.venue}:spot`;
-  const row = balances.find((item) => item.market.toUpperCase() === market.toUpperCase() && item.asset.toUpperCase() === asset.toUpperCase())
-    ?? balances.find((item) => item.asset.toUpperCase() === asset.toUpperCase());
+  const market = marketOf(instrument);
+  const row = live.balances.find((item) => item.market.toUpperCase() === market.toUpperCase() && item.asset.toUpperCase() === asset.toUpperCase())
+    ?? live.balances.find((item) => item.asset.toUpperCase() === asset.toUpperCase());
   return { amount: row ? Number(row.available) : 0, asset };
+}
+
+/**
+ * The account a leg trades on: the one the user picked, while it can still
+ * trade the leg's instrument. There is no default — a hedge leg's account is
+ * always the user's choice.
+ */
+export function legAccount(accounts: Account[], routes: Record<string, Route[] | undefined>, instrument: Instrument | undefined, accountId: string): Account | undefined {
+  if (!instrument || !accountId) return undefined;
+  return tradingAccounts(accounts, instrument, routes).find((account) => account.id === accountId);
 }
 
 export function legPosition(positions: Position[] | undefined, inst: string): Position | undefined {

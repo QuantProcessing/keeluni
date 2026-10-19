@@ -1,8 +1,9 @@
 // Client of the hedge app (hedger), served by the trader at /api/hedge.
 // Wire types mirror hedger/*.go; numbers are decimal strings.
 
-import { useEffect, useState } from "react";
-import { ApiError } from "./client";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { ApiError, api } from "./client";
 import type { FundingQuote } from "./types";
 
 export type GroupStatus = "opening" | "open" | "closing" | "closed" | "failed" | "broken";
@@ -12,6 +13,8 @@ export type ExecMode = "market" | "limit";
 export interface HedgeLeg {
   leg: 0 | 1;
   accountId: string;
+  /** The account is a broker (Gate CrossEx): its rules and shared pool. */
+  broker?: boolean;
   inst: string;
   venue: string;
   product: "spot" | "perp";
@@ -165,8 +168,6 @@ export interface OpenRequest {
   legs: [LegInput, LegInput];
   size: string;
   unit: "base" | "quote";
-  match: "base" | "notional";
-  ratio?: string;
   mode: ExecMode;
   makerLeg: 0 | 1;
   limitPrice?: string;
@@ -203,6 +204,18 @@ export interface Preview {
   spreadBps: string;
   funding: [FundingQuote | null, FundingQuote | null];
   netFundingApr: string;
+  /** How the legs are sized against each other; the hedger decides. */
+  match: "base" | "notional";
+  /** The legs as they would open: the rules of each leg's account. */
+  legs: [HedgeLeg, HedgeLeg];
+  /** Both legs trade from one broker account and share its pool. */
+  sharedPool?: boolean;
+}
+
+/** How two instruments are matched: by quantity through ratio, or by notional. */
+export interface Matching {
+  match: "base" | "notional";
+  ratio: string;
 }
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -223,6 +236,7 @@ export const hedgeApi = {
   groups: (days = 7) => call<GroupView[]>("GET", `/groups?days=${days}`),
   group: (id: string) => call<GroupDetail>("GET", `/groups/${encodeURIComponent(id)}`),
   preview: (request: OpenRequest) => call<Preview>("POST", "/preview", request),
+  match: (inst0: string, inst1: string) => call<Matching>("GET", `/match?inst=${encodeURIComponent(inst0)}&inst=${encodeURIComponent(inst1)}`),
   open: (request: OpenRequest) => call<GroupView>("POST", "/groups", request),
   edit: (id: string, label: string, note: string) => call<{ ok: boolean }>("PATCH", `/groups/${encodeURIComponent(id)}`, { label, note }),
   close: (id: string, request: CloseRequest) => call<HedgeAction>("POST", `/groups/${encodeURIComponent(id)}/close`, request),
@@ -281,4 +295,56 @@ export function useHedgeGroups(): { groups: GroupView[] | undefined; state: Hedg
     };
   }, []);
   return { groups, state };
+}
+
+/**
+ * How the hedger sizes two instruments against each other. The ratio is the
+ * hedger's (from the contract multipliers it knows), never guessed here.
+ */
+export function useMatching(inst0: string, inst1: string): { match: "base" | "notional"; ratio: number } | undefined {
+  const query = useQuery({
+    queryKey: ["hedgeMatch", inst0, inst1],
+    queryFn: () => hedgeApi.match(inst0, inst1),
+    enabled: !!inst0 && !!inst1 && inst0 !== inst1,
+    staleTime: Infinity,
+    retry: false,
+  });
+  return query.data ? { match: query.data.match, ratio: Number(query.data.ratio) } : undefined;
+}
+
+/** A hedge leg holding part of an account's position. */
+export interface HedgeHolding {
+  groupId: string;
+  label: string;
+  leg: 0 | 1;
+  status: GroupStatus;
+  held: string;
+}
+
+/**
+ * Hedge legs per account and instrument ("account|inst"), for the Trade
+ * page's blotter. Read only when the hedge app is deployed; polled, because
+ * the blotter only needs to know which positions belong to a hedge.
+ */
+export function useHedgeHoldings(): Map<string, HedgeHolding[]> {
+  const apps = useQuery({ queryKey: ["apps"], queryFn: api.apps, staleTime: Infinity, retry: false });
+  const groups = useQuery({
+    queryKey: ["hedgeGroups", "holdings"],
+    queryFn: () => hedgeApi.groups(1),
+    enabled: !!apps.data?.hedge,
+    refetchInterval: 15_000,
+    retry: false,
+  });
+  return useMemo(() => {
+    const out = new Map<string, HedgeHolding[]>();
+    for (const group of groups.data ?? []) {
+      if (group.status === "closed" || group.status === "failed") continue;
+      for (const leg of group.legView) {
+        if (!(Number(leg.held) > 0)) continue;
+        const key = `${leg.accountId}|${leg.inst}`;
+        out.set(key, [...(out.get(key) ?? []), { groupId: group.id, label: group.label, leg: leg.leg, status: group.status, held: leg.held }]);
+      }
+    }
+    return out;
+  }, [groups.data]);
 }

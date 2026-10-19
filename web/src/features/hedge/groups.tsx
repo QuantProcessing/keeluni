@@ -2,8 +2,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 
 import { hedgeApi, type GroupDetail, type GroupView, type HedgeConnection, type LegView } from "@/api/hedge";
-import { countdown, num, price, time, usd } from "@/lib/format";
+import { countdown, num, price, time, usd, venueLabel } from "@/lib/format";
+import { accountName } from "@/lib/routes";
 import { useNow } from "@/state/hooks";
+import { useWorkspace } from "@/state/workspace";
 import { Dialog, PrimaryButton, Tabs, cx } from "@/ui/primitives";
 import { useToast } from "@/ui/toast";
 import { aprText, bpsText, makePrice, rateText, takePrice, tone } from "./model";
@@ -100,8 +102,23 @@ export function GroupsPanel({ groups, state }: { groups: GroupView[] | undefined
 
 const td = "h-8 px-3 text-right whitespace-nowrap";
 
+/**
+ * Where a leg trades, as the operator reads it: "Binance · main" for a
+ * venue's own account, "OKX via Gate CrossEx" through a broker, the account
+ * id while accounts load or after it was removed.
+ */
+function useLegPlace() {
+  const { accounts } = useWorkspace();
+  return (leg: { venue: string; accountId: string }) => {
+    const account = accounts.find((item) => item.id === leg.accountId);
+    if (!account) return `${venueLabel(leg.venue)} · ${leg.accountId}`;
+    return account.venue === leg.venue ? accountName(account) : `${venueLabel(leg.venue)} via ${accountName(account)}`;
+  };
+}
+
 function GroupRow({ group, expanded, onToggle, onClose }: { group: GroupView; expanded: boolean; onToggle: () => void; onClose: () => void }) {
   const toast = useToast();
+  const place = useLegPlace();
   const now = useNow();
   const [busy, setBusy] = useState("");
   const [leg0, leg1] = group.legView;
@@ -127,9 +144,9 @@ function GroupRow({ group, expanded, onToggle, onClose }: { group: GroupView; ex
         <span className="mr-1.5 text-muted">{expanded ? "▾" : "▸"}</span>
         <span className="text-text">{group.label}</span>
         <div className="ml-4 text-muted">
-          <span className={leg0.side === "buy" ? "text-up" : "text-down"}>{leg0.side === "buy" ? "L" : "S"}</span> {leg0.inst.split(":").slice(2).join(":")} {leg0.venue}
+          <span className={leg0.side === "buy" ? "text-up" : "text-down"}>{leg0.side === "buy" ? "L" : "S"}</span> {leg0.inst.split(":").slice(2).join(":")} {place(leg0)}
           {" / "}
-          <span className={leg1.side === "buy" ? "text-up" : "text-down"}>{leg1.side === "buy" ? "L" : "S"}</span> {leg1.inst.split(":").slice(2).join(":")} {leg1.venue}
+          <span className={leg1.side === "buy" ? "text-up" : "text-down"}>{leg1.side === "buy" ? "L" : "S"}</span> {leg1.inst.split(":").slice(2).join(":")} {place(leg1)}
         </div>
       </td>
       <td className={cx(td, status.className)} title={group.problem}>
@@ -211,14 +228,19 @@ function GroupDetailView({ group }: { group: GroupView }) {
 
 function LegCard({ leg }: { leg: LegView }) {
   const now = useNow();
+  const place = useLegPlace();
+  const continuous = leg.venue === "deribit";
   const tick = leg.tickSize;
-  const mismatch = Number(leg.venueSize) > 0 && Number(leg.held) > 0 && (leg.venueSide === "long" ? "buy" : "sell") !== leg.side;
+  const venue = legVenueHeld(leg);
+  // The venue holding less of the leg than the hedge accounts for is the
+  // hedger's Unhedged check; holding more is other trades in the account.
+  const short = venue !== undefined && Number(leg.held) > 0 && venue + Number(leg.stepSize) < Number(leg.held);
   return (
     <div className="rounded-md bg-surface p-2.5">
       <div className="mb-1.5 flex items-center gap-2">
         <span className={leg.side === "buy" ? "text-up" : "text-down"}>{leg.side === "buy" ? "Long" : "Short"}</span>
         <span className="text-text">{leg.inst.split(":").slice(2).join(":")}</span>
-        <span className="text-muted">{leg.venue} · {leg.accountId}</span>
+        <span className="text-muted">{place(leg)}</span>
         <span className={cx("ml-auto size-1.5 rounded-full", leg.accountLive ? "bg-up" : "bg-down")} title={leg.accountLive ? "Account stream live" : "Account stream offline"} />
       </div>
       <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5">
@@ -233,7 +255,9 @@ function LegCard({ leg }: { leg: LegView }) {
             <V>
               <span className={tone(leg.fundingRate)}>{rateText(leg.fundingRate)}</span>{leg.fundingHours ? <span className="text-muted">/{leg.fundingHours}h</span> : null}
               {" · "}<span className={tone(leg.fundingApr)}>{aprText(leg.fundingApr)}</span>
-              {" · next "}{countdown(leg.nextFunding, now)} <span className={tone(leg.nextFundingCash)}>{usd(leg.nextFundingCash, 4)}</span>
+              {continuous
+                ? <span className="text-muted" title="Deribit accrues funding continuously"> · continuous</span>
+                : <>{" · next "}{countdown(leg.nextFunding, now)} <span className={tone(leg.nextFundingCash)}>{usd(leg.nextFundingCash, 4)}</span></>}
               {leg.fundingStale && <span className="text-down"> stale</span>}
             </V>
             <K>Earned</K><V className={tone(leg.fundingEarned)}>{usd(leg.fundingEarned)}</V>
@@ -245,9 +269,10 @@ function LegCard({ leg }: { leg: LegView }) {
           {leg.leverage ? <span className="text-muted"> · {num(leg.leverage, 0)}x</span> : null}
         </V>
         <K>Venue position</K>
-        <V className={mismatch ? "text-down" : ""} >
+        <V className={short ? "text-down" : ""} >
           {Number(leg.venueSize) > 0 ? `${leg.venueSide === "short" ? "-" : ""}${num(leg.venueSize)}` : "flat"}
-          {Number(leg.venueSize) > 0 && Number(leg.venueSize) !== Number(leg.held) && <span className="text-muted"> (includes trades outside this hedge)</span>}
+          {short && <span> (less than the hedge holds)</span>}
+          {!short && venue !== undefined && venue > Number(leg.held) && <span className="text-muted"> (includes trades outside this hedge)</span>}
         </V>
       </div>
     </div>
@@ -280,7 +305,7 @@ function Orders({ detail }: { detail: GroupDetail }) {
               <td className="px-2 text-right">{num(order.filled)}</td>
               <td className="px-2 text-right">{avg > 0 ? num(order.avgPrice) : "—"}</td>
               <td className={cx("px-2 text-right", slip !== undefined && slip > 5 ? "text-down" : "")}>{slip === undefined ? "—" : bpsText(slip, 1)}</td>
-              <td className={cx("px-2 text-right", order.state === "rejected" || order.state === "unknown" ? "text-down" : "")}>{order.state}</td>
+              <td className={cx("px-2 text-right", order.state === "rejected" || order.state === "unknown" || order.state === "unresolved" ? "text-down" : "")}>{order.state}</td>
             </tr>
           );
         })}
@@ -398,7 +423,7 @@ function CloseDialog({ group, onDone }: { group: GroupView; onDone: () => void }
           <>
             <div className="grid h-8 grid-cols-2 rounded-lg bg-raised p-0.5">
               {([0, 1] as const).map((leg) => (
-                <button key={leg} onClick={() => setMaker(leg)} className={cx("rounded-md", maker === leg ? "bg-line-strong/60 text-text" : "text-muted")}>Rest leg {leg + 1} · {group.legView[leg].venue}</button>
+                <button key={leg} onClick={() => setMaker(leg)} className={cx("rounded-md", maker === leg ? "bg-line-strong/60 text-text" : "text-muted")}>Rest leg {leg + 1} · {venueLabel(group.legView[leg].venue)}</button>
               ))}
             </div>
             <label className="flex h-10 items-center gap-2 rounded-lg border border-line px-3">
@@ -414,4 +439,15 @@ function CloseDialog({ group, onDone }: { group: GroupView; onDone: () => void }
       </div>
     </Dialog>
   );
+}
+
+/**
+ * The venue's position in the leg's direction (negative when it is the other
+ * way); undefined for spot legs and while the account stream is down.
+ */
+export function legVenueHeld(leg: Pick<LegView, "product" | "accountLive" | "venueSize" | "venueSide" | "side">): number | undefined {
+  if (leg.product !== "perp" || !leg.accountLive) return undefined;
+  const size = Number(leg.venueSize) || 0;
+  if (size === 0) return 0;
+  return (leg.venueSide === "long") === (leg.side === "buy") ? size : -size;
 }
