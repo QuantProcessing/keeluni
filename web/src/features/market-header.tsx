@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Instrument } from "@/api/types";
 import { compact, countdown, pct, price, signed, venueLabel } from "@/lib/format";
+import { accountName, tradingAccounts } from "@/lib/routes";
 import { useInstrument, useInstruments, useLastPrice, useNow, useStats, useTicker } from "@/state/hooks";
 import { useWorkspace } from "@/state/workspace";
 import { cx } from "@/ui/primitives";
@@ -59,10 +60,10 @@ function Stat({ label, value, tone, hint }: { label: string; value: string; tone
   );
 }
 
-type Category = "all" | "perp" | "spot" | string;
+type Category = "all" | "tradable" | "perp" | "spot" | string;
 
 function InstrumentPicker() {
-  const { instrumentId, setInstrumentId } = useWorkspace();
+  const { instrumentId, setInstrumentId, accounts, routes } = useWorkspace();
   const instrument = useInstrument(instrumentId);
   const { data: instruments = [] } = useInstruments();
   const [open, setOpen] = useState(false);
@@ -83,19 +84,32 @@ function InstrumentPicker() {
   }, []);
 
   const venues = useMemo(() => [...new Set(instruments.map((item) => item.venue))], [instruments]);
+  // Which connected accounts trade each market: shown, never used to hide one.
+  const traders = useMemo(() => {
+    const out = new Map<string, string[]>();
+    if (!accounts.length) return out;
+    for (const item of instruments) {
+      const names = tradingAccounts(accounts, item, routes).map(accountName);
+      if (names.length) out.set(item.id, names);
+    }
+    return out;
+  }, [instruments, accounts, routes]);
   const filtered = useMemo(() => {
     const term = search.trim().toUpperCase().replace(/[\s/]+/g, "-");
     const result = instruments.filter((item) => {
-      if (category === "perp" || category === "spot") {
+      if (category === "tradable") {
+        if (!traders.has(item.id)) return false;
+      } else if (category === "perp" || category === "spot") {
         if (item.product !== category) return false;
       } else if (category !== "all" && item.venue !== category) return false;
-      return !term || item.symbol.includes(term) || item.base.toUpperCase().startsWith(term);
+      return !term || item.symbol.toUpperCase().includes(term) || item.base.toUpperCase().startsWith(term);
     });
-    // Exact base matches first, then perps, then by symbol.
+    // Exact base matches, majors, perps, the current venue; tradable ones a little ahead.
     const currentVenue = instrument?.venue;
-    result.sort((a, b) => rank(a, term, currentVenue) - rank(b, term, currentVenue) || a.symbol.localeCompare(b.symbol));
+    const score = (item: Instrument) => rank(item, term, currentVenue) - (traders.has(item.id) ? 8 : 0);
+    result.sort((a, b) => score(a) - score(b) || a.symbol.localeCompare(b.symbol));
     return result.slice(0, 200);
-  }, [instruments, search, category, instrument?.venue]);
+  }, [instruments, search, category, instrument?.venue, traders]);
 
   useEffect(() => setCursor(0), [search, category]);
   useEffect(() => {
@@ -133,7 +147,7 @@ function InstrumentPicker() {
             />
           </div>
           <div className="flex gap-1 overflow-x-auto px-3">
-            {[["all", "All"], ["perp", "Perps"], ["spot", "Spot"], ...venues.map((v) => [v, venueLabel(v)])].map(([value, label]) => (
+            {[["all", "All"], ...(accounts.length ? [["tradable", "Tradable"]] : []), ["perp", "Perps"], ["spot", "Spot"], ...venues.map((v) => [v, venueLabel(v)])].map(([value, label]) => (
               <button key={value} onClick={() => setCategory(value!)} className={cx("rounded-md px-2 py-1 whitespace-nowrap", category === value ? "bg-raised text-text" : "text-muted hover:text-text")}>
                 {label}
               </button>
@@ -143,19 +157,28 @@ function InstrumentPicker() {
             <span>Market</span><span>Venue</span><span className="text-right">Type</span>
           </div>
           <div ref={listRef} className="max-h-[50vh] overflow-y-auto pb-2">
-            {filtered.map((item, index) => (
-              <button
-                key={item.id}
-                data-index={index}
-                onMouseEnter={() => setCursor(index)}
-                onClick={() => choose(item)}
-                className={cx("grid w-full grid-cols-[1fr_120px_80px] gap-2 px-3 py-1.5 text-left", index === cursor && "bg-raised", item.id === instrumentId && "text-accent")}
-              >
-                <span className="truncate">{item.symbol}</span>
-                <span className="text-text-2">{venueLabel(item.venue)}</span>
-                <span className="text-right text-muted">{item.product === "perp" ? "Perp" : "Spot"}</span>
-              </button>
-            ))}
+            {filtered.map((item, index) => {
+              const by = traders.get(item.id);
+              return (
+                <button
+                  key={item.id}
+                  data-index={index}
+                  onMouseEnter={() => setCursor(index)}
+                  onClick={() => choose(item)}
+                  className={cx("grid w-full grid-cols-[1fr_120px_80px] gap-2 px-3 py-1.5 text-left", index === cursor && "bg-raised", item.id === instrumentId && "text-accent")}
+                >
+                  <span className="truncate">
+                    {item.symbol}
+                    {item.assetClass && item.assetClass !== "crypto" && <span className="ml-1.5 text-muted">{ASSET_CLASS[item.assetClass] ?? item.assetClass}</span>}
+                  </span>
+                  <span className="flex items-center gap-1.5 text-text-2">
+                    {venueLabel(item.venue)}
+                    {by && <span className="size-1.5 rounded-full bg-up" title={`Tradable with ${by.join(", ")}`} aria-label="Tradable" />}
+                  </span>
+                  <span className="text-right text-muted">{item.product === "perp" ? "Perp" : "Spot"}</span>
+                </button>
+              );
+            })}
             {filtered.length === 0 && <div className="px-3 py-6 text-center text-muted">No markets match</div>}
           </div>
           <div className="flex gap-4 border-t border-line px-3 py-2 text-muted">
@@ -169,6 +192,8 @@ function InstrumentPicker() {
     </Popover.Root>
   );
 }
+
+const ASSET_CLASS: Record<string, string> = { equity: "Stock", commodity: "Commodity", fx: "FX", index: "Index", pre_ipo: "Pre-IPO", rwa_other: "RWA" };
 
 const MAJORS = ["BTC", "ETH", "SOL"];
 function rank(item: Instrument, term: string, currentVenue?: string): number {

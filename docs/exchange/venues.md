@@ -29,6 +29,9 @@ to the venue backend.
 | Gate | `GTS`, `GTU` | Spot reads `classic` or unified `multi_currency`/portfolio/single-currency mode; Perp uses the futures account | API key and secret | Signed one-way Perp position | Existing venue futures mode; no common selector | Perp `SetLeverage` confirms the response | Perp quantity must align to the contract multiplier |
 | Aster | `ATS`, `ATP` | User account with separate API-wallet signer | User address, signer private key, and optional expected signer | Perp uses one-way/net `BOTH` | Existing venue mode; no common selector | Perp `SetLeverage` confirms the response | WebSocket-facet order commands use the signed REST command path |
 | Nado | `NDS`, `NDP` | Unified-margin subaccount | Private key plus subaccount name | Signed one-way position in the normalized model | Backend unified-margin risk model; no common selector | `SetLeverage` returns `Effective=0` because leverage is backend-managed | Order IDs are lowercase `0x` digests; `WatchMarkPrice` returns `exchange.ErrUnsupported` |
+| Kraken Futures | `KrakenPerpConfig`, outside the product matrix | Multi-collateral (flex) account; linear `PF_` perps only | API key and base64 secret | Signed net position per contract | Cross by default; a leverage preference makes the contract isolated | `SetLeverage` sets the contract's isolated maximum leverage | Synchronous acks; open-order cancels carry only an id, so the private stream keeps open orders; candles poll REST |
+| Deribit | `DeribitPerpConfig`, outside the product matrix | One account per currency; USDC linear perps only | Client id and secret (client_credentials) | Signed net position per instrument | Account-wide cross (or portfolio) margin | `SetLeverage` returns `exchange.ErrUnsupported`: leverage follows position size | Client order ids travel as labels; label lookups cover 30 minutes after an order closes |
+| Gate CrossEx (broker) | `CrossExPerpConfig`, outside the product matrix | One cross-exchange margin pool across all reached venues; isolated-exchange accounts are refused | API key and secret with CrossEx permission | Single (one-way) mode only; dual-mode accounts are refused | Cross-exchange pool; Hyperliquid positions may be isolated on the venue side | Perp `SetLeverage` confirms the response per CrossEx symbol | Instruments keep the reached venue's identity with CrossEx rules; orders are acknowledged `AckAcceptedPending`; market methods return `exchange.ErrUnsupported` |
 
 ## Venue notes
 
@@ -87,6 +90,37 @@ setting; successful validation returns zero effective leverage. Mark price is
 also a documented method-level WebSocket exception rather than a removed
 interface member.
 
+
+### Kraken Futures
+
+Kraken spells bitcoin `XBT` (`PF_XBTUSD`); canonical symbols use the
+instrument's `base` (`BTC-USD`). Contracts are one base unit and the quantity
+step is `10^-contractValueTradePrecision`. Book deltas carry a contiguous `seq`;
+a gap reconnects for a fresh snapshot. Funding is `relativeFundingRate`, the
+hourly fraction of position value. Kraken keeps an order queryable for 5
+seconds after it closes; later, exact lookup searches recent fills and is
+otherwise `unconfirmed`. Order history is reconstructed from fills.
+
+### Deribit
+
+Amounts are base units for linear perps; the step is `contract_size`. Book
+changes chain `prev_change_id`; a break resubscribes. The hourly funding rate
+is `funding_8h / 8`. Deribit has no 4h bar; 4h candles are built from hourly
+bars.
+
+### Gate CrossEx
+
+A brokered row (see the exchange README). One account reaches Binance, OKX,
+Bybit, Gate, Hyperliquid, Lighter, Kraken and Deribit perps through CrossEx symbols such as
+`BINANCE_FUTURE_BTC_USDT`; instruments keep the reached venue's identity and
+carry CrossEx's own rules, which can be finer than the venue's (Gate SOL: 0.1
+base vs one 1-SOL contract). Quantities are base units. The client accepts
+only cross-exchange, single-position-mode accounts. An order acknowledged by
+CrossEx can still fail its risk checks (`FAIL`, structured label) or be
+rejected by the exchange (`REJECT`, raw text); both arrive on the private
+stream as `rejected`. Exact lookup by client order id cannot prove absence,
+because CrossEx may no longer find finished orders by text, so a miss is
+`unconfirmed` unless recent history contains the order.
 ## Product rows and exact operations
 
 The [REST matrix](rest-operations.md) and

@@ -1,6 +1,7 @@
 package factory
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -197,6 +198,49 @@ func BinanceUSDPerpConfig(apiKey, secretKey string, options ...Option) Config[ex
 	})
 }
 
+// BinanceUSDCPerpConfig returns a typed ticket for the USDC-margined
+// perpetuals of a Binance USD-M account. They share the account, its
+// positions and its private stream with the USDT perpetuals; the client
+// serves the USDC instruments only.
+func BinanceUSDCPerpConfig(apiKey, secretKey string, options ...Option) Config[exchange.PerpClient] {
+	return perpConfig("binance-usdc-perp", options, func(settings settings) error {
+		if err := rejectUnsupportedAccountAddress(settings); err != nil {
+			return err
+		}
+		return requireNonEmptyCredentials("binance usdc perp", apiKey, secretKey)
+	}, func(settings settings) exchange.PerpClient {
+		return factoryclient.NewBinanceUSDPerp(apiKey, secretKey, factorySettingsForConfig("binance-usdc-perp", settings))
+	})
+}
+
+// KrakenPerpConfig returns a typed ticket for a Kraken Futures client over
+// the multi-collateral linear perpetuals (PF_*). secret is the base64 API
+// secret Kraken issues.
+func KrakenPerpConfig(apiKey, secret string, options ...Option) Config[exchange.PerpClient] {
+	return perpConfig("kraken-usd-perp", options, func(settings settings) error {
+		if err := rejectUnsupportedAccountAddress(settings); err != nil {
+			return err
+		}
+		return requireNonEmptyCredentials("kraken perp", apiKey, secret)
+	}, func(settings settings) exchange.PerpClient {
+		return factoryclient.NewKrakenPerp(apiKey, secret, factorySettingsForConfig("kraken-usd-perp", settings))
+	})
+}
+
+// DeribitPerpConfig returns a typed ticket for a Deribit client over the
+// USDC linear perpetuals. clientID and clientSecret are an API key's
+// client credentials.
+func DeribitPerpConfig(clientID, clientSecret string, options ...Option) Config[exchange.PerpClient] {
+	return perpConfig("deribit-usdc-perp", options, func(settings settings) error {
+		if err := rejectUnsupportedAccountAddress(settings); err != nil {
+			return err
+		}
+		return requireNonEmptyCredentials("deribit perp", clientID, clientSecret)
+	}, func(settings settings) exchange.PerpClient {
+		return factoryclient.NewDeribitPerp(clientID, clientSecret, factorySettingsForConfig("deribit-usdc-perp", settings))
+	})
+}
+
 // OKXSpotConfig returns a typed ticket for an OKX Spot client.
 func OKXSpotConfig(apiKey, secretKey, passphrase string, options ...Option) Config[exchange.SpotClient] {
 	return spotConfig("okx-spot", options, func(settings settings) error {
@@ -362,6 +406,31 @@ func GateUSDTPerpConfig(apiKey, secretKey string, options ...Option) Config[exch
 		return requireNonEmptyCredentials("gate usdt perp", apiKey, secretKey)
 	}, func(settings settings) exchange.PerpClient {
 		return factoryclient.NewGateUSDTPerp(apiKey, secretKey, factorySettingsForConfig("gate-usdt-perp", settings))
+	})
+}
+
+// NativeInstrumentSource returns the native perp instruments of the venues a
+// brokered client reaches. The caller owns and refreshes the native catalogs.
+type NativeInstrumentSource func(context.Context) ([]exchange.Instrument, error)
+
+// CrossExPerpConfig returns a typed ticket for a Gate CrossEx perp client.
+//
+// The client is brokered (exchange.BrokeredClient): its instruments are the
+// native perp instruments of the venues CrossEx reaches, bound to CrossEx
+// symbols and rules. natives supplies those native instruments; matching is
+// by native symbol. Only cross-exchange, single-position-mode accounts are
+// supported. Market data methods return exchange.ErrUnsupported.
+func CrossExPerpConfig(apiKey, secretKey string, natives NativeInstrumentSource, options ...Option) Config[exchange.PerpClient] {
+	return perpConfig("crossex-perp", options, func(settings settings) error {
+		if err := rejectUnsupportedAccountAddress(settings); err != nil {
+			return err
+		}
+		if natives == nil {
+			return invalidConfig("crossex perp requires a native instrument source")
+		}
+		return requireNonEmptyCredentials("crossex perp", apiKey, secretKey)
+	}, func(settings settings) exchange.PerpClient {
+		return factoryclient.NewCrossExPerp(apiKey, secretKey, factoryclient.CrossExNativeSource(natives), factorySettings(settings))
 	})
 }
 
@@ -606,8 +675,12 @@ func instrumentLoaderForConfig(configName string, settings settings) exchange.In
 	switch configName {
 	case "binance-spot":
 		return factoryclient.NewBinanceInstrumentLoader(exchange.ProductSpot, factorySettingsForConfig(configName, settings))
-	case "binance-usd-perp":
+	case "binance-usd-perp", "binance-usdc-perp":
 		return factoryclient.NewBinanceInstrumentLoader(exchange.ProductPerp, factorySettingsForConfig(configName, settings))
+	case "kraken-usd-perp":
+		return factoryclient.NewKrakenInstrumentLoader(factorySettingsForConfig(configName, settings))
+	case "deribit-usdc-perp":
+		return factoryclient.NewDeribitInstrumentLoader(factorySettingsForConfig(configName, settings))
 	case "lighter-spot":
 		return factoryclient.NewLighterInstrumentLoader(exchange.ProductSpot, factorySettingsForConfig(configName, settings))
 	case "lighter-perp":
@@ -656,6 +729,12 @@ func derivativeSnapshotLoaderForConfig(configName string, settings settings) fac
 	switch configName {
 	case "binance-usd-perp":
 		return factoryclient.NewBinanceDerivativeSnapshotLoader("USDT", factorySettingsForConfig(configName, settings))
+	case "binance-usdc-perp":
+		return factoryclient.NewBinanceDerivativeSnapshotLoader("USDC", factorySettingsForConfig(configName, settings))
+	case "kraken-usd-perp":
+		return factoryclient.NewKrakenDerivativeSnapshotLoader(factorySettingsForConfig(configName, settings))
+	case "deribit-usdc-perp":
+		return factoryclient.NewDeribitDerivativeSnapshotLoader(factorySettingsForConfig(configName, settings))
 	case "aster-usdt-perp":
 		return factoryclient.NewAsterDerivativeSnapshotLoader("USDT", factorySettingsForConfig(configName, settings))
 	case "okx-usdt-perp":
@@ -694,8 +773,12 @@ func derivativeSnapshotLoaderForConfig(configName string, settings settings) fac
 // first is permanent where the second is news.
 func fundingHistoryLoaderForConfig(configName string, settings settings) exchange.FundingHistoryLoader {
 	switch configName {
-	case "binance-usd-perp":
+	case "binance-usd-perp", "binance-usdc-perp":
 		return factoryclient.NewBinanceFundingHistoryLoader(factorySettingsForConfig(configName, settings))
+	case "kraken-usd-perp":
+		return factoryclient.NewKrakenFundingHistoryLoader(factorySettingsForConfig(configName, settings))
+	case "deribit-usdc-perp":
+		return factoryclient.NewDeribitFundingHistoryLoader(factorySettingsForConfig(configName, settings))
 	case "aster-usdt-perp":
 		return factoryclient.NewAsterFundingHistoryLoader(factorySettingsForConfig(configName, settings))
 	case "okx-usdt-perp":

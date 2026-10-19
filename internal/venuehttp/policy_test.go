@@ -30,6 +30,12 @@ func TestWirePoliciesWeightParametersAndPreserveBodies(t *testing.T) {
 		{"hyperliquid", "POST", "/exchange", `{"action":{"type":"cancel","cancels":[{}]}}`, "cancel", 1},
 		{"nado", "POST", "/v1/execute", `{"place_order":{}}`, "place", 1},
 		{"lighter", "POST", "/api/v1/sendTx", `{}`, "", 1},
+		{"kraken", "POST", "/derivatives/api/v3/sendorder", `symbol=PF_XBTUSD`, "place", 10},
+		{"kraken", "POST", "/derivatives/api/v3/cancelorder", `order_id=1`, "cancel", 10},
+		{"kraken", "GET", "/derivatives/api/v3/openpositions", "", "read", 1},
+		{"deribit", "GET", "/api/v2/private/buy?amount=1", "", "place", 1},
+		{"deribit", "GET", "/api/v2/private/cancel?order_id=1", "", "cancel", 1},
+		{"deribit", "GET", "/api/v2/public/ticker", "", "read", 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.venue+tt.path, func(t *testing.T) {

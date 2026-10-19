@@ -7644,6 +7644,181 @@
       "tests": [
         "TestEveryRouteHasOneFactoryBindingCredentialSchemaAndMarketFamily"
       ]
+    },
+    {
+      "id": "exchange.BrokeredClient",
+      "kind": "interface",
+      "coverage": "contract",
+      "tests": [
+        "TestBrokeredClientInterfaceShape",
+        "TestCrossExPerpConfigConstructsABrokeredClientWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange.BrokeredClient.Broker",
+      "kind": "interface_method",
+      "coverage": "contract",
+      "tests": [
+        "TestBrokeredClientInterfaceShape",
+        "TestCrossExPerpConfigConstructsABrokeredClientWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange.BrokeredClient.Reaches",
+      "kind": "interface_method",
+      "coverage": "contract",
+      "tests": [
+        "TestBrokeredClientInterfaceShape",
+        "TestCrossExPerpConfigConstructsABrokeredClientWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange.IsBroker",
+      "kind": "func",
+      "coverage": "unit",
+      "tests": [
+        "TestBrokerVenueOwnsAccountsNotInstruments"
+      ]
+    },
+    {
+      "id": "exchange.MarketRoute",
+      "kind": "type",
+      "coverage": "unit",
+      "tests": [
+        "TestBrokeredClientInterfaceShape"
+      ]
+    },
+    {
+      "id": "exchange.VenueCrossEx",
+      "kind": "const",
+      "coverage": "contract",
+      "tests": [
+        "TestBrokerVenueOwnsAccountsNotInstruments"
+      ]
+    },
+    {
+      "id": "exchange/factory.CrossExPerpConfig",
+      "kind": "func",
+      "coverage": "contract",
+      "tests": [
+        "TestCrossExPerpConfigConstructsABrokeredClientWithoutIO",
+        "TestCrossExPerpConfigValidatesLocally"
+      ]
+    },
+    {
+      "id": "exchange/factory.NativeInstrumentSource",
+      "kind": "type",
+      "coverage": "contract",
+      "tests": [
+        "TestCrossExPerpConfigConstructsABrokeredClientWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange.MarginPool",
+      "kind": "type",
+      "coverage": "unit",
+      "tests": [
+        "TestMarginPoolAndOrderOriginModels"
+      ]
+    },
+    {
+      "id": "exchange.MarginPoolREST",
+      "kind": "interface",
+      "coverage": "contract",
+      "tests": [
+        "TestMarginPoolAndOrderOriginModels"
+      ]
+    },
+    {
+      "id": "exchange.MarginPoolREST.MarginPool",
+      "kind": "interface_method",
+      "coverage": "contract",
+      "tests": [
+        "TestMarginPoolAndOrderOriginModels"
+      ]
+    },
+    {
+      "id": "exchange.VenueMarginShare",
+      "kind": "type",
+      "coverage": "unit",
+      "tests": [
+        "TestMarginPoolAndOrderOriginModels"
+      ]
+    },
+    {
+      "id": "exchange.OrderOrigin",
+      "kind": "type",
+      "coverage": "unit",
+      "tests": [
+        "TestMarginPoolAndOrderOriginModels"
+      ]
+    },
+    {
+      "id": "exchange.OrderOriginADL",
+      "kind": "const",
+      "coverage": "unit",
+      "tests": [
+        "TestMarginPoolAndOrderOriginModels"
+      ]
+    },
+    {
+      "id": "exchange.OrderOriginLiquidation",
+      "kind": "const",
+      "coverage": "unit",
+      "tests": [
+        "TestMarginPoolAndOrderOriginModels"
+      ]
+    },
+    {
+      "id": "exchange.OrderOriginSettlement",
+      "kind": "const",
+      "coverage": "unit",
+      "tests": [
+        "TestMarginPoolAndOrderOriginModels"
+      ]
+    },
+    {
+      "id": "exchange.VenueKraken",
+      "kind": "const",
+      "coverage": "contract",
+      "tests": [
+        "TestBrokeredOnlyVenuesIdentifyInstruments"
+      ]
+    },
+    {
+      "id": "exchange.VenueDeribit",
+      "kind": "const",
+      "coverage": "contract",
+      "tests": [
+        "TestBrokeredOnlyVenuesIdentifyInstruments"
+      ]
+    },
+    {
+      "id": "exchange/factory.BinanceUSDCPerpConfig",
+      "kind": "func",
+      "coverage": "contract",
+      "tests": [
+        "TestNativePerpConfigsConstructWithoutIO",
+        "TestNativePerpConfigsValidateLocally"
+      ]
+    },
+    {
+      "id": "exchange/factory.KrakenPerpConfig",
+      "kind": "func",
+      "coverage": "contract",
+      "tests": [
+        "TestNativePerpConfigsConstructWithoutIO",
+        "TestNativePerpConfigsValidateLocally"
+      ]
+    },
+    {
+      "id": "exchange/factory.DeribitPerpConfig",
+      "kind": "func",
+      "coverage": "contract",
+      "tests": [
+        "TestNativePerpConfigsConstructWithoutIO",
+        "TestNativePerpConfigsValidateLocally"
+      ]
     }
   ]
 }

@@ -92,8 +92,16 @@ export function snapToStep(value: string, step: string): string {
 
 const VENUE_LABEL: Record<string, string> = {
   binance: "Binance", okx: "OKX", bybit: "Bybit", bitget: "Bitget", gate: "Gate", hyperliquid: "Hyperliquid", lighter: "Lighter",
+  kraken: "Kraken", deribit: "Deribit", crossex: "Gate CrossEx",
 };
 export const venueLabel = (venue: string) => VENUE_LABEL[venue] ?? venue;
+
+/** "binance:perp:USDT" -> "Binance Perp USDT"; a broker pool ("crossex") -> its name. */
+export function marketLabel(market: string): string {
+  const [venue = "", product, settle] = market.split(":");
+  if (!product) return venueLabel(venue);
+  return [venueLabel(venue), product === "perp" ? "Perp" : "Spot", settle].filter(Boolean).join(" ");
+}
 
 export function instrumentName(id: string): string {
   const parts = id.split(":");

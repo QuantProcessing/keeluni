@@ -33,6 +33,9 @@ type Instrument struct {
 	MinQty       string             `json:"minQty"`
 	MinNotional  string             `json:"minNotional,omitempty"`
 	MarketFamily string             `json:"marketFamily,omitempty"`
+	// AssetClass is the venue's classification (crypto, equity, commodity,
+	// fx, ...) when it publishes one.
+	AssetClass string `json:"assetClass,omitempty"`
 
 	native exchange.Instrument
 }
@@ -201,6 +204,9 @@ func project(native exchange.Instrument) Instrument {
 	if native.Rules.MinNotional.Valid {
 		instrument.MinNotional = native.Rules.MinNotional.Value.String()
 	}
+	if class := native.Metadata.AssetClass; class != "" && class != exchange.AssetClassUnknown {
+		instrument.AssetClass = string(class)
+	}
 	return instrument
 }
 
@@ -280,7 +286,11 @@ func (catalog *Catalog) connector(id venue.InstrumentID) (Instrument, *factory.P
 		return Instrument{}, nil, err
 	}
 	market, _ := venue.MarketOf(instrument.native)
-	return instrument, catalog.connectors[market].client, nil
+	item := catalog.connectors[market]
+	if item == nil {
+		return Instrument{}, nil, fmt.Errorf("%w: %s", ErrUnknownInstrument, id)
+	}
+	return instrument, item.client, nil
 }
 
 func (catalog *Catalog) Close() {
@@ -292,6 +302,14 @@ func (catalog *Catalog) Close() {
 // NewTestInstrument projects a native instrument without a catalog. It exists
 // for tests in other packages.
 func NewTestInstrument(native exchange.Instrument) Instrument { return project(native) }
+
+// WithRules returns the instrument bound to another client's view of it — a
+// broker's symbol and rules — keeping the gateway id.
+func (instrument Instrument) WithRules(native exchange.Instrument) Instrument {
+	bound := project(native)
+	bound.ID = instrument.ID
+	return bound
+}
 
 // NewStaticCatalog builds a catalog from fixed instruments without any venue
 // connector. It exists for tests in other packages.

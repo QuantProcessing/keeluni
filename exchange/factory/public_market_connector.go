@@ -160,8 +160,12 @@ func publicMarketClientForConfig(configName string, settings settings) (exchange
 	switch configName {
 	case "binance-spot":
 		setSpot(factoryclient.NewBinanceSpot("", "", configured))
-	case "binance-usd-perp":
+	case "binance-usd-perp", "binance-usdc-perp":
 		setPerp(factoryclient.NewBinanceUSDPerp("", "", configured))
+	case "kraken-usd-perp":
+		setPerp(factoryclient.NewKrakenPerp("", "", configured))
+	case "deribit-usdc-perp":
+		setPerp(factoryclient.NewDeribitPerp("", "", configured))
 	case "okx-spot":
 		setSpot(factoryclient.NewOKXSpot("", "", "", configured))
 	case "okx-usdt-perp":

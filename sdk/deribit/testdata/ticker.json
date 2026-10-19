@@ -1,0 +1,35 @@
+{
+ "jsonrpc": "2.0",
+ "result": {
+  "timestamp": 1792334626126,
+  "state": "open",
+  "stats": {
+   "high": 82223.5,
+   "low": 80743.7,
+   "price_change": -0.548,
+   "volume": 30449.8156,
+   "volume_usd": 2481109740.17,
+   "volume_notional": 2481606061.3832803
+  },
+  "index_price": 81021.85,
+  "instrument_name": "BTC_USDC-PERPETUAL",
+  "last_price": 81048.2,
+  "settlement_price": 81598.81,
+  "min_price": 79832.9,
+  "max_price": 82264.5,
+  "open_interest": 1801.7627,
+  "mark_price": 81048.68,
+  "interest_value": 130179031.29902042,
+  "current_funding": 8.115e-05,
+  "estimated_delivery_price": 81021.85,
+  "funding_8h": 6.8e-05,
+  "best_ask_price": 81048.2,
+  "best_bid_price": 81048.1,
+  "best_ask_amount": 2.2183,
+  "best_bid_amount": 2.2884
+ },
+ "usIn": 1792334626134465,
+ "usOut": 1792334626134761,
+ "usDiff": 296,
+ "testnet": false
+}

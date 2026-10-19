@@ -119,6 +119,14 @@ func (rt *runtime) Place(ctx context.Context, instrument market.Instrument, requ
 	if err != nil {
 		return PlaceResult{}, err
 	}
+	if client.broker {
+		// Validate against the broker's rules, which can differ from the venue's.
+		brokered, ok := rt.brokerInstrument(ctx, client, instrument)
+		if !ok {
+			return PlaceResult{}, fmt.Errorf("%w: %s is not tradable through %s", ErrInvalidRequest, instrument.ID, client.key.Venue)
+		}
+		instrument = instrument.WithRules(brokered)
+	}
 	native, err := request.native(instrument)
 	if err != nil {
 		return PlaceResult{}, err
@@ -134,7 +142,7 @@ func (rt *runtime) Place(ctx context.Context, instrument market.Instrument, requ
 		"qty", request.Quantity, "clientOrderId", request.ClientOrderID, "status", result.Status,
 		"venueCode", result.VenueCode, "elapsed", time.Since(started).Round(time.Millisecond), "error", placeErr)
 	if result.Status == OutcomeAccepted && instrument.Product == exchange.ProductPerp {
-		rt.scheduleRefresh(client.market)
+		rt.scheduleRefresh(client.key)
 	}
 	return result, nil
 }
@@ -275,11 +283,11 @@ func (rt *runtime) OpenOrders(ctx context.Context, instrument *market.Instrument
 	for _, client := range clients {
 		page, err := client.orders().OpenOrders(ctx, exchange.OpenOrdersRequest{Instrument: native, Limit: 100})
 		if err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", client.market, err))
+			errs = append(errs, fmt.Errorf("%s: %w", client.key, err))
 			continue
 		}
 		for _, item := range page.Orders {
-			id := rt.instrumentID(client.market, item.NativeSymbol, item.NativeID, instrument)
+			id := rt.instrumentID(client, item.NativeSymbol, item.NativeID, instrument)
 			if id == "" {
 				continue
 			}
@@ -314,11 +322,11 @@ func (rt *runtime) Fills(ctx context.Context, instrument *market.Instrument, sta
 	for _, client := range clients {
 		page, err := client.orders().Fills(ctx, exchange.FillsRequest{Instrument: native, Start: start, Limit: limit})
 		if err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", client.market, err))
+			errs = append(errs, fmt.Errorf("%s: %w", client.key, err))
 			continue
 		}
 		for _, item := range page.Fills {
-			id := rt.instrumentID(client.market, item.NativeSymbol, item.NativeID, instrument)
+			id := rt.instrumentID(client, item.NativeSymbol, item.NativeID, instrument)
 			if id == "" {
 				continue
 			}
@@ -331,11 +339,11 @@ func (rt *runtime) Fills(ctx context.Context, instrument *market.Instrument, sta
 	return fills, nil
 }
 
-func (rt *runtime) instrumentID(market venue.Market, nativeSymbol, nativeID string, requested *market.Instrument) venue.InstrumentID {
+func (rt *runtime) instrumentID(client routeClient, nativeSymbol, nativeID string, requested *market.Instrument) venue.InstrumentID {
 	if requested != nil {
 		return requested.ID
 	}
-	if resolved, ok := rt.catalog.ResolveNative(market, nativeSymbol, nativeID); ok {
+	if resolved, ok := rt.resolve(client, nativeSymbol, nativeID); ok {
 		return resolved.ID
 	}
 	return ""
@@ -357,7 +365,7 @@ func (rt *runtime) SetLeverage(ctx context.Context, instrument market.Instrument
 	if err != nil {
 		return 0, err
 	}
-	rt.scheduleRefresh(client.market)
+	rt.scheduleRefresh(client.key)
 	return result.Effective, nil
 }
 

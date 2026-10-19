@@ -1,0 +1,30 @@
+{
+ "jsonrpc": "2.0",
+ "result": [
+  {
+   "timestamp": 1792249200000,
+   "index_price": 81481.45,
+   "interest_8h": 7.44229525109276e-05,
+   "interest_1h": 7.980922543732157e-06,
+   "prev_index_price": 81388.99
+  },
+  {
+   "timestamp": 1792252800000,
+   "index_price": 81247.49,
+   "interest_8h": 6.792455474802509e-05,
+   "interest_1h": 5.107520735512469e-06,
+   "prev_index_price": 81481.45
+  },
+  {
+   "timestamp": 1792256400000,
+   "index_price": 81153.03,
+   "interest_8h": 6.46576705617551e-05,
+   "interest_1h": 9.123550154894323e-06,
+   "prev_index_price": 81247.49
+  }
+ ],
+ "usIn": 1792334649055179,
+ "usOut": 1792334649072784,
+ "usDiff": 17605,
+ "testnet": false
+}

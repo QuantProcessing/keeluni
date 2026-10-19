@@ -6,7 +6,7 @@ import { ApiError, api, setUnauthenticatedHandler } from "@/api/client";
 import { realtime } from "@/api/realtime";
 import { Blotter } from "@/features/blotter";
 import { ChartPanel } from "@/features/chart";
-import { AccountSwitcher, ConnectDialog } from "@/features/connect";
+import { AccountsMenu, ConnectDialog } from "@/features/connect";
 import { MarketHeader } from "@/features/market-header";
 import { BookPanel } from "@/features/order-book";
 import { OrderTicket } from "@/features/order-ticket";
@@ -182,7 +182,7 @@ function TopBar() {
         <MoreMenu />
       </nav>
       <div className="ml-auto flex items-center gap-2">
-        <AccountSwitcher />
+        <AccountsMenu />
         <SessionMenu />
       </div>
     </header>

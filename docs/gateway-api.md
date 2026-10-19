@@ -38,8 +38,19 @@ gateway 唯一的持久化是 `$GATEWAY_DATA_DIR/accounts.enc`：每条凭证用
 symbol 是 exchange 层的规范 symbol；Hyperliquid builder 永续带 dex 前缀（`hyperliquid:perp:xyz:TSLA-USDC`），
 解析时只把前两个冒号当分隔符。
 
-**account id**：gateway 生成的短 id（如 `acc_7f3k2m`），一个账户 = 一个交易所 + 一套凭证；
-spot / 各 perp 结算路由由 gateway 按交易所自动派生，调用方不再关心 route。
+**account id**：gateway 生成的短 id（如 `acc_7f3k2m`）。账户分两类（`kind`）：
+
+- `native`：一个交易所 + 一套凭证；spot / 各 perp 结算路由由 gateway 按交易所自动派生。
+- `broker`：经纪账户（Gate CrossEx），一套凭证、一个保证金池，交易多个交易所的标的。
+
+instrument id 永远是**订单簿所在交易所**的 id：经 CrossEx 交易 Binance BTC 永续仍是
+`binance:perp:BTC-USDT`，与原生 Binance 账户交易的是同一个标的。账户决定"用谁的钱、走哪条通道"，
+标的决定"哪个订单簿"。
+
+行情永远来自订单簿所在交易所的原生接口，与用哪个账户交易无关。Kraken（USD 永续）、
+Deribit（USDC 永续）与 Binance（USDC 永续、TradFi 永续）都是原生市场：可用原生账户交易，
+CrossEx 支持的也可经 CrossEx 交易。`GET /v1/instruments` 带交易所给出的 `assetClass`
+（`crypto` / `equity` / `commodity` / `fx` / `pre_ipo` ...，未知时省略）。
 
 **clientOrderId**：调用方生成，十进制 uint48（`exchange` 层既有约束，各适配器已负责映射到
 交易所原生格式，如 Hyperliquid cloid）。推荐生成方式：
@@ -57,6 +68,8 @@ Go client 和前端各提供一个 `newClientOrderId()`。
    - `accepted`：交易所已接受，附 order 当前状态（市价单可能已 `filled`）
    - `rejected`：交易所明确拒绝，附 venue_code / venue_message
    - `unknown`：超时 / 断连 / 回包不可解析，结果未知
+   经纪账户的 `accepted` 只表示经纪商已受理：订单此时为 `pending`，之后可能经 `account.orders`
+   推送变为 `rejected`，附 `rejectCode`（经纪商风控标签）/ `rejectMessage`（交易所原文）。
 3. `unknown` 时调用方**禁止**用新 id 重下，也**禁止**盲目用同 id 重下（各交易所对重复
    clientOrderId 的去重范围不一致，部分只在挂单中去重，实现时逐家核实），必须调用
    `GET .../orders/lookup?clientOrderId=` 确认。
@@ -100,7 +113,7 @@ HTTP 状态：accepted → 200，rejected → 422，unknown → 202；三者 bod
 ### 公共
 ```
 GET  /v1/health
-GET  /v1/venues                         交易所列表 + 支持的 product + 凭证字段 schema
+GET  /v1/venues                         交易所列表：{venue, kind:"native"|"broker", markets, fields}
 GET  /v1/instruments?venue=&product=    规则：tick/step/minQty/minNotional
 GET  /v1/orderbook?inst=&depth=20
 GET  /v1/candles?inst=&interval=1m&start=&end=&limit=
@@ -109,7 +122,7 @@ GET  /v1/ticker?inst=                   last/mark/index/funding/nextFunding/open
 
 ### 账户
 ```
-GET    /v1/accounts                     [{id, venue, label, createdAt}]  —— 永不返回凭证
+GET    /v1/accounts                     [{id, venue, kind, label, createdAt, markets}]  —— 永不返回凭证
 POST   /v1/accounts                     {venue, label, credentials:{...}}
                                         → 构造 client → 查余额校验 → 加密落盘 → 启动私有流
 DELETE /v1/accounts/{id}
@@ -117,7 +130,13 @@ DELETE /v1/accounts/{id}
 
 ### 交易（均在 `/v1/accounts/{id}` 下）
 ```
-GET    /balances
+GET    /balances                        经纪账户只有一个池：market 为 "crossex"
+GET    /margin                          保证金池 {equity, available, initialMargin, maintenanceMargin,
+                                         initialMarginRate, maintenanceMarginRate, unrealizedPnl,
+                                         byVenue:[{venue, asset, equity, available, …}]}；原生账户为 null
+GET    /instruments                     本账户可交易的标的及其下单规则
+                                         [{inst, tickSize, stepSize, minQty, minNotional?}]
+                                         经纪账户的规则是经纪商的，可能与交易所原生不同（如更细的步长）
 GET    /positions                       来自 gateway 内存快照（见 §5），无快照时即时拉 REST
 GET    /orders?inst=                    当前挂单
 GET    /orders/history?inst=&limit=
@@ -151,11 +170,12 @@ PUT    /leverage                        {inst, leverage}
 | `trades` | `[{p,q,side,ts}]` | |
 | `candle` | `{t,o,h,l,c,v}` | |
 | `ticker` | `{mark,index,funding,nextFunding,oi,ts}` | |
-| `account.orders` | 单个订单的最新完整状态 | upsert by orderId |
+| `account.orders` | 单个订单的最新完整状态（可含 `rejectCode`、`rejectMessage`、`origin`: liquidation/adl/settlement） | upsert by orderId |
 | `account.fills` | 单笔成交 | |
 | `account.positions` | 该账户**全部持仓的完整列表** | 前端直接替换，无需合并 |
 | `account.balances` | 该账户全部余额的完整列表 | 同上 |
 | `account.status` | `{connected, reason}` | 私有流状态 |
+| `account.margin` | 同 `GET .../margin` | 仅经纪账户；完整快照 |
 
 **行情共享**：同一 `(ch, inst)` 在 gateway 内只开一个上游订阅，引用计数，最后一个订阅者离开后延迟 30s 关闭。
 

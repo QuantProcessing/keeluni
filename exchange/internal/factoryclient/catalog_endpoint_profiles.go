@@ -7,8 +7,10 @@ import (
 	binancespot "github.com/QuantProcessing/boltertrader/sdk/binance/spot"
 	bitget "github.com/QuantProcessing/boltertrader/sdk/bitget"
 	bybit "github.com/QuantProcessing/boltertrader/sdk/bybit"
+	deribit "github.com/QuantProcessing/boltertrader/sdk/deribit"
 	gate "github.com/QuantProcessing/boltertrader/sdk/gate"
 	hyperliquid "github.com/QuantProcessing/boltertrader/sdk/hyperliquid"
+	kraken "github.com/QuantProcessing/boltertrader/sdk/kraken"
 	"github.com/QuantProcessing/boltertrader/sdk/lighter"
 	nadosdk "github.com/QuantProcessing/boltertrader/sdk/nado"
 	"github.com/QuantProcessing/boltertrader/sdk/okx"
@@ -36,7 +38,7 @@ func ApplyDefaultCatalogEndpoints(configName string, descriptor *exchange.Source
 		if descriptor.WebSocketEndpoint == "" {
 			descriptor.WebSocketEndpoint = profile.WSBaseURL
 		}
-	case "binance-usd-perp":
+	case "binance-usd-perp", "binance-usdc-perp":
 		profile := binanceperp.MainnetEndpointProfile()
 		if descriptor.Endpoint == "" {
 			descriptor.Endpoint = profile.RESTBaseURL
@@ -123,6 +125,20 @@ func ApplyDefaultCatalogEndpoints(configName string, descriptor *exchange.Source
 		}
 		if descriptor.WebSocketEndpoint == "" {
 			descriptor.WebSocketEndpoint = profile.Endpoint(nadosdk.EndpointSubscriptionsWS)
+		}
+	case "kraken-usd-perp":
+		if descriptor.Endpoint == "" {
+			descriptor.Endpoint = kraken.DefaultRESTBaseURL
+		}
+		if descriptor.WebSocketEndpoint == "" {
+			descriptor.WebSocketEndpoint = kraken.DefaultWSURL
+		}
+	case "deribit-usdc-perp":
+		if descriptor.Endpoint == "" {
+			descriptor.Endpoint = deribit.DefaultRESTBaseURL
+		}
+		if descriptor.WebSocketEndpoint == "" {
+			descriptor.WebSocketEndpoint = deribit.DefaultWSURL
 		}
 	}
 }

@@ -26,6 +26,7 @@ type profileRow struct {
 var defaultRows = []profileRow{
 	{"binance", ProductSpot, ""},
 	{"binance", ProductPerp, "USDT"},
+	{"binance", ProductPerp, "USDC"},
 	{"okx", ProductSpot, ""},
 	{"okx", ProductPerp, "USDT"},
 	{"lighter", ProductSpot, ""},
@@ -44,6 +45,8 @@ var defaultRows = []profileRow{
 	{"aster", ProductPerp, "USDT"},
 	{"nado", ProductSpot, "USDT0"},
 	{"nado", ProductPerp, "USDT0"},
+	{"kraken", ProductPerp, "USD"},
+	{"deribit", ProductPerp, "USDC"},
 }
 
 // DefaultProfiles returns the supported products in catalog order. Callers own

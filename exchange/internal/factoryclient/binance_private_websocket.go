@@ -621,8 +621,13 @@ func (backend *binancePerpPrivateWSBackend) StartPositions(ctx context.Context, 
 	return stop, nil
 }
 
-func (backend *binancePerpPrivateWSBackend) StartAccountEvents(ctx context.Context, _ accountInstrumentIndex, callbacks accountEventCallbacks) (func() error, error) {
+// StartAccountEvents streams the USD-M account. USDT and USDC perps share
+// it, and each settlement is its own route: events for instruments outside
+// this route's index belong to the other route and are dropped.
+func (backend *binancePerpPrivateWSBackend) StartAccountEvents(ctx context.Context, index accountInstrumentIndex, routeCallbacks accountEventCallbacks) (func() error, error) {
 	const operation = "WatchAccountEvents"
+	callbacks := routeCallbacks
+	callbacks.Event = binancePerpRouteFilter(index, routeCallbacks.Event)
 	if err := backend.ensureAccountConnected(ctx, operation); err != nil {
 		return nil, err
 	}
@@ -660,6 +665,40 @@ func (backend *binancePerpPrivateWSBackend) StartAccountEvents(ctx context.Conte
 		})
 		return nil
 	}, nil
+}
+
+// binancePerpRouteFilter keeps the events of one settlement route: orders,
+// fills and positions of indexed instruments, and every balance.
+func binancePerpRouteFilter(index accountInstrumentIndex, emit func(accountBackendEvent)) func(accountBackendEvent) {
+	return func(event accountBackendEvent) {
+		if event.Kind == exchange.AccountEventPosition && event.Position != nil {
+			kept := event.Position.Positions[:0:0]
+			for _, position := range event.Position.Positions {
+				if _, ok := index.resolve(position.NativeSymbol, position.NativeID); ok {
+					kept = append(kept, position)
+				}
+			}
+			if len(kept) == 0 {
+				return
+			}
+			projected := *event.Position
+			projected.Positions = kept
+			event.Position = &projected
+			emit(event)
+			return
+		}
+		if event.Kind == exchange.AccountEventOrder && event.Order != nil {
+			if _, ok := index.resolve(event.Order.Order.NativeSymbol, event.Order.Order.NativeID); !ok {
+				return
+			}
+		}
+		if event.Kind == exchange.AccountEventFill && event.Fill != nil {
+			if _, ok := index.resolve(event.Fill.Fill.NativeSymbol, event.Fill.Fill.NativeID); !ok {
+				return
+			}
+		}
+		emit(event)
+	}
 }
 
 func (backend *binancePerpPrivateWSBackend) PlaceOrder(ctx context.Context, request exchange.PlaceOrderRequest) (exchange.OrderAcknowledgement, error) {

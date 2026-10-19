@@ -22,6 +22,7 @@ const (
 	ChannelPositions = "account.positions"
 	ChannelBalances  = "account.balances"
 	ChannelStatus    = "account.status"
+	ChannelMargin    = "account.margin"
 )
 
 const (
@@ -32,7 +33,9 @@ const (
 )
 
 // runtime is the live state of one account: its clients and an in-memory
-// position/balance snapshot fed by REST and the private stream.
+// position/balance snapshot fed by REST and the private stream. Snapshots are
+// kept per client (routeClient.key): one per market for a native account, one
+// for all markets of a broker account.
 type runtime struct {
 	id      string
 	venue   exchange.Venue
@@ -42,6 +45,7 @@ type runtime struct {
 	mu        sync.Mutex
 	positions map[venue.Market][]Position
 	balances  map[venue.Market][]Balance
+	margin    map[venue.Market]*Margin
 	loaded    map[venue.Market]bool
 	connected map[venue.Market]bool
 	emit      hub.Emit
@@ -51,7 +55,7 @@ type runtime struct {
 func newRuntime(id string, venueName exchange.Venue, clients []routeClient, catalog *market.Catalog) *runtime {
 	return &runtime{
 		id: id, venue: venueName, clients: clients, catalog: catalog,
-		positions: map[venue.Market][]Position{}, balances: map[venue.Market][]Balance{},
+		positions: map[venue.Market][]Position{}, balances: map[venue.Market][]Balance{}, margin: map[venue.Market]*Margin{},
 		loaded: map[venue.Market]bool{}, connected: map[venue.Market]bool{},
 		refresh: make(chan venue.Market, 16),
 	}
@@ -63,25 +67,46 @@ func (rt *runtime) close() {
 	}
 }
 
-func (rt *runtime) client(market venue.Market) (routeClient, bool) {
+func (rt *runtime) client(key venue.Market) (routeClient, bool) {
 	for _, client := range rt.clients {
-		if client.market == market {
+		if client.key == key {
 			return client, true
 		}
 	}
 	return routeClient{}, false
 }
 
+// clientFor returns the client that trades instrument.
 func (rt *runtime) clientFor(instrument market.Instrument) (routeClient, error) {
-	owner, ok := venue.MarketOf(instrument.Native())
-	if !ok || owner.Venue != rt.venue {
-		return routeClient{}, fmt.Errorf("%w: instrument %s does not belong to this account", ErrInvalidRequest, instrument.ID)
+	owner := venue.MarketKey(instrument.Native())
+	for _, client := range rt.clients {
+		if client.trades(owner) {
+			return client, nil
+		}
 	}
-	client, ok := rt.client(owner)
-	if !ok {
-		return routeClient{}, fmt.Errorf("%w: market %s is not available for this account", ErrInvalidRequest, owner)
+	return routeClient{}, fmt.Errorf("%w: instrument %s is not tradable by this account", ErrInvalidRequest, instrument.ID)
+}
+
+// resolve maps a client-reported native symbol to the gateway instrument.
+func (rt *runtime) resolve(client routeClient, nativeSymbol, nativeID string) (market.Instrument, bool) {
+	if client.broker && client.perp != nil {
+		// A broker reports its own symbols. Its instrument for that symbol
+		// carries the venue identity, which is the gateway id.
+		if brokered, err := client.perp.ResolveInstrument(context.Background(), nativeSymbol); err == nil {
+			identity := brokered.Identity
+			if instrument, err := rt.catalog.Get(venue.NewInstrumentID(identity.Venue, identity.Product, identity.Symbol)); err == nil &&
+				client.trades(venue.MarketKey(instrument.Native())) {
+				return instrument, true
+			}
+		}
+		return market.Instrument{}, false
 	}
-	return client, nil
+	for _, reached := range client.markets {
+		if instrument, ok := rt.catalog.ResolveNative(reached, nativeSymbol, nativeID); ok {
+			return instrument, true
+		}
+	}
+	return market.Instrument{}, false
 }
 
 // ---------------------------------------------------------------------------
@@ -97,7 +122,7 @@ func (rt *runtime) Positions(ctx context.Context) ([]Position, error) {
 			continue
 		}
 		rt.mu.Lock()
-		fresh := rt.loaded[client.market] && rt.emit != nil && rt.connected[client.market]
+		fresh := rt.loaded[client.key] && rt.emit != nil && rt.connected[client.key]
 		rt.mu.Unlock()
 		if !fresh {
 			if err := rt.loadMarket(ctx, client); err != nil {
@@ -117,7 +142,7 @@ func (rt *runtime) positionList() []Position {
 	defer rt.mu.Unlock()
 	var result []Position
 	for _, client := range rt.clients {
-		result = append(result, rt.positions[client.market]...)
+		result = append(result, rt.positions[client.key]...)
 	}
 	return result
 }
@@ -129,7 +154,7 @@ func (rt *runtime) Balances(ctx context.Context) ([]Balance, error) {
 	for _, client := range rt.clients {
 		balances, err := rt.fetchBalances(ctx, client)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", client.market, err))
+			errs = append(errs, fmt.Errorf("%s: %w", client.key, err))
 			continue
 		}
 		result = append(result, balances...)
@@ -156,14 +181,58 @@ func (rt *runtime) fetchBalances(ctx context.Context, client routeClient) ([]Bal
 		if item.Total.IsZero() && item.Available.IsZero() && item.Locked.IsZero() {
 			continue
 		}
-		balances = append(balances, Balance{Market: client.market.String(), Asset: item.Asset,
+		balances = append(balances, Balance{Market: client.balanceMarket(), Asset: item.Asset,
 			Total: item.Total.String(), Available: item.Available.String(), Locked: item.Locked.String()})
 	}
 	sort.Slice(balances, func(i, j int) bool { return balances[i].Asset < balances[j].Asset })
 	rt.mu.Lock()
-	rt.balances[client.market] = balances
+	rt.balances[client.key] = balances
 	rt.mu.Unlock()
 	return balances, nil
+}
+
+// fetchMargin reads a client's margin pool when it has one.
+func (rt *runtime) fetchMargin(ctx context.Context, client routeClient) (*Margin, error) {
+	reader, ok := client.perp.(exchange.MarginPoolREST)
+	if client.perp == nil || !ok {
+		return nil, nil
+	}
+	pool, err := reader.MarginPool(ctx)
+	if err != nil {
+		return nil, err
+	}
+	margin := projectMargin(pool)
+	rt.mu.Lock()
+	rt.margin[client.key] = margin
+	rt.mu.Unlock()
+	return margin, nil
+}
+
+// Margin returns the account's margin pool, read fresh. Accounts without a
+// shared pool report nil.
+func (rt *runtime) Margin(ctx context.Context) (*Margin, error) {
+	for _, client := range rt.clients {
+		margin, err := rt.fetchMargin(ctx, client)
+		if err != nil || margin != nil {
+			return margin, err
+		}
+	}
+	return nil, nil
+}
+
+func (rt *runtime) publishMargin() {
+	rt.mu.Lock()
+	emit := rt.emit
+	var margin *Margin
+	for _, client := range rt.clients {
+		if value := rt.margin[client.key]; value != nil {
+			margin = value
+		}
+	}
+	rt.mu.Unlock()
+	if emit != nil && margin != nil {
+		emit(hub.Message{Channel: ChannelMargin, Account: rt.id, Data: margin}, true)
+	}
 }
 
 func (rt *runtime) fetchPositions(ctx context.Context, client routeClient) ([]Position, error) {
@@ -173,7 +242,7 @@ func (rt *runtime) fetchPositions(ctx context.Context, client routeClient) ([]Po
 	}
 	positions := make([]Position, 0, len(natives))
 	for _, native := range natives {
-		instrument, ok := rt.catalog.ResolveNative(client.market, native.NativeSymbol, native.NativeID)
+		instrument, ok := rt.resolve(client, native.NativeSymbol, native.NativeID)
 		if !ok {
 			slog.Warn("position on unknown instrument skipped", "account", rt.id, "native", native.NativeSymbol)
 			continue
@@ -205,8 +274,8 @@ func (rt *runtime) loadMarket(ctx context.Context, client routeClient) error {
 		return err
 	}
 	rt.mu.Lock()
-	rt.positions[client.market] = positions
-	rt.loaded[client.market] = true
+	rt.positions[client.key] = positions
+	rt.loaded[client.key] = true
 	rt.mu.Unlock()
 	rt.publishPositions()
 	return nil
@@ -231,7 +300,7 @@ func (rt *runtime) publishBalances() {
 	emit := rt.emit
 	var balances []Balance
 	for _, client := range rt.clients {
-		balances = append(balances, rt.balances[client.market]...)
+		balances = append(balances, rt.balances[client.key]...)
 	}
 	rt.mu.Unlock()
 	if emit == nil {
@@ -249,8 +318,8 @@ func (rt *runtime) publishStatus() {
 	markets := map[string]bool{}
 	connected := len(rt.clients) > 0
 	for _, client := range rt.clients {
-		markets[client.market.String()] = rt.connected[client.market]
-		connected = connected && rt.connected[client.market]
+		markets[client.balanceMarket()] = rt.connected[client.key]
+		connected = connected && rt.connected[client.key]
 	}
 	rt.mu.Unlock()
 	if emit != nil {
@@ -291,7 +360,7 @@ func (rt *runtime) stream(ctx context.Context, emit hub.Emit) error {
 	for _, client := range rt.clients {
 		go func(client routeClient) {
 			if err := rt.streamMarket(streamCtx, client); err != nil && streamCtx.Err() == nil {
-				failures <- fmt.Errorf("%s: %w", client.market, err)
+				failures <- fmt.Errorf("%s: %w", client.key, err)
 			}
 		}(client)
 	}
@@ -324,6 +393,9 @@ func (rt *runtime) stream(ctx context.Context, emit hub.Emit) error {
 					if _, err := rt.fetchBalances(ctx, client); err == nil {
 						rt.publishBalances()
 					}
+					if margin, err := rt.fetchMargin(ctx, client); err == nil && margin != nil {
+						rt.publishMargin()
+					}
 				}
 			}
 			pending = map[venue.Market]bool{}
@@ -336,14 +408,18 @@ func (rt *runtime) stream(ctx context.Context, emit hub.Emit) error {
 func (rt *runtime) resync(ctx context.Context) {
 	for _, client := range rt.clients {
 		if err := rt.loadMarket(ctx, client); err != nil {
-			slog.Warn("position snapshot failed", "account", rt.id, "market", client.market.String(), "error", err)
+			slog.Warn("position snapshot failed", "account", rt.id, "market", client.key.String(), "error", err)
 		}
 		if _, err := rt.fetchBalances(ctx, client); err != nil {
-			slog.Warn("balance snapshot failed", "account", rt.id, "market", client.market.String(), "error", err)
+			slog.Warn("balance snapshot failed", "account", rt.id, "market", client.key.String(), "error", err)
+		}
+		if _, err := rt.fetchMargin(ctx, client); err != nil {
+			slog.Warn("margin snapshot failed", "account", rt.id, "market", client.key.String(), "error", err)
 		}
 	}
 	rt.publishPositions()
 	rt.publishBalances()
+	rt.publishMargin()
 	rt.publishStatus()
 }
 
@@ -352,28 +428,42 @@ func (rt *runtime) streamMarket(ctx context.Context, client routeClient) error {
 	if !ok {
 		return fmt.Errorf("private account stream unsupported")
 	}
-	instruments := rt.catalog.MarketInstruments(client.market)
+	var instruments []market.Instrument
+	for _, reached := range client.markets {
+		instruments = append(instruments, rt.catalog.MarketInstruments(reached)...)
+	}
 	if len(instruments) == 0 {
-		return fmt.Errorf("instrument catalog for %s is empty", client.market)
+		return fmt.Errorf("instrument catalog for %s is empty", client.key)
 	}
 	if indexer, ok := client.socket().(exchange.AccountInstrumentIndexer); ok {
 		items := make([]exchange.AccountInstrument, 0, len(instruments))
 		for _, instrument := range instruments {
-			items = append(items, exchange.AccountInstrument{InstrumentID: string(instrument.ID), Instrument: instrument.Native()})
+			native := instrument.Native()
+			if client.broker {
+				// The broker's index needs its own symbols for the instrument.
+				brokered, ok := rt.brokerInstrument(ctx, client, instrument)
+				if !ok {
+					continue
+				}
+				native = brokered
+			}
+			items = append(items, exchange.AccountInstrument{InstrumentID: string(instrument.ID), Instrument: native})
 		}
 		if err := indexer.SetAccountInstruments(items); err != nil {
 			return err
 		}
 	}
-	identity := instruments[0].Native().Identity
-	subscription, err := socket.WatchAccountEvents(ctx, exchange.WatchAccountEventsRequest{
-		Route: exchange.AccountRoute{
-			AccountID: rt.id, RouteID: client.market.String(), Venue: client.market.Venue,
-			Environment: exchange.EnvironmentLive, Product: client.market.Product, Settlement: client.market.Settlement,
-			NativeFamily: exchange.NativeMarketFamily(identity.Venue, identity.Product, client.market.Settlement),
-		},
-		Options: exchange.WatchOptions{Buffer: 1024},
-	})
+	route := exchange.AccountRoute{
+		AccountID: rt.id, RouteID: client.key.String(), Venue: client.key.Venue,
+		Environment: exchange.EnvironmentLive, Product: client.key.Product, Settlement: client.key.Settlement,
+	}
+	if client.broker {
+		route.NativeFamily = "brokered"
+	} else {
+		identity := instruments[0].Native().Identity
+		route.NativeFamily = exchange.NativeMarketFamily(identity.Venue, identity.Product, client.key.Settlement)
+	}
+	subscription, err := socket.WatchAccountEvents(ctx, exchange.WatchAccountEventsRequest{Route: route, Options: exchange.WatchOptions{Buffer: 1024}})
 	if err != nil {
 		return err
 	}
@@ -381,8 +471,8 @@ func (rt *runtime) streamMarket(ctx context.Context, client routeClient) error {
 
 	setConnected := func(connected bool) {
 		rt.mu.Lock()
-		changed := rt.connected[client.market] != connected
-		rt.connected[client.market] = connected
+		changed := rt.connected[client.key] != connected
+		rt.connected[client.key] = connected
 		rt.mu.Unlock()
 		if changed {
 			rt.publishStatus()
@@ -411,7 +501,7 @@ func (rt *runtime) streamMarket(ctx context.Context, client routeClient) error {
 			case exchange.SubscriptionActive:
 				setConnected(true)
 				// A (re)connect may have missed events: refresh.
-				rt.scheduleRefresh(client.market)
+				rt.scheduleRefresh(client.key)
 			case exchange.SubscriptionClosed:
 				setConnected(false)
 				return fmt.Errorf("private stream closed")
@@ -443,14 +533,18 @@ func (rt *runtime) handleEvent(client routeClient, event exchange.AccountEvent) 
 			emit(hub.Message{Channel: ChannelFills, Account: rt.id, Data: projectFill(id, event.Fill.Fill)}, false)
 		}
 		// Not every venue pushes positions; a fill always changes them.
-		rt.scheduleRefresh(client.market)
+		rt.scheduleRefresh(client.key)
 	case exchange.AccountEventPosition:
 		if event.Position != nil {
-			rt.applyPositionEvent(client.market, id, *event.Position)
+			rt.applyPositionEvent(client.key, id, *event.Position)
 		}
 	case exchange.AccountEventBalance:
 		if event.Balance != nil {
-			rt.applyBalanceEvent(client.market, *event.Balance)
+			rt.applyBalanceEvent(client, *event.Balance)
+			if client.broker {
+				// The pool's rates and per-venue shares come only from REST.
+				rt.scheduleRefresh(client.key)
+			}
 		}
 	}
 }
@@ -486,7 +580,8 @@ func (rt *runtime) applyPositionEvent(market venue.Market, id venue.InstrumentID
 	rt.publishPositions()
 }
 
-func (rt *runtime) applyBalanceEvent(market venue.Market, event exchange.BalanceEvent) {
+func (rt *runtime) applyBalanceEvent(client routeClient, event exchange.BalanceEvent) {
+	market := client.key
 	rt.mu.Lock()
 	byAsset := map[string]Balance{}
 	for _, balance := range rt.balances[market] {
@@ -497,7 +592,7 @@ func (rt *runtime) applyBalanceEvent(market venue.Market, event exchange.Balance
 			delete(byAsset, item.Asset)
 			continue
 		}
-		byAsset[item.Asset] = Balance{Market: market.String(), Asset: item.Asset, Total: item.Total.String(), Available: item.Available.String(), Locked: item.Locked.String()}
+		byAsset[item.Asset] = Balance{Market: client.balanceMarket(), Asset: item.Asset, Total: item.Total.String(), Available: item.Available.String(), Locked: item.Locked.String()}
 	}
 	balances := make([]Balance, 0, len(byAsset))
 	for _, balance := range byAsset {
@@ -507,4 +602,77 @@ func (rt *runtime) applyBalanceEvent(market venue.Market, event exchange.Balance
 	rt.balances[market] = balances
 	rt.mu.Unlock()
 	rt.publishBalances()
+}
+
+// brokerInstrument returns the broker's own instrument for a gateway
+// instrument: the same identity with the broker's symbol and rules. Broker
+// clients resolve "venue:SYMBOL" to it.
+func (rt *runtime) brokerInstrument(ctx context.Context, client routeClient, instrument market.Instrument) (exchange.Instrument, bool) {
+	if client.perp == nil {
+		return exchange.Instrument{}, false
+	}
+	identity := instrument.Native().Identity
+	brokered, err := client.perp.ResolveInstrument(ctx, string(identity.Venue)+":"+identity.Symbol)
+	if err != nil {
+		return exchange.Instrument{}, false
+	}
+	return brokered, true
+}
+
+func kindOf(venueName exchange.Venue) string {
+	if _, ok := venue.BrokerOf(venueName); ok {
+		return "broker"
+	}
+	return "native"
+}
+
+func (rt *runtime) kind() string { return kindOf(rt.venue) }
+
+// marketNames lists every market the account trades.
+func (rt *runtime) marketNames() []string {
+	names := []string{}
+	for _, client := range rt.clients {
+		for _, reached := range client.markets {
+			names = append(names, reached.String())
+		}
+	}
+	return names
+}
+
+// Routes lists every instrument the account can trade with the rules its
+// orders follow: the catalog's for a native account, the broker's own for a
+// broker account.
+func (rt *runtime) Routes(ctx context.Context) ([]Route, error) {
+	routes := []Route{}
+	for _, client := range rt.clients {
+		var brokered map[string]exchange.Instrument
+		if client.broker {
+			instruments, err := client.perp.Instruments(ctx)
+			if err != nil {
+				return nil, err
+			}
+			brokered = make(map[string]exchange.Instrument, len(instruments))
+			for _, instrument := range instruments {
+				brokered[string(instrument.Identity.Venue)+":"+instrument.Identity.Symbol] = instrument
+			}
+		}
+		for _, reached := range client.markets {
+			for _, instrument := range rt.catalog.MarketInstruments(reached) {
+				native := instrument.Native()
+				if client.broker {
+					var ok bool
+					if native, ok = brokered[string(native.Identity.Venue)+":"+native.Identity.Symbol]; !ok {
+						continue
+					}
+				}
+				route := Route{Instrument: instrument.ID, TickSize: native.Rules.PriceIncrement.String(),
+					StepSize: native.Rules.QuantityIncrement.String(), MinQty: native.Rules.MinQuantity.String()}
+				if native.Rules.MinNotional.Valid {
+					route.MinNotional = native.Rules.MinNotional.Value.String()
+				}
+				routes = append(routes, route)
+			}
+		}
+	}
+	return routes, nil
 }

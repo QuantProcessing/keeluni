@@ -21,6 +21,15 @@ const (
 	VenueGate        Venue = "gate"
 	VenueAster       Venue = "aster"
 	VenueNado        Venue = "nado"
+
+	// VenueKraken and VenueDeribit identify order books reached only through a
+	// broker; there is no native client for them.
+	VenueKraken  Venue = "kraken"
+	VenueDeribit Venue = "deribit"
+
+	// VenueCrossEx is Gate CrossEx, a broker venue (see BrokeredClient). It
+	// owns accounts and private streams but never identifies an instrument.
+	VenueCrossEx Venue = "crossex"
 )
 
 type Product string
@@ -324,7 +333,8 @@ func knownAssetClass(class AssetClass) bool {
 
 func knownVenue(venue Venue) bool {
 	switch venue {
-	case VenueBinance, VenueOKX, VenueLighter, VenueHyperliquid, VenueBybit, VenueBitget, VenueGate, VenueAster, VenueNado:
+	case VenueBinance, VenueOKX, VenueLighter, VenueHyperliquid, VenueBybit, VenueBitget, VenueGate, VenueAster, VenueNado,
+		VenueKraken, VenueDeribit:
 		return true
 	default:
 		return false
@@ -539,7 +549,23 @@ type Order struct {
 	Status           string          `json:"status,omitempty"`
 	CreatedAt        time.Time       `json:"created_at,omitempty"`
 	UpdatedAt        time.Time       `json:"updated_at,omitempty"`
+	// RejectCode and RejectMessage explain a rejected order when the venue
+	// reports the reason with the order rather than with the command, as
+	// asynchronous venues do. The message is the venue's own text, cleaned.
+	RejectCode    string `json:"reject_code,omitempty"`
+	RejectMessage string `json:"reject_message,omitempty"`
+	// Origin is set for orders the account holder did not place.
+	Origin OrderOrigin `json:"origin,omitempty"`
 }
+
+// OrderOrigin marks orders created by the venue's risk engine.
+type OrderOrigin string
+
+const (
+	OrderOriginLiquidation OrderOrigin = "liquidation"
+	OrderOriginADL         OrderOrigin = "adl"
+	OrderOriginSettlement  OrderOrigin = "settlement"
+)
 
 type FillPage struct {
 	Fills []Fill   `json:"fills,omitempty"`

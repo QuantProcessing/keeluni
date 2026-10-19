@@ -64,7 +64,7 @@ func (manager *Manager) activate(account store.Account) error {
 		return err
 	}
 	defer decoded.Clear()
-	clients, err := buildClients(account.ID, decoded, manager.httpClient)
+	clients, err := buildClients(account.ID, decoded, manager.httpClient, manager.catalog)
 	if err != nil {
 		return err
 	}
@@ -78,6 +78,8 @@ func (manager *Manager) activate(account store.Account) error {
 // credential material.
 type AccountView struct {
 	store.Account
+	// Kind is "native" (one venue) or "broker" (many venues, one margin pool).
+	Kind    string   `json:"kind"`
 	Markets []string `json:"markets"`
 	Active  bool     `json:"active"`
 }
@@ -88,12 +90,11 @@ func (manager *Manager) List() []AccountView {
 	accounts := manager.store.List()
 	views := make([]AccountView, 0, len(accounts))
 	for _, account := range accounts {
-		view := AccountView{Account: account, Markets: []string{}}
+		view := AccountView{Account: account, Kind: kindOf(exchange.Venue(account.Venue)), Markets: []string{}}
 		if rt := manager.runtimes[account.ID]; rt != nil {
 			view.Active = true
-			for _, client := range rt.clients {
-				view.Markets = append(view.Markets, client.market.String())
-			}
+			view.Kind = rt.kind()
+			view.Markets = rt.marketNames()
 		}
 		views = append(views, view)
 	}
@@ -134,7 +135,7 @@ func (manager *Manager) Create(ctx context.Context, request CreateRequest) (Acco
 	if err != nil {
 		return AccountView{}, err
 	}
-	clients, err := buildClients(id, decoded, manager.httpClient)
+	clients, err := buildClients(id, decoded, manager.httpClient, manager.catalog)
 	if err != nil {
 		return AccountView{}, fmt.Errorf("%w: %s", ErrInvalidRequest, safeMessage(err))
 	}
@@ -145,7 +146,7 @@ func (manager *Manager) Create(ctx context.Context, request CreateRequest) (Acco
 		if _, err := rt.fetchBalances(verifyCtx, client); err != nil {
 			rt.close()
 			failure := Classify(err)
-			slog.Warn("account verification failed", "venue", venueName, "market", client.market.String(), "category", failure.Category, "error", err)
+			slog.Warn("account verification failed", "venue", venueName, "market", client.key.String(), "category", failure.Category, "error", err)
 			if failure.Category == CategoryCredentials {
 				return AccountView{}, fmt.Errorf("%w: %w", ErrCredentialFailed, failure)
 			}
@@ -166,11 +167,7 @@ func (manager *Manager) Create(ctx context.Context, request CreateRequest) (Acco
 	manager.runtimes[id] = rt
 	manager.mu.Unlock()
 	slog.Info("account created", "account", id, "venue", venueName)
-	view := AccountView{Account: account, Active: true}
-	for _, client := range clients {
-		view.Markets = append(view.Markets, client.market.String())
-	}
-	return view, nil
+	return AccountView{Account: account, Active: true, Kind: rt.kind(), Markets: rt.marketNames()}, nil
 }
 
 // bundle wraps flat credential fields into the credential package's envelope,
@@ -272,6 +269,7 @@ func (manager *Manager) runtime(id string) (*runtime, error) {
 // Venues describes supported venues, their markets and credential fields.
 type VenueInfo struct {
 	Venue   string             `json:"venue"`
+	Kind    string             `json:"kind"`
 	Markets []string           `json:"markets"`
 	Fields  []credential.Field `json:"fields"`
 }
@@ -279,7 +277,7 @@ type VenueInfo struct {
 func (manager *Manager) Venues() []VenueInfo {
 	var result []VenueInfo
 	for _, name := range venue.Venues() {
-		info := VenueInfo{Venue: string(name)}
+		info := VenueInfo{Venue: string(name), Kind: kindOf(name)}
 		for _, market := range venue.MarketsOf(name) {
 			info.Markets = append(info.Markets, market.String())
 		}
@@ -315,6 +313,25 @@ func (manager *Manager) Balances(ctx context.Context, id string) ([]Balance, err
 		balances = []Balance{}
 	}
 	return balances, err
+}
+
+// Routes lists the instruments the account can trade and their order rules.
+func (manager *Manager) Routes(ctx context.Context, id string) ([]Route, error) {
+	rt, err := manager.runtime(id)
+	if err != nil {
+		return nil, err
+	}
+	return rt.Routes(ctx)
+}
+
+// Margin returns the account's shared margin pool, or nil when the account
+// has none (native venues).
+func (manager *Manager) Margin(ctx context.Context, id string) (*Margin, error) {
+	rt, err := manager.runtime(id)
+	if err != nil {
+		return nil, err
+	}
+	return rt.Margin(ctx)
 }
 
 func (manager *Manager) Place(ctx context.Context, id string, request PlaceRequest) (PlaceResult, error) {

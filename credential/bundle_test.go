@@ -32,6 +32,7 @@ func TestRegistryDecodesEveryRegisteredCredentialVariant(t *testing.T) {
 		{"hyperliquid", credential.AuthEVMPrivateKey, `{"accountAddress":"0x1111111111111111111111111111111111111111"}`, `{"privateKey":"private"}`, "*credential.EVMPrivateKey"},
 		{"aster", credential.AuthAsterAPIWallet, `{"userAddress":"0x2222222222222222222222222222222222222222","expectedSigner":"0x3333333333333333333333333333333333333333"}`, `{"apiWalletPrivateKey":"private"}`, "*credential.AsterAPIWallet"},
 		{"nado", credential.AuthNadoSigner, `{"subaccount":"default"}`, `{"privateKey":"private"}`, "*credential.NadoSigner"},
+		{"crossex", credential.AuthAPIKeySecret, `{}`, `{"apiKey":"key","apiSecret":"secret"}`, "*credential.APIKeySecret"},
 	}
 	for _, test := range tests {
 		t.Run(test.venue, func(t *testing.T) {

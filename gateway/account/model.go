@@ -46,6 +46,24 @@ type Order struct {
 	Status        string             `json:"status"`
 	CreatedAt     int64              `json:"createdAt,omitempty"`
 	UpdatedAt     int64              `json:"updatedAt,omitempty"`
+	// RejectCode and RejectMessage explain an order rejected after it was
+	// accepted (asynchronous venues). The message is the venue's own text.
+	RejectCode    string `json:"rejectCode,omitempty"`
+	RejectMessage string `json:"rejectMessage,omitempty"`
+	// Origin is set for orders the venue's risk engine placed:
+	// liquidation | adl | settlement.
+	Origin string `json:"origin,omitempty"`
+}
+
+// Route is one instrument an account can trade, with the rules that apply to
+// orders sent through that account. A broker can set rules that differ from
+// the venue's own.
+type Route struct {
+	Instrument  venue.InstrumentID `json:"inst"`
+	TickSize    string             `json:"tickSize"`
+	StepSize    string             `json:"stepSize"`
+	MinQty      string             `json:"minQty"`
+	MinNotional string             `json:"minNotional,omitempty"`
 }
 
 // Fill is one execution.
@@ -124,6 +142,7 @@ func projectOrder(id venue.InstrumentID, order exchange.Order) Order {
 	if !order.UpdatedAt.IsZero() {
 		result.UpdatedAt = order.UpdatedAt.UnixMilli()
 	}
+	result.RejectCode, result.RejectMessage, result.Origin = order.RejectCode, order.RejectMessage, string(order.Origin)
 	return result
 }
 
@@ -208,4 +227,55 @@ func containsWord(value, fragment string) bool {
 		}
 	}
 	return false
+}
+
+// Margin is the account's shared margin pool. Native venues may leave fields
+// empty; a broker account fills them from its pool. Rates are the venue's
+// ratios (margin balance over requirement): below 1 is critical.
+type Margin struct {
+	Equity                string        `json:"equity,omitempty"`
+	Available             string        `json:"available,omitempty"`
+	InitialMargin         string        `json:"initialMargin,omitempty"`
+	MaintenanceMargin     string        `json:"maintenanceMargin,omitempty"`
+	InitialMarginRate     string        `json:"initialMarginRate,omitempty"`
+	MaintenanceMarginRate string        `json:"maintenanceMarginRate,omitempty"`
+	UnrealizedPnL         string        `json:"unrealizedPnl,omitempty"`
+	ByVenue               []VenueMargin `json:"byVenue,omitempty"`
+	Time                  int64         `json:"ts"`
+}
+
+// VenueMargin is one reached venue's share of a broker pool.
+type VenueMargin struct {
+	Venue         string `json:"venue"`
+	Asset         string `json:"asset"`
+	Equity        string `json:"equity"`
+	Available     string `json:"available"`
+	InitialMargin string `json:"initialMargin,omitempty"`
+	UnrealizedPnL string `json:"unrealizedPnl,omitempty"`
+}
+
+func projectMargin(pool exchange.MarginPool) *Margin {
+	text := func(value exchange.OptionalDecimal) string {
+		if !value.Valid {
+			return ""
+		}
+		return value.Value.String()
+	}
+	margin := &Margin{
+		Equity: text(pool.Equity), Available: text(pool.Available),
+		InitialMargin: text(pool.InitialMargin), MaintenanceMargin: text(pool.MaintenanceMargin),
+		InitialMarginRate: text(pool.InitialMarginRate), MaintenanceMarginRate: text(pool.MaintenanceMarginRate),
+		UnrealizedPnL: text(pool.UnrealizedPnL), Time: time.Now().UnixMilli(),
+	}
+	for _, share := range pool.Venues {
+		item := VenueMargin{Venue: string(share.Venue), Asset: share.Asset, Equity: share.Equity.String(), Available: share.Available.String()}
+		if !share.InitialMargin.IsZero() {
+			item.InitialMargin = share.InitialMargin.String()
+		}
+		if !share.UnrealizedPnL.IsZero() {
+			item.UnrealizedPnL = share.UnrealizedPnL.String()
+		}
+		margin.ByVenue = append(margin.ByVenue, item)
+	}
+	return margin
 }

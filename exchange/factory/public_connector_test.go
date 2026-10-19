@@ -58,7 +58,7 @@ func TestPublicInstrumentConnectorConstructsOnlySupportedProfilesAndStaysCredent
 	}{
 		{
 			name:        "unsupported settlement",
-			venue:       exchange.VenueBinance,
+			venue:       exchange.VenueOKX,
 			product:     exchange.ProductPerp,
 			settlement:  "USDC",
 			environment: EnvironmentLive,
