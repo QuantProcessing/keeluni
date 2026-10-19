@@ -242,6 +242,42 @@ account lives in the Accounts popover with a confirm.
 **Status bar** — 24px, left: pill `● Online` (teal dot) / `● Reconnecting`
 (pink); right: gateway latency.
 
+## Hedge page (`/hedge`)
+
+A hedge is two legs traded as one position, so the page is organised around
+the pair, not around an instrument:
+
+```
+┌ pair bar: Long X venue / Short Y venue · Flip · Swap · entry spread · net funding · 7d ┐ ticket
+├ leg 1 panel                           ┬ leg 2 panel                         ┤ 340px
+│ instrument · Long/Short · account      │ (same)                              │
+│ available · funding /period · APR · next│                                     │
+│ venue position · compact book          │                                     │
+├ hedges table: one row per hedge, expandable to both legs + orders/activity/funding ┤
+└ status bar ─────────────────────────────────────────────────────────────────────┘
+```
+
+- The pair bar carries only the numbers that decide whether to trade the
+  pair: entry spread at executable prices (bps), net funding APR now and over
+  7 days. Funding is always shown as rate per period plus APR; raw rates of
+  different periods are never compared.
+- The ticket: Market both / Limit + hedge tabs, size in quote (default) or
+  base, a live preview (per-leg quantity and value, expected average price and
+  slippage, entry spread, rounding mismatch, crossing cost, net funding,
+  breakeven days), and the failure policy. The primary button names the
+  action; problems from the preview appear under it in pink.
+- Hedges table columns: Hedge (label + both legs, L/S coloured), Status,
+  Size, Net exposure ("Hedged", or the residual in pink), Spread entry → now,
+  Net funding, Next funding (countdown + amount), Funding earned, Fees, Net
+  PnL, actions (Close / Unwind; Rehedge / Trim when unhedged; Cancel for a
+  working limit). An unhedged row has the warning background; a badge in the
+  tab bar counts them.
+- Expanded row: two leg cards side by side (held, entry · mark, unrealized,
+  fees, funding, liquidation distance, venue position, account stream dot),
+  then tabs Orders (with slippage per market order) · Activity · Funding ·
+  Note.
+- The Hedge menu appears only when the trader serves a hedger.
+
 ## Interaction rules
 
 - Market orders submit immediately on click (no confirmation dialog), like

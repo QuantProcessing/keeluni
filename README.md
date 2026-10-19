@@ -3,10 +3,12 @@
 A self-hosted, multi-venue trading stack for one operator.
 
 ```text
-web        React terminal (Hyperliquid-style, see DESIGN.md)
+web        React terminal (Hyperliquid-style, see DESIGN.md): Trade + Hedge
   │  cookie session, same origin
-trader     password login, session, proxy to gateway, serves web   — no database
+trader     password login, session, proxy to apps, serves web      — no database
   │  bearer token, internal network only
+hedger     hedge app: two legs traded as one position               — its own PostgreSQL database
+  │  bearer token
 gateway    venue-neutral REST + WebSocket API                       — one encrypted file
   │
 exchange   normalized clients and models
@@ -19,6 +21,11 @@ sdk        native venue APIs
 - **gateway/** exposes that contract over HTTP/WebSocket (see below).
 - **trader/** is the manual-trading app. Other apps (hedging, arbitrage) talk to
   the gateway directly and own their own storage.
+- **hedger/** is the hedge app: it opens, tracks and closes two legs on
+  (possibly) different venues as one hedge, in PostgreSQL. It deploys on its
+  own; the trader serves its UI when `HEDGER_URL` is set. See
+  [docs/hedger.md](docs/hedger.md).
+- **gwclient/** is the Go client of the gateway API for apps.
 
 ## What the gateway is
 
@@ -64,12 +71,16 @@ scripts/dev.sh                                   # http://127.0.0.1:8080
 HTTPS_PROXY=http://127.0.0.1:7892 scripts/dev.sh # if venues need a proxy
 ```
 
-With Docker:
+With Docker (gateway, trader, hedger and an internal PostgreSQL):
 
 ```sh
 docker compose up -d --build --force-recreate
 docker compose logs trader | grep password       # first-run password, shown once
 ```
+
+Locally the hedge app needs a PostgreSQL once: `POSTGRES_ADMIN_URL=postgres://…
+scripts/dev.sh` creates its role and database; later runs reuse them. Without
+it, `scripts/dev.sh` runs gateway and trader only.
 
 The first start prints a generated password once. Change it with
 `go run ./cmd/trader passwd` (or `docker compose run --rm trader passwd`).
@@ -90,4 +101,6 @@ VPN, or put a TLS reverse proxy in front and set `TRADER_SECURE_COOKIE=1`.
 
 ```sh
 make test
+HEDGER_TEST_DATABASE_URL=postgres://postgres:pw@127.0.0.1:5432/postgres?sslmode=disable \
+  go test ./hedger/                              # hedger tests against a real PostgreSQL
 ```

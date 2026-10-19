@@ -11,6 +11,8 @@ import { MarketHeader } from "@/features/market-header";
 import { BookPanel } from "@/features/order-book";
 import { OrderTicket } from "@/features/order-ticket";
 import { AccountSummary } from "@/features/account-summary";
+import { HedgeApp } from "@/features/hedge/hedge-app";
+import { navigate, usePath } from "@/state/route";
 import { useConnection } from "@/state/hooks";
 import { WorkspaceProvider } from "@/state/workspace";
 import { Mark, Wordmark } from "@/ui/logo";
@@ -47,10 +49,34 @@ function Gate() {
   if (!authenticated) return <Login />;
   return (
     <WorkspaceProvider>
-      <Terminal />
+      <Shell />
       <ConnectDialog />
     </WorkspaceProvider>
   );
+}
+
+function Shell() {
+  const path = usePath();
+  const apps = useQuery({ queryKey: ["apps"], queryFn: api.apps, staleTime: Infinity, retry: false });
+  const hedge = path.startsWith("/hedge");
+  if (hedge && apps.data?.hedge) {
+    return (
+      <div className="flex h-full flex-col gap-[3px]">
+        <TopBar hedge />
+        <HedgeApp />
+        <StatusBar />
+      </div>
+    );
+  }
+  if (hedge && apps.data && !apps.data.hedge) {
+    return (
+      <div className="flex h-full flex-col gap-[3px]">
+        <TopBar hedge={false} />
+        <main className="flex flex-1 items-center justify-center bg-surface text-muted">The hedge app is not deployed with this trader.</main>
+      </div>
+    );
+  }
+  return <Terminal hedgeEnabled={!!apps.data?.hedge} />;
 }
 
 function Login() {
@@ -151,10 +177,10 @@ const MORE_LINKS = [
 /** Panels are flat, 5px-rounded tiles; the canvas shows through 3px gaps. */
 const PANEL = "shrink-0 overflow-hidden rounded-md min-[1001px]:shrink";
 
-function Terminal() {
+function Terminal({ hedgeEnabled }: { hedgeEnabled: boolean }) {
   return (
     <div className="flex h-full flex-col gap-[3px]">
-      <TopBar />
+      <TopBar hedge={false} hedgeEnabled={hedgeEnabled} />
 
       {/* Desktop: chart+book | ticket on top, blotter below chart+book. */}
       <main className="grid min-h-0 flex-1 gap-[3px] px-[3px] max-[1000px]:flex max-[1000px]:flex-col max-[1000px]:overflow-y-auto min-[1001px]:grid-cols-[minmax(0,1fr)_300px_320px] min-[1001px]:grid-rows-[56px_minmax(0,1fr)_minmax(220px,35%)]">
@@ -173,12 +199,30 @@ function Terminal() {
   );
 }
 
-function TopBar() {
+function NavLink({ href, active, children }: { href: string; active: boolean; children: string }) {
+  return (
+    <a
+      href={href}
+      aria-current={active ? "page" : undefined}
+      onClick={(event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+        event.preventDefault();
+        navigate(href);
+      }}
+      className={cx("px-2.5 py-2 transition-colors hover:text-accent-hover", active ? "text-accent" : "text-text")}
+    >
+      {children}
+    </a>
+  );
+}
+
+function TopBar({ hedge, hedgeEnabled = true }: { hedge: boolean; hedgeEnabled?: boolean }) {
   return (
     <header className="flex h-14 shrink-0 items-center bg-surface px-4">
-      <a href="/" aria-label="Bolter" className="mr-[18px] flex items-center"><Wordmark /></a>
+      <a href="/" aria-label="Bolter" onClick={(event) => { event.preventDefault(); navigate("/"); }} className="mr-[18px] flex items-center"><Wordmark /></a>
       <nav aria-label="Main" className="flex items-center gap-2">
-        <a href="/" aria-current="page" className="px-2.5 py-2 text-accent transition-colors hover:text-accent-hover">Trade</a>
+        <NavLink href="/" active={!hedge}>Trade</NavLink>
+        {(hedge || hedgeEnabled) && <NavLink href="/hedge" active={hedge}>Hedge</NavLink>}
         <MoreMenu />
       </nav>
       <div className="ml-auto flex items-center gap-2">

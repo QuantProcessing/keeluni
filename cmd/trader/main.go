@@ -12,6 +12,8 @@
 //	TRADER_SECURE_COOKIE     "1" when served via HTTPS
 //	GATEWAY_URL              gateway base URL         (default http://127.0.0.1:8081)
 //	GATEWAY_TOKEN_FILE       gateway bearer token     (default ./data/gateway/token)
+//	HEDGER_URL               hedge app base URL       (optional; enables /api/hedge)
+//	HEDGER_TOKEN_FILE        hedge app bearer token   (default ./data/hedger/token)
 package main
 
 import (
@@ -95,6 +97,16 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	var hedgerURL *url.URL
+	var hedgerToken string
+	if raw := env("HEDGER_URL", ""); raw != "" {
+		if hedgerURL, err = url.Parse(raw); err != nil || hedgerURL.Host == "" {
+			return fmt.Errorf("HEDGER_URL is invalid")
+		}
+		if hedgerToken, err = waitForToken(env("HEDGER_TOKEN_FILE", "data/hedger/token"), 60*time.Second); err != nil {
+			return err
+		}
+	}
 	webDir := env("TRADER_WEB_DIR", "web/dist")
 	if _, err := os.Stat(filepath.Join(webDir, "index.html")); err != nil {
 		slog.Warn("web app not found; serving API only", "dir", webDir)
@@ -103,7 +115,7 @@ func run() error {
 	server := &http.Server{
 		Addr: env("TRADER_ADDR", "127.0.0.1:8080"),
 		Handler: trader.NewServer(trader.Config{
-			GatewayURL: gatewayURL, GatewayToken: token, Password: hash, WebDir: webDir,
+			GatewayURL: gatewayURL, GatewayToken: token, HedgerURL: hedgerURL, HedgerToken: hedgerToken, Password: hash, WebDir: webDir,
 			SecureCookie: env("TRADER_SECURE_COOKIE", "") == "1",
 		}),
 		ReadHeaderTimeout: 10 * time.Second,

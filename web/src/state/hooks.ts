@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 
 import { api } from "@/api/client";
 import { realtime, type ConnectionState, type Message, type Topic } from "@/api/realtime";
-import type { AccountStatus, Balance, Book, Candle, Fill, Instrument, Margin, Order, Position, Route, Ticker, Trade } from "@/api/types";
+import type { AccountStatus, Balance, Book, Candle, Fill, FundingQuote, Instrument, Margin, Order, Position, Route, Ticker, Trade } from "@/api/types";
 
 /** Latest data of a retained channel. Resets when the topic changes. */
 function useChannel<T>(topic: Topic | null, channel: string): T | undefined {
@@ -41,6 +41,11 @@ export function useBook(inst: string) {
 
 export function useTicker(inst: string, perp: boolean) {
   return useChannel<Ticker>(inst && perp ? { ch: "ticker", inst } : null, "ticker");
+}
+
+/** Live normalized funding of a perp from the gateway's resident dataset. */
+export function useFunding(inst: string, perp: boolean) {
+  return useChannel<FundingQuote>(inst && perp ? { ch: "funding", inst } : null, "funding");
 }
 
 export function useStats(inst: string) {

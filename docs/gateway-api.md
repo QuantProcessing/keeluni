@@ -32,14 +32,15 @@ browser ──HTTPS/cookie──> trader (Go, 单进程)
                            ├─ 静态文件 (web/dist)
                            ├─ /api/auth/*        登录/登出/会话
                            ├─ /api/gw/*  ──bearer──> gateway /v1/*   (透传)
-                           └─ /api/ws    ──bearer──> gateway /v1/ws  (透传)
+                           ├─ /api/ws    ──bearer──> gateway /v1/ws  (透传)
+                           └─ /api/hedge/* ─bearer─> hedger /v1/*   (透传，可选)
 
-hedge / arb (未来) ──bearer──> gateway
+hedger ──bearer──> gateway        hedger ──> PostgreSQL（自己的库）
 gateway ──> exchange/ ──> sdk/ ──> 交易所
 ```
 
-- gateway 只监听内网（compose 内部网络或 127.0.0.1），不对浏览器暴露。
-- 容器数：gateway、trader 两个。
+- gateway、hedger、PostgreSQL 只监听内网（compose 内部网络或 127.0.0.1），不对浏览器暴露。
+- 容器：gateway、trader，以及可选的 hedger + postgres。hedger 的接口与存储见 [hedger.md](hedger.md)。
 
 ### 存储
 

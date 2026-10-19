@@ -4,7 +4,7 @@
 // their latest state on (re)subscribe, so consumers simply replace state.
 
 export interface Topic {
-  ch: "book" | "trades" | "candle" | "ticker" | "account";
+  ch: "book" | "trades" | "candle" | "ticker" | "funding" | "account";
   inst?: string;
   interval?: string;
   account?: string;
