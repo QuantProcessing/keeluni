@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/gateway/ratelimit"
+	"github.com/QuantProcessing/keeluni/gateway/ratelimit"
 )
 
 // Mode is how a loop obtains its data.

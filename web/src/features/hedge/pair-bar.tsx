@@ -4,6 +4,7 @@ import { api } from "@/api/client";
 import { useBook, useFunding, useInstrument } from "@/state/hooks";
 import { cx } from "@/ui/primitives";
 import { InstrumentPicker } from "../market-header";
+import { useT } from "@/i18n";
 import { averageApr, aprText, bpsText, netFundingApr, spreadBps, takePrice, tone, type Pair } from "./model";
 
 const WEEK = 7 * 24 * 3600 * 1000;
@@ -35,6 +36,7 @@ export function PairBar({ pair, matching, onInstrument, onFlip, canFlip }: {
   onFlip: () => void;
   canFlip: boolean;
 }) {
+  const t = useT();
   const leg0 = useInstrument(pair[0].inst);
   const leg1 = useInstrument(pair[1].inst);
   const perp0 = leg0?.product === "perp";
@@ -66,8 +68,8 @@ export function PairBar({ pair, matching, onInstrument, onFlip, canFlip }: {
         <button
           onClick={onFlip}
           disabled={!canFlip}
-          aria-label="Swap long and short"
-          title={canFlip ? "Swap which leg is long and which is short" : "A spot leg can only be long"}
+          aria-label={t("pair.swap")}
+          title={canFlip ? t("pair.swapHint") : t("pair.spotLongOnly")}
           className="flex size-8 items-center justify-center rounded-lg bg-raised text-text-2 hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
         >
           ⇄
@@ -76,18 +78,19 @@ export function PairBar({ pair, matching, onInstrument, onFlip, canFlip }: {
         <InstrumentPicker value={pair[1].inst} onChange={(inst) => onInstrument(1, inst)} />
       </div>
       <div className="ml-auto flex flex-wrap items-center gap-x-6 gap-y-2">
-        {matching?.match === "base" && <Metric label="Entry spread" hint="Leg 2 over leg 1 at the prices a market entry would trade at (ask for the long leg, bid for the short leg), in basis points of leg 1." value={bpsText(entry)} />}
-        {matching?.match === "base" && matching.ratio !== 1 && <Metric label="Ratio" hint="Leg-2 contracts per leg-1 unit, from the contract multipliers (e.g. 1000PEPE against PEPE)" value={String(matching.ratio)} />}
-        {matching?.match === "notional" && <Metric label="Matching" hint="Different underlyings are sized to equal notional at entry" value="By notional" />}
-        <Metric label="Net funding" hint="What the pair earns per year at the current rates: the short leg receives its rate, the long leg pays it. Annualized so hourly and 8-hourly venues compare." value={aprText(netNow)} className={tone(netNow)} />
-        <Metric label="Net funding 7d" hint="The same, using each leg's average settled rate over the last 7 days." value={aprText(netWeek)} className={tone(netWeek)} />
+        {matching?.match === "base" && <Metric label={t("pair.entrySpread")} hint={t("pair.entrySpreadHint")} value={bpsText(entry)} />}
+        {matching?.match === "base" && matching.ratio !== 1 && <Metric label={t("pair.ratio")} hint={t("pair.ratioHint")} value={String(matching.ratio)} />}
+        {matching?.match === "notional" && <Metric label={t("pair.matching")} hint={t("pair.matchingHint")} value={t("pair.byNotional")} />}
+        <Metric label={t("pair.netFunding")} hint={t("pair.netFundingHint")} value={aprText(netNow)} className={tone(netNow)} />
+        <Metric label={t("pair.netFunding7d")} hint={t("pair.netFunding7dHint")} value={aprText(netWeek)} className={tone(netWeek)} />
       </div>
     </div>
   );
 }
 
 function Side({ side }: { side: "buy" | "sell" }) {
-  return <span className={cx("w-9 shrink-0", side === "buy" ? "text-up" : "text-down")}>{side === "buy" ? "Long" : "Short"}</span>;
+  const t = useT();
+  return <span className={cx("w-9 shrink-0", side === "buy" ? "text-up" : "text-down")}>{t(side === "buy" ? "common.long" : "common.short")}</span>;
 }
 
 function Metric({ label, value, hint, className }: { label: string; value: string; hint: string; className?: string }) {

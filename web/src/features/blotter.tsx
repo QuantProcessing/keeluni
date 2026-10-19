@@ -13,6 +13,7 @@ import { originLabel, useWorkspace, type AccountFill, type AccountOrder } from "
 import { Dialog, PrimaryButton, Tabs, cx } from "@/ui/primitives";
 import { useToast } from "@/ui/toast";
 import { submitOrder } from "./submit";
+import { translate, useT } from "@/i18n";
 
 type Tab = "positions" | "orders" | "fills" | "balances";
 
@@ -25,6 +26,7 @@ interface AccountBalance extends Balance { account: string }
  * one account. With a single account the column is omitted.
  */
 export function Blotter() {
+  const t = useT();
   const { accounts, live, openOrders, fills, accountFilter, openConnect } = useWorkspace();
   const [tab, setTab] = useState<Tab>("positions");
   const shown = accountFilter ? accounts.filter((account) => account.id === accountFilter) : accounts;
@@ -49,10 +51,10 @@ export function Blotter() {
           onChange={setTab}
           className="border-b-0"
           options={[
-            { value: "balances", label: "Balances" },
-            { value: "positions", label: `Positions${positions.length ? ` (${positions.length})` : ""}` },
-            { value: "orders", label: `Open Orders${orders.length ? ` (${orders.length})` : ""}` },
-            { value: "fills", label: "Trade History" },
+            { value: "balances", label: t("blotter.balances") },
+            { value: "positions", label: `${t("blotter.positions")}${positions.length ? ` (${positions.length})` : ""}` },
+            { value: "orders", label: `${t("blotter.openOrders")}${orders.length ? ` (${orders.length})` : ""}` },
+            { value: "fills", label: t("blotter.tradeHistory") },
           ]}
         />
         {many && <AccountFilter />}
@@ -60,7 +62,7 @@ export function Blotter() {
       <div className="min-h-0 flex-1 overflow-auto">
         {accounts.length === 0 ? (
           <Empty>
-            No accounts connected. <button className="text-accent hover:underline" onClick={() => openConnect()}>Connect an exchange</button> to see positions and orders.
+            {t("blotter.noAccounts")} <button className="text-accent hover:underline" onClick={() => openConnect()}>{t("blotter.connectExchange")}</button> {t("blotter.noAccountsTail")}
           </Empty>
         ) : tab === "positions" ? (
           <Positions positions={positions} loading={loading} many={many} />
@@ -78,18 +80,19 @@ export function Blotter() {
 
 /** All accounts, or one. Lives at the right end of the tab row. */
 function AccountFilter() {
+  const t = useT();
   const { accounts, accountFilter, setAccountFilter, live } = useWorkspace();
   const [open, setOpen] = useState(false);
   const current = accounts.find((account) => account.id === accountFilter);
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger className={cx("ml-auto flex items-center gap-1.5 px-3 whitespace-nowrap hover:text-text", current ? "text-text" : "text-muted")}>
-        {current ? accountName(current) : "All Accounts"}
+        {current ? accountName(current) : t("blotter.allAccounts")}
         <span className="text-muted">{open ? "▴" : "▾"}</span>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content align="end" sideOffset={2} className="z-40 min-w-[220px] rounded-[10px] border border-line bg-overlay py-1">
-          <FilterOption selected={!current} onChoose={() => { setAccountFilter(""); setOpen(false); }}>All Accounts</FilterOption>
+          <FilterOption selected={!current} onChoose={() => { setAccountFilter(""); setOpen(false); }}>{t("blotter.allAccounts")}</FilterOption>
           {accounts.map((account) => (
             <FilterOption key={account.id} selected={account.id === accountFilter} onChoose={() => { setAccountFilter(account.id); setOpen(false); }}>
               <span className={cx("size-1.5 rounded-full", live[account.id]?.status?.connected ? "bg-up" : "bg-down")} />
@@ -141,11 +144,12 @@ function useAccount() {
 
 /** The account cell: name, and for a broker the venue it routed to. */
 function AccountCell({ id, inst }: { id: string; inst?: string }) {
+  const t = useT();
   const account = useAccount()(id);
   if (!account) return <td className={td}>{id}</td>;
   const routed = account.kind === "broker" && inst ? venueLabel(inst.split(":")[0] ?? "") : undefined;
   return (
-    <td className={td} title={account.kind === "broker" ? "Cross-exchange margin account" : undefined}>
+    <td className={td} title={account.kind === "broker" ? t("blotter.brokerAccount") : undefined}>
       {accountName(account)}
       {routed && <span className="ml-1.5 text-muted">→ {routed}</span>}
     </td>
@@ -164,15 +168,16 @@ function Coin({ inst, className, onClick }: { inst: string; className?: string; 
 }
 
 function Positions({ positions, loading, many }: { positions: AccountPosition[]; loading: boolean; many: boolean }) {
+  const t = useT();
   const tick = useTick();
   const { setInstrumentId } = useWorkspace();
   const [closing, setClosing] = useState<AccountPosition | null>(null);
   const holdings = useHedgeHoldings();
-  if (loading && !positions.length) return <Empty><span className="text-muted">Loading positions…</span></Empty>;
-  if (!positions.length) return <Empty>No open positions yet</Empty>;
+  if (loading && !positions.length) return <Empty><span className="text-muted">{t("blotter.loadingPositions")}</span></Empty>;
+  if (!positions.length) return <Empty>{t("blotter.noPositions")}</Empty>;
   return (
     <>
-      <Table head={["Coin", ...(many ? ["Account"] : []), "Size", "Position Value", "Entry Price", "Mark Price", "PNL (ROE %)", "Liq. Price", "Margin", "Close"]}>
+      <Table head={[t("common.coin"), ...(many ? [t("common.account")] : []), t("common.size"), t("blotter.positionValue"), t("blotter.entryPrice"), t("blotter.markPrice"), t("blotter.pnl"), t("blotter.liqPrice"), t("blotter.margin"), t("blotter.close")]}>
         {positions.map((position) => {
           const value = Number(position.size) * Number(position.markPrice ?? position.entryPrice);
           const pnl = Number(position.unrealizedPnl);
@@ -197,7 +202,7 @@ function Positions({ positions, loading, many }: { positions: AccountPosition[];
               <td className={td}>{price(position.liquidationPrice, tick(position.inst))}</td>
               <td className={td}>{position.margin ? usd(position.margin) : "—"}</td>
               <td className={td}>
-                <button className="text-accent hover:underline" onClick={() => setClosing(position)}>Market</button>
+                <button className="text-accent hover:underline" onClick={() => setClosing(position)}>{t("blotter.marketClose")}</button>
               </td>
             </tr>
           );
@@ -210,15 +215,16 @@ function Positions({ positions, loading, many }: { positions: AccountPosition[];
 
 /** "Hedge · label": the position is (partly) a leg of an open hedge. */
 function HedgeMark({ holdings }: { holdings: HedgeHolding[] | undefined }) {
+  const t = useT();
   if (!holdings?.length) return null;
   const names = holdings.map((item) => item.label).join(", ");
   return (
     <button
       onClick={(event) => { event.stopPropagation(); navigate("/hedge"); }}
-      title={`Leg of hedge ${names}: ${holdings.map((item) => `${num(item.held)} in ${item.label}`).join(", ")}. Open the hedge app`}
+      title={t("blotter.hedgeMarkHint", { names, detail: holdings.map((item) => t("blotter.hedgeHeld", { qty: num(item.held), label: item.label })).join(", ") })}
       className={cx("ml-1.5 rounded px-1 text-muted hover:text-text", holdings.some((item) => item.status === "broken") && "text-down")}
     >
-      Hedge · {names}
+      {t("blotter.hedgeMark", { names })}
     </button>
   );
 }
@@ -229,6 +235,7 @@ function HedgeMark({ holdings }: { holdings: HedgeHolding[] | undefined }) {
  * the hedge is then left one-sided and the hedger marks it Unhedged.
  */
 function ClosePosition({ position, hedges, onDone }: { position: AccountPosition; hedges?: HedgeHolding[]; onDone: () => void }) {
+  const t = useT();
   const account = useAccount()(position.account);
   const toast = useToast();
   const [busy, setBusy] = useState(false);
@@ -240,64 +247,65 @@ function ClosePosition({ position, hedges, onDone }: { position: AccountPosition
     });
     setBusy(false);
     if (outcome.kind === "accepted") {
-      toast.push({ kind: "info", title: `Closing ${num(position.size)} ${instrumentName(position.inst)}`, detail: outcome.order.avgPrice ? `Average price ${num(outcome.order.avgPrice)}` : accountName(account) });
+      toast.push({ kind: "info", title: t("close.closingTitle", { qty: num(position.size), name: instrumentName(position.inst) }), detail: outcome.order.avgPrice ? t("order.averagePrice", { price: num(outcome.order.avgPrice) }) : accountName(account) });
       onDone();
     } else {
-      toast.push({ kind: "error", title: "Close failed", detail: outcome.message });
+      toast.push({ kind: "error", title: t("close.failed"), detail: outcome.message });
     }
   };
   return (
-    <Dialog open onOpenChange={(open) => !open && onDone()} title="Market Close"
-      description={`This will close your ${position.side} ${num(position.size)} ${instrumentName(position.inst)} on ${account ? accountName(account) : position.account} at market with a reduce-only order.`}>
+    <Dialog open onOpenChange={(open) => !open && onDone()} title={t("close.title")}
+      description={t("close.description", { side: t(position.side === "long" ? "side.long" : "side.short"), qty: num(position.size), name: instrumentName(position.inst), account: account ? accountName(account) : position.account })}>
       {hedges?.length ? (
         <div role="alert" className="mb-3 rounded-lg border border-down/60 bg-warn-bg px-3 py-2 text-down">
-          This position is a leg of hedge {hedges.map((item) => item.label).join(", ")}. Closing it here leaves the other leg open and the hedge is marked Unhedged. To close both legs together, close the hedge in the hedge app.
-          <button onClick={() => { onDone(); navigate("/hedge"); }} className="mt-1 block text-accent hover:underline">Open the hedge app</button>
+          {t("close.hedgeWarning", { names: hedges.map((item) => item.label).join(", ") })}
+          <button onClick={() => { onDone(); navigate("/hedge"); }} className="mt-1 block text-accent hover:underline">{t("close.openHedge")}</button>
         </div>
       ) : null}
-      <PrimaryButton onClick={close} disabled={busy || !account}>{busy ? "Closing…" : "Market Close"}</PrimaryButton>
+      <PrimaryButton onClick={close} disabled={busy || !account}>{busy ? t("close.closing") : t("close.title")}</PrimaryButton>
     </Dialog>
   );
 }
 
 function OpenOrders({ orders, many }: { orders: AccountOrder[]; many: boolean }) {
+  const t = useT();
   const tick = useTick();
   const toast = useToast();
   const queryClient = useQueryClient();
   const { setInstrumentId } = useWorkspace();
   const [cancelling, setCancelling] = useState<string | null>(null);
-  if (!orders.length) return <Empty>No open orders</Empty>;
+  if (!orders.length) return <Empty>{t("blotter.noOrders")}</Empty>;
   const cancel = async (order: AccountOrder) => {
     setCancelling(order.account + order.orderId);
     try {
       await api.cancel(order.account, order.inst, order.orderId);
       queryClient.setQueryData<Order[]>(["orders", order.account], (current = []) => current.filter((item) => item.orderId !== order.orderId));
     } catch (error) {
-      toast.push({ kind: "error", title: "Cancel failed", detail: (error as Error).message });
+      toast.push({ kind: "error", title: t("blotter.cancelFailed"), detail: (error as Error).message });
     } finally {
       setCancelling(null);
     }
   };
   return (
-    <Table head={["Time", "Coin", ...(many ? ["Account"] : []), "Type", "Side", "Price", "Size", "Filled", "Reduce Only", ""]}>
+    <Table head={[t("common.time"), t("common.coin"), ...(many ? [t("common.account")] : []), t("common.type"), t("common.side"), t("common.price"), t("common.size"), t("blotter.filled"), t("blotter.reduceOnly"), ""]}>
       {orders.map((order) => (
         <tr key={order.account + order.orderId} className="hover:bg-raised">
           <td className={tdFirst}>{time(order.createdAt ?? order.updatedAt ?? 0)}</td>
           <td className={td}><Coin inst={order.inst} onClick={() => setInstrumentId(order.inst)} /></td>
           {many && <AccountCell id={order.account} inst={order.inst} />}
           <td className={td}>
-            {order.type === "limit" ? "Limit" : "Market"}{order.tif && order.tif !== "gtc" ? ` · ${order.tif.toUpperCase()}` : ""}
-            {order.status === "pending" && <span className="ml-1.5 text-muted" title="Accepted, not yet on the exchange">Pending</span>}
+            {t(order.type === "limit" ? "common.limit" : "common.market")}{order.tif && order.tif !== "gtc" ? ` · ${order.tif === "post_only" ? t("ticket.postOnly") : order.tif.toUpperCase()}` : ""}
+            {order.status === "pending" && <span className="ml-1.5 text-muted" title={t("blotter.pendingHint")}>{t("blotter.pending")}</span>}
             {order.origin && <span className="ml-1.5 text-down">{originLabel(order.origin)}</span>}
           </td>
-          <td className={cx(td, order.side === "buy" ? "text-up" : "text-down")}>{order.side === "buy" ? "Buy" : "Sell"}</td>
+          <td className={cx(td, order.side === "buy" ? "text-up" : "text-down")}>{t(order.side === "buy" ? "common.buy" : "common.sell")}</td>
           <td className={td}>{price(order.price, tick(order.inst))}</td>
           <td className={td}>{num(order.qty)}</td>
           <td className={td}>{num(order.filled)}</td>
-          <td className={td}>{order.reduceOnly ? "Yes" : "No"}</td>
+          <td className={td}>{t(order.reduceOnly ? "common.yes" : "common.no")}</td>
           <td className={td}>
             <button className="text-accent hover:underline disabled:text-muted" disabled={cancelling === order.account + order.orderId} onClick={() => cancel(order)}>
-              {cancelling === order.account + order.orderId ? "Cancelling…" : "Cancel"}
+              {cancelling === order.account + order.orderId ? t("common.cancelling") : t("common.cancel")}
             </button>
           </td>
         </tr>
@@ -307,16 +315,17 @@ function OpenOrders({ orders, many }: { orders: AccountOrder[]; many: boolean })
 }
 
 function Fills({ fills, many }: { fills: AccountFill[]; many: boolean }) {
+  const t = useT();
   const tick = useTick();
-  if (!fills.length) return <Empty>No trades yet</Empty>;
+  if (!fills.length) return <Empty>{t("blotter.noTrades")}</Empty>;
   return (
-    <Table head={["Time", "Coin", ...(many ? ["Account"] : []), "Side", "Price", "Size", "Trade Value", "Fee"]}>
+    <Table head={[t("common.time"), t("common.coin"), ...(many ? [t("common.account")] : []), t("common.side"), t("common.price"), t("common.size"), t("blotter.tradeValue"), t("common.fee")]}>
       {fills.map((fill) => (
         <tr key={fill.account + fill.fillId} className="hover:bg-raised">
           <td className={tdFirst}>{time(fill.ts)}</td>
           <td className={td}><Coin inst={fill.inst} /></td>
           {many && <AccountCell id={fill.account} inst={fill.inst} />}
-          <td className={cx(td, fill.side === "buy" ? "text-up" : "text-down")}>{fill.side === "buy" ? "Buy" : "Sell"}</td>
+          <td className={cx(td, fill.side === "buy" ? "text-up" : "text-down")}>{t(fill.side === "buy" ? "common.buy" : "common.sell")}</td>
           <td className={td}>{price(fill.price, tick(fill.inst))}</td>
           <td className={td}>{num(fill.qty)}</td>
           <td className={td}>{usd(Number(fill.price) * Number(fill.qty))}</td>
@@ -328,10 +337,11 @@ function Fills({ fills, many }: { fills: AccountFill[]; many: boolean }) {
 }
 
 function Balances({ balances, loading, many }: { balances: AccountBalance[]; loading: boolean; many: boolean }) {
-  if (loading && !balances.length) return <Empty><span className="text-muted">Loading balances…</span></Empty>;
-  if (!balances.length) return <Empty>No balances</Empty>;
+  const t = useT();
+  if (loading && !balances.length) return <Empty><span className="text-muted">{t("blotter.loadingBalances")}</span></Empty>;
+  if (!balances.length) return <Empty>{t("blotter.noBalances")}</Empty>;
   return (
-    <Table head={["Coin", ...(many ? ["Account"] : []), "Market", "Total", "Available", "In Use"]}>
+    <Table head={[t("common.coin"), ...(many ? [t("common.account")] : []), t("blotter.market"), t("blotter.totalHead"), t("summary.available"), t("blotter.inUse")]}>
       {balances.map((balance) => (
         <tr key={balance.account + balance.market + balance.asset} className="hover:bg-raised">
           <td className={tdFirst}>{balance.asset}</td>
@@ -348,7 +358,7 @@ function Balances({ balances, loading, many }: { balances: AccountBalance[]; loa
 
 /** A broker's single pool reads "Cross-exchange pool"; Binance perps are one USD-M account. */
 function balanceMarket(market: string): string {
-  if (!market.includes(":")) return "Cross-exchange pool";
-  if (market === "binance:perp:USDT") return "Binance USD-M";
+  if (!market.includes(":")) return translate("blotter.pool");
+  if (market === "binance:perp:USDT") return translate("blotter.binanceUsdm");
   return marketLabel(market);
 }

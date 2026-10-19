@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	gate "github.com/QuantProcessing/boltertrader/sdk/gate"
+	"github.com/QuantProcessing/keeluni/exchange"
+	gate "github.com/QuantProcessing/keeluni/sdk/gate"
 )
 
 func (client *gateSpotClient) LookupExactOrder(ctx context.Context, request exchange.ExactOrderLookupRequest) (exchange.ExactOrderLookupResult, error) {

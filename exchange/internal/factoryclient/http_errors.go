@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	"github.com/QuantProcessing/boltertrader/internal/venuehttp"
+	"github.com/QuantProcessing/keeluni/exchange"
+	"github.com/QuantProcessing/keeluni/internal/venuehttp"
 )
 
 // Strip native causes at the adapter boundary while retaining structured,

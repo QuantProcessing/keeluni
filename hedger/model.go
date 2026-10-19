@@ -9,7 +9,6 @@
 package hedger
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -135,7 +134,7 @@ type Group struct {
 	Policy    string          `json:"policy"`
 	Match     string          `json:"match"`
 	Ratio     decimal.Decimal `json:"ratio"`
-	Problem   string          `json:"problem,omitempty"`
+	Problem   Text            `json:"problem"`
 	Legs      [2]Leg          `json:"legs"`
 	CreatedAt time.Time       `json:"createdAt"`
 	UpdatedAt time.Time       `json:"updatedAt"`
@@ -155,7 +154,7 @@ type Action struct {
 	// positive trades the leg's opening side, negative its closing side.
 	Target    [2]decimal.Decimal `json:"target"`
 	Status    string             `json:"status"`
-	Error     string             `json:"error,omitempty"`
+	Error     Text               `json:"error"`
 	CreatedAt time.Time          `json:"createdAt"`
 	UpdatedAt time.Time          `json:"updatedAt"`
 }
@@ -188,7 +187,7 @@ type Order struct {
 	VenueOrderID  string          `json:"orderId,omitempty"`
 	Filled        decimal.Decimal `json:"filled"`
 	AvgPrice      decimal.Decimal `json:"avgPrice"`
-	Error         string          `json:"error,omitempty"`
+	Error         Text            `json:"error"`
 	CreatedAt     time.Time       `json:"createdAt"`
 	UpdatedAt     time.Time       `json:"updatedAt"`
 }
@@ -211,7 +210,7 @@ type Event struct {
 	GroupID string    `json:"groupId"`
 	At      time.Time `json:"at"`
 	Level   string    `json:"level"`
-	Message string    `json:"message"`
+	Message Text      `json:"message"`
 }
 
 // FundingAccrual is one leg's estimated funding at one settlement; Amount > 0
@@ -256,16 +255,23 @@ func tickToward(value, tick decimal.Decimal, side string) decimal.Decimal {
 }
 
 // errInvalid is a request the hedger refuses before anything is sent.
-type errInvalid struct{ message string }
+type errInvalid struct{ text Text }
 
-func (e errInvalid) Error() string { return e.message }
+func (e errInvalid) Error() string { return e.text.Message }
 
-func invalidf(format string, args ...any) error {
-	return errInvalid{message: fmt.Sprintf(format, args...)}
+// invalid refuses a request with a coded text (see text.go).
+func invalid(code string, pairs ...any) error {
+	return errInvalid{text: textOf(code, pairs...)}
 }
 
 // IsInvalid reports whether err is a refused request (HTTP 400).
 func IsInvalid(err error) bool {
 	_, ok := err.(errInvalid)
 	return ok
+}
+
+// invalidText is the coded text of a refused request.
+func invalidText(err error) (Text, bool) {
+	e, ok := err.(errInvalid)
+	return e.text, ok
 }

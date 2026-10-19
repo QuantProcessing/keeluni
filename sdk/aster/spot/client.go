@@ -12,9 +12,9 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/QuantProcessing/boltertrader/internal/mbx"
-	"github.com/QuantProcessing/boltertrader/internal/venuehttp"
-	astercommon "github.com/QuantProcessing/boltertrader/sdk/aster/common"
+	"github.com/QuantProcessing/keeluni/internal/mbx"
+	"github.com/QuantProcessing/keeluni/internal/venuehttp"
+	astercommon "github.com/QuantProcessing/keeluni/sdk/aster/common"
 )
 
 type Client struct {

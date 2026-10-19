@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/routeprofile"
+	"github.com/QuantProcessing/keeluni/routeprofile"
 )
 
 // The table the gateway routes by, spelled out independently of the registry so

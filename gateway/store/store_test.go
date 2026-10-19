@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/secretstore"
+	"github.com/QuantProcessing/keeluni/secretstore"
 )
 
 func testCipher(t *testing.T, seed byte) *secretstore.Cipher {

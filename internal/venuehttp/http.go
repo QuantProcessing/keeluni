@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/internal/errs"
+	"github.com/QuantProcessing/keeluni/internal/errs"
 )
 
 // HTTPError retains response metadata without rendering headers, query strings or bodies.

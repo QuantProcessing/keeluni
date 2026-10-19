@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/internal/venuehttp"
+	"github.com/QuantProcessing/keeluni/internal/venuehttp"
 )
 
 type recorded struct {

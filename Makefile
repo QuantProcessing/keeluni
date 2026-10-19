@@ -25,6 +25,6 @@ logs:
 
 smoke:          ## public market checks against the running compose stack (no orders)
 	CGO_ENABLED=0 GOOS=linux go build -o bin/smoke-linux ./cmd/smoke
-	docker run --rm --network boltertrader_internal -v boltertrader_bolter-data:/data:ro \
+	docker run --rm --network keeluni_internal -v keeluni-data:/data:ro \
 	  -v $(CURDIR)/bin/smoke-linux:/smoke:ro --user 65532 gcr.io/distroless/static-debian12:nonroot \
 	  /smoke -url http://gateway:8081 -token-file /data/gateway/token

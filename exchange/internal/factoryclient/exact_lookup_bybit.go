@@ -3,8 +3,8 @@ package factoryclient
 import (
 	"context"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	bybit "github.com/QuantProcessing/boltertrader/sdk/bybit"
+	"github.com/QuantProcessing/keeluni/exchange"
+	bybit "github.com/QuantProcessing/keeluni/sdk/bybit"
 )
 
 func (client *bybitBase) LookupExactOrder(ctx context.Context, request exchange.ExactOrderLookupRequest) (exchange.ExactOrderLookupResult, error) {

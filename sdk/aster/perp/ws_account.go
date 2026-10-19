@@ -11,7 +11,7 @@ import (
 
 	"go.uber.org/zap"
 
-	astercommon "github.com/QuantProcessing/boltertrader/sdk/aster/common"
+	astercommon "github.com/QuantProcessing/keeluni/sdk/aster/common"
 )
 
 type WsAccountClient struct {

@@ -16,8 +16,8 @@ func TestFactoryProductMethodSetsCompile(t *testing.T) {
 import (
 	"context"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	"github.com/QuantProcessing/boltertrader/exchange/factory"
+	"github.com/QuantProcessing/keeluni/exchange"
+	"github.com/QuantProcessing/keeluni/exchange/factory"
 )
 
 func check() {
@@ -72,7 +72,7 @@ func check() {
 import (
 	"context"
 
-	"github.com/QuantProcessing/boltertrader/exchange/factory"
+	"github.com/QuantProcessing/keeluni/exchange/factory"
 )
 
 func check() {
@@ -108,8 +108,8 @@ func runCompileFixture(
 		t.Fatal(err)
 	}
 	module := "module example.com/" + name + "\n\ngo 1.26\n\n" +
-		"require github.com/QuantProcessing/boltertrader v0.0.0\n\n" +
-		"replace github.com/QuantProcessing/boltertrader => " + root + "\n"
+		"require github.com/QuantProcessing/keeluni v0.0.0\n\n" +
+		"replace github.com/QuantProcessing/keeluni => " + root + "\n"
 	if err := os.WriteFile(filepath.Join(directory, "go.mod"), []byte(module), 0o600); err != nil {
 		t.Fatal(err)
 	}

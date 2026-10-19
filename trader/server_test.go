@@ -27,7 +27,7 @@ func newTestServer(t *testing.T) (*Server, *httptest.Server, *[]*http.Request) {
 }
 
 func request(server *Server, method, path, body string, mutate func(*http.Request)) *httptest.ResponseRecorder {
-	r := httptest.NewRequest(method, "http://bolter.local"+path, strings.NewReader(body))
+	r := httptest.NewRequest(method, "http://keeluni.local"+path, strings.NewReader(body))
 	if mutate != nil {
 		mutate(r)
 	}
@@ -37,8 +37,8 @@ func request(server *Server, method, path, body string, mutate func(*http.Reques
 }
 
 func sameSite(r *http.Request) {
-	r.Header.Set("Origin", "http://bolter.local")
-	r.Header.Set("X-Bolter", "1")
+	r.Header.Set("Origin", "http://keeluni.local")
+	r.Header.Set("X-KeelUni", "1")
 }
 
 func login(t *testing.T, server *Server) *http.Cookie {
@@ -95,13 +95,13 @@ func TestMutationsRequireSameOriginAndHeader(t *testing.T) {
 	server, _, _ := newTestServer(t)
 	cookie := login(t, server)
 	cases := map[string]func(*http.Request){
-		"no origin": func(r *http.Request) { r.AddCookie(cookie); r.Header.Set("X-Bolter", "1") },
+		"no origin": func(r *http.Request) { r.AddCookie(cookie); r.Header.Set("X-KeelUni", "1") },
 		"foreign origin": func(r *http.Request) {
 			r.AddCookie(cookie)
-			r.Header.Set("X-Bolter", "1")
+			r.Header.Set("X-KeelUni", "1")
 			r.Header.Set("Origin", "https://evil.example")
 		},
-		"no header": func(r *http.Request) { r.AddCookie(cookie); r.Header.Set("Origin", "http://bolter.local") },
+		"no header": func(r *http.Request) { r.AddCookie(cookie); r.Header.Set("Origin", "http://keeluni.local") },
 	}
 	for name, mutate := range cases {
 		if got := request(server, "POST", "/api/gw/v1/accounts/acc_x/orders", `{}`, mutate).Code; got != 403 {

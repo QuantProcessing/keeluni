@@ -3,12 +3,11 @@ package hedger
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/gwclient"
+	"github.com/QuantProcessing/keeluni/gwclient"
 	"github.com/shopspring/decimal"
 )
 
@@ -64,7 +63,7 @@ type runner struct {
 	lastLookup     map[string]time.Time
 	cancelSent     map[string]bool
 	cancelAsked    bool
-	failure        string // why the action must stop (a hedge was rejected)
+	failure        Text // why the action must stop (a hedge was rejected)
 	finished       bool
 	placedOnce     bool
 	unknownWarned  map[string]bool
@@ -102,7 +101,7 @@ func (r *runner) run(ctx context.Context) {
 		case command := <-r.control:
 			if command == "cancel" && !r.cancelAsked {
 				r.cancelAsked = true
-				r.engine.event(r.group.ID, "info", "Cancel requested")
+				r.engine.event(r.group.ID, "info", textOf("event.cancelRequested"))
 			}
 		case <-ticker.C:
 			r.refresh(ctx, false)
@@ -160,7 +159,7 @@ func (r *runner) step(ctx context.Context) {
 // across restarts: a leg is placed only if it has no order yet, so a crash
 // between the two placements sends the missing leg on resume.
 func (r *runner) stepMarket(ctx context.Context) {
-	if r.failure == "" {
+	if r.failure.IsZero() {
 		for leg := 0; leg < 2; leg++ {
 			if target := r.action.Target[leg]; !target.IsZero() && !r.hasOrder(leg) {
 				r.place(ctx, leg, RoleTaker, "market", target, decimal.Zero, "")
@@ -168,10 +167,10 @@ func (r *runner) stepMarket(ctx context.Context) {
 		}
 	}
 	if len(r.orders) == 0 {
-		if r.failure != "" {
+		if !r.failure.IsZero() {
 			r.finish(ctx, ActionFailed, r.failure)
 		} else {
-			r.finish(ctx, ActionDone, "nothing to trade")
+			r.finish(ctx, ActionDone, Text{})
 		}
 		return
 	}
@@ -191,32 +190,37 @@ func (r *runner) hasOrder(leg int) bool {
 
 func (r *runner) finishMarket(ctx context.Context) {
 	executed := r.executed()
-	var problems []string
+	var problem Text
 	for leg := 0; leg < 2; leg++ {
 		target := r.action.Target[leg].Abs()
 		if target.IsZero() {
 			continue
 		}
 		if executed[leg].Abs().LessThan(target) {
-			problems = append(problems, fmt.Sprintf("leg %d filled %s of %s%s", leg+1, executed[leg].Abs(), target, r.reasonFor(leg)))
+			part := r.legShortfall(leg, executed[leg].Abs(), target)
+			if problem.IsZero() {
+				problem = part
+			} else {
+				problem = joinTexts(problem, part)
+			}
 		}
 	}
-	if len(problems) == 0 {
-		r.finish(ctx, ActionDone, "")
+	if problem.IsZero() {
+		r.finish(ctx, ActionDone, Text{})
 		return
 	}
-	r.finish(ctx, ActionFailed, strings.Join(problems, "; "))
+	r.finish(ctx, ActionFailed, problem)
 }
 
-// reasonFor is the rejection text of the leg's last unfilled order.
-func (r *runner) reasonFor(leg int) string {
+// reasonFor is the rejection text of the leg's last unfilled order, if any.
+func (r *runner) reasonFor(leg int) (Text, bool) {
 	for i := len(r.sequence) - 1; i >= 0; i-- {
 		order := r.orders[r.sequence[i]]
-		if order.Leg == leg && order.Error != "" {
-			return " (" + order.Error + ")"
+		if order.Leg == leg && !order.Error.IsZero() {
+			return order.Error, true
 		}
 	}
-	return ""
+	return Text{}, false
 }
 
 func (r *runner) stepLimit(ctx context.Context) {
@@ -225,10 +229,10 @@ func (r *runner) stepLimit(ctx context.Context) {
 	makerOrder := r.makerOrder()
 	if makerOrder == nil {
 		if r.cancelAsked {
-			r.finish(ctx, ActionCanceled, "canceled before the maker order was placed")
+			r.finish(ctx, ActionCanceled, textOf("failure.canceledEarly"))
 			return
 		}
-		if r.failure != "" {
+		if !r.failure.IsZero() {
 			r.finish(ctx, ActionFailed, r.failure)
 			return
 		}
@@ -241,10 +245,10 @@ func (r *runner) stepLimit(ctx context.Context) {
 	makerFilled := r.effective(makerOrder).Qty
 	if makerFilled.GreaterThan(r.makerAnnounced) {
 		r.makerAnnounced = makerFilled
-		r.engine.event(r.group.ID, "info", "Maker leg %d filled %s of %s", maker+1, makerFilled, r.action.Target[maker].Abs())
+		r.engine.event(r.group.ID, "info", textOf("event.makerFilled", "leg", maker+1, "filled", makerFilled, "target", r.action.Target[maker].Abs()))
 	}
 	need := r.hedgeNeed(makerFilled)
-	if r.failure == "" && need.IsPositive() && r.tradable(hedge, need) {
+	if r.failure.IsZero() && need.IsPositive() && r.tradable(hedge, need) {
 		sign := decimal.NewFromInt(1)
 		if r.action.Target[hedge].IsNegative() {
 			sign = sign.Neg()
@@ -253,7 +257,7 @@ func (r *runner) stepLimit(ctx context.Context) {
 	}
 
 	// Stop resting when the operator cancels or a hedge was refused.
-	if (r.cancelAsked || r.failure != "") && !OrderTerminal(makerOrder.State) {
+	if (r.cancelAsked || !r.failure.IsZero()) && !OrderTerminal(makerOrder.State) {
 		r.cancelMaker(ctx, makerOrder)
 	}
 
@@ -262,22 +266,23 @@ func (r *runner) stepLimit(ctx context.Context) {
 	}
 	// Maker done. Hedge any final remainder, unless it cannot be traded.
 	remainder := r.hedgeNeed(makerFilled)
-	if r.failure == "" && remainder.IsPositive() && r.tradable(hedge, remainder) {
+	if r.failure.IsZero() && remainder.IsPositive() && r.tradable(hedge, remainder) {
 		return // the next step places it
 	}
-	status, message := ActionDone, ""
+	status, message := ActionDone, Text{}
 	switch {
-	case r.failure != "":
+	case !r.failure.IsZero():
 		status, message = ActionFailed, r.failure
 	case r.cancelAsked:
-		status, message = ActionCanceled, "canceled by the operator"
+		status, message = ActionCanceled, textOf("failure.byOperator")
 	case makerOrder.State == OrderRejected || makerOrder.State == OrderNotFound:
-		status, message = ActionFailed, "maker order "+makerOrder.State+r.reasonFor(maker)
+		reason, _ := r.reasonFor(maker)
+		status, message = ActionFailed, withReason(textOf("failure.makerEnded", "state", makerOrder.State), reason)
 	case makerFilled.LessThan(r.action.Target[maker].Abs()):
-		status, message = ActionCanceled, fmt.Sprintf("maker order %s after filling %s of %s", makerOrder.State, makerFilled, r.action.Target[maker].Abs())
+		status, message = ActionCanceled, textOf("failure.makerStopped", "state", makerOrder.State, "filled", makerFilled, "target", r.action.Target[maker].Abs())
 	}
 	if remainder.IsPositive() {
-		r.engine.event(r.group.ID, "warn", "Residual %s on leg %d is below its minimum tradable size and stays unhedged", remainder, hedge+1)
+		r.engine.event(r.group.ID, "warn", textOf("event.residual", "qty", remainder, "leg", hedge+1))
 	}
 	r.finish(ctx, status, message)
 }
@@ -398,8 +403,8 @@ func (r *runner) place(ctx context.Context, leg int, role, orderType string, sig
 	// Record first: if the process dies mid-send, the client order id is what
 	// lets the restart find out whether the order exists.
 	if err := r.engine.store.InsertOrder(ctx, *order); err != nil {
-		r.failure = "could not record the order: " + err.Error()
-		r.engine.event(r.group.ID, "error", "Order for leg %d not sent: the database refused it (%s)", leg+1, err)
+		r.failure = textOf("failure.notRecorded", "error", err)
+		r.engine.event(r.group.ID, "error", textOf("event.notSent", "leg", leg+1, "error", err))
 		return
 	}
 	r.orders[order.ClientOrderID] = order
@@ -413,11 +418,11 @@ func (r *runner) place(ctx context.Context, leg int, role, orderType string, sig
 	if orderType == "limit" {
 		request.Price, request.TimeInForce = order.Price.String(), tif
 	}
-	priceText := ""
 	if orderType == "limit" {
-		priceText = " @ " + order.Price.String()
+		r.engine.event(r.group.ID, "info", textOf("event.sendingAt", "role", role, "type", orderType, "side", order.Side, "qty", order.Qty, "leg", leg+1, "inst", definition.Instrument, "price", order.Price, "client", order.ClientOrderID))
+	} else {
+		r.engine.event(r.group.ID, "info", textOf("event.sending", "role", role, "type", orderType, "side", order.Side, "qty", order.Qty, "leg", leg+1, "inst", definition.Instrument, "client", order.ClientOrderID))
 	}
-	r.engine.event(r.group.ID, "info", "%s %s %s %s on leg %d %s%s (client %s)", titleRole(role), orderType, order.Side, order.Qty, leg+1, definition.Instrument, priceText, order.ClientOrderID)
 	go func() {
 		// A send is never abandoned: abandoning turns a definite outcome
 		// into an unknown one.
@@ -426,16 +431,6 @@ func (r *runner) place(ctx context.Context, leg int, role, orderType string, sig
 		result, err := r.engine.gateway.Place(callCtx, order.AccountID, request)
 		r.deliver(event{placed: &placement{clientOrderID: order.ClientOrderID, result: result, err: err}})
 	}()
-}
-
-func titleRole(role string) string {
-	switch role {
-	case RoleMaker:
-		return "Maker"
-	case RoleHedge:
-		return "Hedge"
-	}
-	return "Taker"
 }
 
 func (r *runner) cancelMaker(ctx context.Context, maker *Order) {
@@ -497,7 +492,7 @@ func (r *runner) apply(ctx context.Context, ev event) {
 		r.applyFill(ctx, *ev.fill)
 	case ev.cancel != nil:
 		if ev.cancel.err != nil {
-			r.engine.event(r.group.ID, "warn", "Cancel of the maker order failed: %s; checking its state", errorText(ev.cancel.err))
+			r.engine.event(r.group.ID, "warn", textOf("event.cancelFailed", "error", errorText(ev.cancel.err)))
 			delete(r.cancelSent, ev.cancel.clientOrderID)
 			r.lastLookup[ev.cancel.clientOrderID] = time.Time{}
 			r.refresh(ctx, false)
@@ -513,9 +508,9 @@ func (r *runner) applyPlacement(ctx context.Context, result placement) {
 	}
 	switch {
 	case result.err != nil && gwclient.Definite(result.err):
-		r.setTerminal(ctx, order, OrderRejected, errorText(result.err))
+		r.setTerminal(ctx, order, OrderRejected, venueText(errorText(result.err)))
 	case result.err != nil:
-		r.markUnknown(ctx, order, errorText(result.err))
+		r.markUnknown(ctx, order, venueText(errorText(result.err)))
 	case result.result.Status == gwclient.OutcomeAccepted && result.result.Order != nil:
 		r.merge(ctx, order, *result.result.Order, "")
 	case result.result.Status == gwclient.OutcomeRejected:
@@ -526,18 +521,18 @@ func (r *runner) applyPlacement(ctx context.Context, result placement) {
 		if result.result.VenueCode != "" && !strings.Contains(reason, result.result.VenueCode) {
 			reason += " (" + result.result.VenueCode + ")"
 		}
-		r.setTerminal(ctx, order, OrderRejected, reason)
+		r.setTerminal(ctx, order, OrderRejected, venueText(reason))
 	default:
-		r.markUnknown(ctx, order, "outcome unknown")
+		r.markUnknown(ctx, order, textOf("reason.outcomeUnknown"))
 	}
 }
 
-func (r *runner) markUnknown(ctx context.Context, order *Order, reason string) {
+func (r *runner) markUnknown(ctx context.Context, order *Order, reason Text) {
 	order.State, order.Error = OrderUnknown, reason
 	r.persist(ctx, order)
 	if !r.unknownWarned[order.ClientOrderID] {
 		r.unknownWarned[order.ClientOrderID] = true
-		r.engine.event(r.group.ID, "warn", "Leg %d order outcome unknown (%s); checking with the exchange — it will not be placed again", order.Leg+1, reason)
+		r.engine.event(r.group.ID, "warn", withReason(textOf("event.unknown", "leg", order.Leg+1), reason))
 	}
 	// Look it up soon, on the unknown-outcome schedule. The schedule ends
 	// with the runner; the poll keeps looking after it.
@@ -583,7 +578,7 @@ func (r *runner) applyLookup(ctx context.Context, result lookedUp) {
 		// A just-sent order may not be indexed yet: only an order old enough
 		// is proven never placed.
 		if r.engine.now().Sub(order.CreatedAt) >= notFoundAfter && (order.State == OrderUnknown || order.State == OrderSending) {
-			r.setTerminal(ctx, order, OrderNotFound, "the exchange has no such order; it was never placed")
+			r.setTerminal(ctx, order, OrderNotFound, textOf("reason.notFound"))
 		}
 	case gwclient.LookupUnconfirmed:
 		r.reconcile(ctx, order)
@@ -639,44 +634,53 @@ func (r *runner) reconcile(ctx context.Context, order *Order) {
 		}
 	}
 	if r.engine.now().Sub(order.CreatedAt) >= unresolvedAfter {
-		r.setTerminal(ctx, order, OrderUnresolved, "the exchange can neither show nor deny this order and no fill of it was found; check the venue before acting")
+		r.setTerminal(ctx, order, OrderUnresolved, textOf("reason.unresolved"))
 	}
 }
 
-func (r *runner) setTerminal(ctx context.Context, order *Order, state, reason string) {
+func (r *runner) setTerminal(ctx context.Context, order *Order, state string, reason Text) {
 	order.State, order.Error = state, reason
 	r.persist(ctx, order)
 	level := "warn"
 	if state == OrderRejected {
 		level = "error"
 	}
-	r.engine.event(r.group.ID, level, "Leg %d %s order %s: %s", order.Leg+1, order.Side, state, reason)
+	r.engine.event(r.group.ID, level, withReason(textOf("event.orderState", "leg", order.Leg+1, "side", order.Side, "state", state), reason))
 	if state == OrderRejected {
 		r.noteRejection(order, reason)
 	}
-	if state == OrderUnresolved && r.failure == "" {
-		r.failure = fmt.Sprintf("leg %d order outcome could not be established: %s", order.Leg+1, reason)
+	if state == OrderUnresolved && r.failure.IsZero() {
+		r.failure = withReason(textOf("failure.unresolved", "leg", order.Leg+1), reason)
 	}
 }
 
 // rejected records a rejection reported on the order itself.
-func (r *runner) rejected(order *Order, reason string) {
-	r.engine.event(r.group.ID, "error", "Leg %d %s order rejected: %s", order.Leg+1, order.Side, reason)
+func (r *runner) rejected(order *Order, reason Text) {
+	r.engine.event(r.group.ID, "error", withReason(textOf("event.orderRejected", "leg", order.Leg+1, "side", order.Side), reason))
 	r.noteRejection(order, reason)
 }
 
 // noteRejection stops the action on a rejected taker or hedge: continuing
 // would only add exposure. A rejected maker ends the action by itself.
-func (r *runner) noteRejection(order *Order, reason string) {
-	if r.failure != "" {
+func (r *runner) noteRejection(order *Order, reason Text) {
+	if !r.failure.IsZero() {
 		return
 	}
 	switch order.Role {
 	case RoleHedge:
-		r.failure = fmt.Sprintf("hedge on leg %d rejected: %s", order.Leg+1, reason)
+		r.failure = withReason(textOf("failure.hedgeRejected", "leg", order.Leg+1), reason)
 	case RoleTaker:
-		r.failure = fmt.Sprintf("leg %d rejected: %s", order.Leg+1, reason)
+		r.failure = withReason(textOf("failure.legRejected", "leg", order.Leg+1), reason)
 	}
+}
+
+// legShortfall says how much of its target a leg executed, and why not more.
+func (r *runner) legShortfall(leg int, filled, target decimal.Decimal) Text {
+	text := textOf("failure.legFilled", "leg", leg+1, "filled", filled, "target", target)
+	if reason, ok := r.reasonFor(leg); ok {
+		return withReason(text, reason)
+	}
+	return text
 }
 
 // merge applies a venue report. Terminal states are final; the filled
@@ -692,31 +696,31 @@ func (r *runner) merge(ctx context.Context, order *Order, update gwclient.Order,
 		order.Filled = order.Qty // a fill report without a quantity
 	}
 	if order.State != OrderUnknown && order.State != OrderSending && order.State != OrderRejected && before.State == OrderUnknown {
-		order.Error = ""
+		order.Error = Text{}
 	}
 	if order.State == OrderRejected && before.State != OrderRejected {
 		// A broker accepts first and rejects later: the rejection arrives here,
 		// not as the placement's answer. It stops the action the same way.
 		reason := order.Error
-		if reason == "" {
-			reason = "rejected by the exchange"
+		if reason.IsZero() {
+			reason = textOf("reason.rejected")
 		}
 		r.persist(ctx, order)
 		r.rejected(order, reason)
 		return
 	}
-	if order.State == before.State && order.VenueOrderID == before.VenueOrderID && order.Error == before.Error &&
+	if order.State == before.State && order.VenueOrderID == before.VenueOrderID && order.Error.Message == before.Error.Message &&
 		order.Filled.Equal(before.Filled) && order.AvgPrice.Equal(before.AvgPrice) {
 		return
 	}
 	r.persist(ctx, order)
 	if order.State != before.State || !order.Filled.Equal(before.Filled) {
-		price := ""
-		if order.AvgPrice.IsPositive() {
-			price = " @ " + order.AvgPrice.String()
-		}
 		if order.Filled.GreaterThan(before.Filled) || OrderTerminal(order.State) {
-			r.engine.event(r.group.ID, "info", "Leg %d %s %s: %s/%s filled%s", order.Leg+1, order.Side, order.State, order.Filled, order.Qty, price)
+			if order.AvgPrice.IsPositive() {
+				r.engine.event(r.group.ID, "info", textOf("event.progress", "leg", order.Leg+1, "side", order.Side, "state", order.State, "filled", order.Filled, "qty", order.Qty, "price", order.AvgPrice))
+			} else {
+				r.engine.event(r.group.ID, "info", textOf("event.progressNoPrice", "leg", order.Leg+1, "side", order.Side, "state", order.State, "filled", order.Filled, "qty", order.Qty))
+			}
 		}
 	}
 }
@@ -743,7 +747,7 @@ func (r *runner) persist(ctx context.Context, order *Order) {
 // Completion
 // ---------------------------------------------------------------------------
 
-func (r *runner) finish(ctx context.Context, status, message string) {
+func (r *runner) finish(ctx context.Context, status string, message Text) {
 	r.finished = true
 	r.collectFills(ctx)
 	if err := r.engine.store.FinishAction(ctx, r.action.ID, status, message); err != nil {
@@ -752,27 +756,13 @@ func (r *runner) finish(ctx context.Context, status, message string) {
 	}
 	switch status {
 	case ActionDone:
-		r.engine.event(r.group.ID, "info", "%s done", titleKind(r.action.Kind))
+		r.engine.event(r.group.ID, "info", textOf("event.done", "kind", r.action.Kind))
 	case ActionCanceled:
-		r.engine.event(r.group.ID, "info", "%s canceled: %s", titleKind(r.action.Kind), message)
+		r.engine.event(r.group.ID, "info", withReason(textOf("event.canceled", "kind", r.action.Kind), message))
 	default:
-		r.engine.event(r.group.ID, "error", "%s failed: %s", titleKind(r.action.Kind), message)
+		r.engine.event(r.group.ID, "error", withReason(textOf("event.failed", "kind", r.action.Kind), message))
 	}
 	r.engine.settle(ctx, r.group.ID, r.action, message)
-}
-
-func titleKind(kind string) string {
-	switch kind {
-	case KindOpen:
-		return "Open"
-	case KindClose:
-		return "Close"
-	case KindUnwind:
-		return "Unwind"
-	case KindRehedge:
-		return "Rehedge"
-	}
-	return kind
 }
 
 // collectFills reads the venues' fill records for this action's orders so

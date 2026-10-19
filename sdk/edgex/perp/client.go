@@ -13,7 +13,7 @@ import (
 
 	"go.uber.org/zap"
 
-	sdkcore "github.com/QuantProcessing/boltertrader/sdk"
+	sdkcore "github.com/QuantProcessing/keeluni/sdk"
 )
 
 const (

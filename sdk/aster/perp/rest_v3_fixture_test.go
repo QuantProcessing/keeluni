@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	astercommon "github.com/QuantProcessing/boltertrader/sdk/aster/common"
+	astercommon "github.com/QuantProcessing/keeluni/sdk/aster/common"
 )
 
 func TestPerpV3FixtureModels(t *testing.T) {

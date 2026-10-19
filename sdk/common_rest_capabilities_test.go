@@ -3,12 +3,12 @@ package sdk_test
 import (
 	"testing"
 
-	binanceperp "github.com/QuantProcessing/boltertrader/sdk/binance/perp"
-	binancespot "github.com/QuantProcessing/boltertrader/sdk/binance/spot"
-	hyperliquidperp "github.com/QuantProcessing/boltertrader/sdk/hyperliquid/perp"
-	hyperliquidspot "github.com/QuantProcessing/boltertrader/sdk/hyperliquid/spot"
-	"github.com/QuantProcessing/boltertrader/sdk/lighter"
-	"github.com/QuantProcessing/boltertrader/sdk/okx"
+	binanceperp "github.com/QuantProcessing/keeluni/sdk/binance/perp"
+	binancespot "github.com/QuantProcessing/keeluni/sdk/binance/spot"
+	hyperliquidperp "github.com/QuantProcessing/keeluni/sdk/hyperliquid/perp"
+	hyperliquidspot "github.com/QuantProcessing/keeluni/sdk/hyperliquid/spot"
+	"github.com/QuantProcessing/keeluni/sdk/lighter"
+	"github.com/QuantProcessing/keeluni/sdk/okx"
 )
 
 func TestCommonRESTSDKCapabilitySurface(t *testing.T) {

@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	"github.com/QuantProcessing/boltertrader/sdk/lighter"
+	"github.com/QuantProcessing/keeluni/exchange"
+	"github.com/QuantProcessing/keeluni/sdk/lighter"
 	"github.com/shopspring/decimal"
 )
 

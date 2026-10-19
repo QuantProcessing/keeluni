@@ -7,17 +7,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	astercommon "github.com/QuantProcessing/boltertrader/sdk/aster/common"
-	binanceperp "github.com/QuantProcessing/boltertrader/sdk/binance/perp"
-	binancespot "github.com/QuantProcessing/boltertrader/sdk/binance/spot"
-	bitget "github.com/QuantProcessing/boltertrader/sdk/bitget"
-	bybit "github.com/QuantProcessing/boltertrader/sdk/bybit"
-	gate "github.com/QuantProcessing/boltertrader/sdk/gate"
-	hyperliquid "github.com/QuantProcessing/boltertrader/sdk/hyperliquid"
-	lighter "github.com/QuantProcessing/boltertrader/sdk/lighter"
-	nado "github.com/QuantProcessing/boltertrader/sdk/nado"
-	okx "github.com/QuantProcessing/boltertrader/sdk/okx"
+	"github.com/QuantProcessing/keeluni/exchange"
+	astercommon "github.com/QuantProcessing/keeluni/sdk/aster/common"
+	binanceperp "github.com/QuantProcessing/keeluni/sdk/binance/perp"
+	binancespot "github.com/QuantProcessing/keeluni/sdk/binance/spot"
+	bitget "github.com/QuantProcessing/keeluni/sdk/bitget"
+	bybit "github.com/QuantProcessing/keeluni/sdk/bybit"
+	gate "github.com/QuantProcessing/keeluni/sdk/gate"
+	hyperliquid "github.com/QuantProcessing/keeluni/sdk/hyperliquid"
+	lighter "github.com/QuantProcessing/keeluni/sdk/lighter"
+	nado "github.com/QuantProcessing/keeluni/sdk/nado"
+	okx "github.com/QuantProcessing/keeluni/sdk/okx"
 )
 
 func TestAllVenueQueryNormalizersRedactUnderlyingErrors(t *testing.T) {

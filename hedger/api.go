@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/gwclient"
+	"github.com/QuantProcessing/keeluni/gwclient"
 	"github.com/coder/websocket"
 	"github.com/shopspring/decimal"
 )
@@ -189,7 +189,7 @@ func (api *API) match(w http.ResponseWriter, r *http.Request) {
 	for i, id := range ids {
 		instrument, ok := instruments[id]
 		if !ok {
-			api.fail(w, invalidf("unknown instrument %q", id))
+			api.fail(w, invalid("invalid.unknownInstrument", "inst", id))
 			return
 		}
 		legs[i] = Leg{Venue: instrument.Venue, Base: instrument.Base}
@@ -221,7 +221,7 @@ func (api *API) preview(w http.ResponseWriter, r *http.Request) {
 	for i, leg := range legs {
 		bids, asks, ok := api.service.Market.Book(ctx, leg.Instrument, 5*time.Second)
 		if !ok {
-			api.fail(w, invalidf("no order book for %s yet", leg.Instrument))
+			api.fail(w, invalid("invalid.noBook", "inst", leg.Instrument))
 			return
 		}
 		books[i] = [2]BookSide{bids, asks}
@@ -297,7 +297,7 @@ func (api *API) edit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(request.Label) > 80 || len(request.Note) > 2000 {
-		api.fail(w, invalidf("label or note is too long"))
+		api.fail(w, invalid("invalid.textTooLong"))
 		return
 	}
 	if err := api.service.store.UpdateGroupText(r.Context(), r.PathValue("id"), strings.TrimSpace(request.Label), strings.TrimSpace(request.Note)); err != nil {
@@ -410,7 +410,10 @@ func (api *API) fail(w http.ResponseWriter, err error) {
 	var gatewayErr *gwclient.Error
 	switch {
 	case IsInvalid(err):
-		writeError(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		text, _ := invalidText(err)
+		// text carries the code and parameters; the interface renders it in the
+		// reader's language and falls back to message.
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"code": "INVALID_REQUEST", "message": text.Message, "text": text}})
 	case errors.Is(err, ErrNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error())
 	case errors.As(err, &gatewayErr):

@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	"github.com/QuantProcessing/boltertrader/exchange/factory"
-	"github.com/QuantProcessing/boltertrader/gateway/venue"
+	"github.com/QuantProcessing/keeluni/exchange"
+	"github.com/QuantProcessing/keeluni/exchange/factory"
+	"github.com/QuantProcessing/keeluni/gateway/venue"
 )
 
 // ErrUnknownInstrument is returned for ids that are not in the catalog.

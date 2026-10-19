@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/gwclient"
+	"github.com/QuantProcessing/keeluni/gwclient"
 )
 
 // Service wires the gateway stream to the engine and the market cache, and

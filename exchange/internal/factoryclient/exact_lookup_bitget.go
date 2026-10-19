@@ -3,8 +3,8 @@ package factoryclient
 import (
 	"context"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	bitget "github.com/QuantProcessing/boltertrader/sdk/bitget"
+	"github.com/QuantProcessing/keeluni/exchange"
+	bitget "github.com/QuantProcessing/keeluni/sdk/bitget"
 )
 
 // LookupExactOrder gives Bitget the same bounded, instrument-scoped recovery

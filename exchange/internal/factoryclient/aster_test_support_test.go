@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
+	"github.com/QuantProcessing/keeluni/exchange"
 	"github.com/shopspring/decimal"
 )
 

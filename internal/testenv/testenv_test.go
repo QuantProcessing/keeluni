@@ -44,7 +44,7 @@ func TestRequireFullSkipsWhenRequiredEnvMissing(t *testing.T) {
 }
 
 func TestRequireLiveReadSkipsWithoutEnableFlag(t *testing.T) {
-	t.Setenv("BOLTER_ENABLE_LIVE_READ_TESTS", "")
+	t.Setenv("KEELUNI_ENABLE_LIVE_READ_TESTS", "")
 
 	skipped := false
 	t.Run("skip", func(t *testing.T) {
@@ -52,7 +52,7 @@ func TestRequireLiveReadSkipsWithoutEnableFlag(t *testing.T) {
 			skipped = t.Skipped()
 		}()
 		RequireLiveRead(t)
-		t.Fatalf("expected RequireLiveRead to skip without BOLTER_ENABLE_LIVE_READ_TESTS=1")
+		t.Fatalf("expected RequireLiveRead to skip without KEELUNI_ENABLE_LIVE_READ_TESTS=1")
 	})
 
 	if !skipped {
@@ -61,7 +61,7 @@ func TestRequireLiveReadSkipsWithoutEnableFlag(t *testing.T) {
 }
 
 func TestRequireLiveReadSkipsWhenRequiredEnvMissing(t *testing.T) {
-	t.Setenv("BOLTER_ENABLE_LIVE_READ_TESTS", "1")
+	t.Setenv("KEELUNI_ENABLE_LIVE_READ_TESTS", "1")
 	t.Setenv("TESTENV_REQUIRED_VAR", "")
 
 	skipped := false
@@ -79,7 +79,7 @@ func TestRequireLiveReadSkipsWhenRequiredEnvMissing(t *testing.T) {
 }
 
 func TestRequireLiveReadAllowsEnabledReadWithoutCredentials(t *testing.T) {
-	t.Setenv("BOLTER_ENABLE_LIVE_READ_TESTS", "1")
+	t.Setenv("KEELUNI_ENABLE_LIVE_READ_TESTS", "1")
 
 	RequireLiveRead(t)
 }
@@ -245,11 +245,11 @@ func TestLoadRepoEnvDoesNotImportExecutionGates(t *testing.T) {
 	// with the demo and testnet environments, but the pattern rule they proved
 	// is unchanged and still has to hold for whatever a caller invents next.
 	gates := []string{
-		"BOLTER_ENABLE_LIVE_READ_TESTS",
+		"KEELUNI_ENABLE_LIVE_READ_TESTS",
 		"ENABLE_LIVE_WRITES",
-		"BOLTER_ENABLE_NADO_UNSAFE_RAW_SDK_WRITES",
+		"KEELUNI_ENABLE_NADO_UNSAFE_RAW_SDK_WRITES",
 		"ALLOW_LIVE_WRITES",
-		"BOLTER_ALLOW_UNSAFE_WRITES",
+		"KEELUNI_ALLOW_UNSAFE_WRITES",
 		"BINANCE_ENABLE_LIVE_WRITE_TESTS",
 		"BINANCE_PERP_ENABLE_LIVE_WRITE_TESTS",
 		"BYBIT_ENABLE_LIVE_WRITE_TESTS",

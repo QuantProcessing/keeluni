@@ -12,7 +12,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/internal/mbx"
+	"github.com/QuantProcessing/keeluni/internal/mbx"
 )
 
 const (

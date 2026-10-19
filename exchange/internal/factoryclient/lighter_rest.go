@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	sdkcore "github.com/QuantProcessing/boltertrader/sdk"
-	"github.com/QuantProcessing/boltertrader/sdk/lighter"
+	"github.com/QuantProcessing/keeluni/exchange"
+	sdkcore "github.com/QuantProcessing/keeluni/sdk"
+	"github.com/QuantProcessing/keeluni/sdk/lighter"
 	"github.com/shopspring/decimal"
 )
 

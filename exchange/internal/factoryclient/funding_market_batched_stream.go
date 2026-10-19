@@ -9,11 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	bitget "github.com/QuantProcessing/boltertrader/sdk/bitget"
-	bybit "github.com/QuantProcessing/boltertrader/sdk/bybit"
-	gate "github.com/QuantProcessing/boltertrader/sdk/gate"
-	nadosdk "github.com/QuantProcessing/boltertrader/sdk/nado"
+	"github.com/QuantProcessing/keeluni/exchange"
+	bitget "github.com/QuantProcessing/keeluni/sdk/bitget"
+	bybit "github.com/QuantProcessing/keeluni/sdk/bybit"
+	gate "github.com/QuantProcessing/keeluni/sdk/gate"
+	nadosdk "github.com/QuantProcessing/keeluni/sdk/nado"
 	"github.com/shopspring/decimal"
 )
 

@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/secretstore"
+	"github.com/QuantProcessing/keeluni/secretstore"
 )
 
 var (

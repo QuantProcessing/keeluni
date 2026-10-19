@@ -3,8 +3,8 @@ package factoryclient
 import (
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	nadosdk "github.com/QuantProcessing/boltertrader/sdk/nado"
+	"github.com/QuantProcessing/keeluni/exchange"
+	nadosdk "github.com/QuantProcessing/keeluni/sdk/nado"
 	"github.com/shopspring/decimal"
 )
 

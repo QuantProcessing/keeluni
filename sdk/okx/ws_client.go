@@ -15,7 +15,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/QuantProcessing/boltertrader/internal/wsdispatch"
+	"github.com/QuantProcessing/keeluni/internal/wsdispatch"
 )
 
 const (

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/gateway/ratelimit"
+	"github.com/QuantProcessing/keeluni/gateway/ratelimit"
 )
 
 func TestClient_DefaultRateLimiterKeysMatchBinanceFuturesQuotas(t *testing.T) {

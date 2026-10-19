@@ -1,5 +1,7 @@
 # Exchange WebSocket V1 Operation Matrix
 
+> 本页是 exchange 层逐交易所、逐方法的精确清单，保留英文原文以便与代码和测试逐字对照。中文说明见 [sdk 与 exchange](./) 与 [交易所差异](./venues)。
+
 Matrix-Schema: `exchange-ws-v1/v1`
 Matrix-Review: `APPROVE`
 

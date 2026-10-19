@@ -3,7 +3,7 @@ package factoryclient
 import (
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
+	"github.com/QuantProcessing/keeluni/exchange"
 )
 
 func TestVenuePositionSlotsPreserveOneWayAndHedgeIdentity(t *testing.T) {

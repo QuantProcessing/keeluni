@@ -1,6 +1,6 @@
 // Package gwclient is the Go client of the gateway's /v1 API for apps that
 // trade through the gateway (hedging, arbitrage). It mirrors the wire types in
-// docs/gateway-api.md; all numbers are decimal strings, as on the wire.
+// docs/api/gateway-rest.md; all numbers are decimal strings, as on the wire.
 package gwclient
 
 // Instrument is one tradable instrument and its rules.

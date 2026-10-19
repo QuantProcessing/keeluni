@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/internal/mbx"
+	"github.com/QuantProcessing/keeluni/internal/mbx"
 )
 
 type classifiedAsterTransportError struct {

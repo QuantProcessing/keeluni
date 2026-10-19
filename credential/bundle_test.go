@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/credential"
+	"github.com/QuantProcessing/keeluni/credential"
 )
 
 func TestRegistryRejectsUnknownCredentialFields(t *testing.T) {

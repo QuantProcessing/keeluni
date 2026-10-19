@@ -15,8 +15,8 @@ import (
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 
-	"github.com/QuantProcessing/boltertrader/internal/wsdispatch"
-	astercommon "github.com/QuantProcessing/boltertrader/sdk/aster/common"
+	"github.com/QuantProcessing/keeluni/internal/wsdispatch"
+	astercommon "github.com/QuantProcessing/keeluni/sdk/aster/common"
 )
 
 type WSClient struct {

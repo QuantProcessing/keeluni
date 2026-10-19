@@ -83,7 +83,7 @@ func TestStoreRoundTripsAGroupAndRejectsASecondWorkingAction(t *testing.T) {
 	if err := store.StartAction(ctx, second, StatusClosing); !errors.Is(err, ErrBusy) {
 		t.Fatalf("second working action err = %v", err)
 	}
-	if err := store.FinishAction(ctx, action.ID, ActionDone, ""); err != nil {
+	if err := store.FinishAction(ctx, action.ID, ActionDone, Text{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.StartAction(ctx, second, StatusClosing); err != nil {
@@ -158,13 +158,13 @@ func TestStoreFundingAndEvents(t *testing.T) {
 	if !totals["hg_3"][0].Equal(d("-0.065")) || !totals["hg_3"][1].Equal(d("0.13")) {
 		t.Fatalf("totals = %+v", totals)
 	}
-	_ = store.AddEvent(ctx, "hg_3", "info", "opened")
-	_ = store.AddEvent(ctx, "hg_3", "warn", "leg 1 partially filled")
+	_ = store.AddEvent(ctx, "hg_3", "info", textOf("event.cancelRequested"))
+	_ = store.AddEvent(ctx, "hg_3", "warn", textOf("event.makerFilled", "leg", 1, "filled", "0.004", "target", "0.01"))
 	events, _ := store.Events(ctx, "hg_3", 10)
-	if len(events) != 2 || events[0].Message != "leg 1 partially filled" {
+	if len(events) != 2 || events[0].Message.Code != "event.makerFilled" || events[0].Message.Params["filled"] != "0.004" || events[0].Message.Message != "Maker leg 1 filled 0.004 of 0.01" {
 		t.Fatalf("events = %+v", events)
 	}
-	if err := store.SetGroupStatus(ctx, "hg_3", StatusClosed, ""); err != nil {
+	if err := store.SetGroupStatus(ctx, "hg_3", StatusClosed, Text{}); err != nil {
 		t.Fatal(err)
 	}
 	closed, _ := store.Group(ctx, "hg_3")

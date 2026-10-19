@@ -4,16 +4,19 @@
 #   docker compose logs trader | grep password
 # Only 127.0.0.1:8080 is published. The gateway, hedger and Postgres are
 # reachable only inside the compose network. App state lives in the
-# bolter-data volume; Postgres data in bolter-pg.
+# keeluni-data volume; Postgres data in keeluni-pg. The project and volume
+# names are fixed here so they do not depend on the checkout directory.
 #
-# Venues behind a proxy: set BOLTER_PROXY, e.g. http://host.docker.internal:7892
+# Venues behind a proxy: set KEELUNI_PROXY, e.g. http://host.docker.internal:7892
 #
 # Apps that need a database each get their own role and database on the one
 # Postgres (see hedger-initdb); the admin password never leaves the
 # postgres-secrets directory.
 
+name: keeluni
+
 x-common: &common
-  image: boltertrader:latest
+  image: keeluni:latest
   build: .
   pull_policy: build
   restart: unless-stopped
@@ -28,11 +31,11 @@ services:
     environment:
       GATEWAY_ADDR: 0.0.0.0:8081
       GATEWAY_DATA_DIR: /data/gateway
-      HTTPS_PROXY: ${BOLTER_PROXY:-}
-      HTTP_PROXY: ${BOLTER_PROXY:-}
+      HTTPS_PROXY: ${KEELUNI_PROXY:-}
+      HTTP_PROXY: ${KEELUNI_PROXY:-}
       NO_PROXY: localhost,127.0.0.1,gateway,trader,hedger,postgres
     volumes:
-      - bolter-data:/data
+      - keeluni-data:/data
     networks: [internal]
 
   trader:
@@ -48,7 +51,7 @@ services:
       HEDGER_URL: http://hedger:8082
       HEDGER_TOKEN_FILE: /data/hedger/token
     volumes:
-      - bolter-data:/data
+      - keeluni-data:/data
     ports:
       - "127.0.0.1:8080:8080"
     networks: [internal]
@@ -79,7 +82,7 @@ services:
     environment:
       POSTGRES_PASSWORD_FILE: /secrets/admin.password
     volumes:
-      - bolter-pg:/var/lib/postgresql/data
+      - keeluni-pg:/var/lib/postgresql/data
       - postgres-secrets:/secrets:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -101,7 +104,7 @@ services:
       POSTGRES_HOST: postgres:5432
       POSTGRES_ADMIN_PASSWORD_FILE: /secrets/admin.password
     volumes:
-      - bolter-data:/data
+      - keeluni-data:/data
       - postgres-secrets:/secrets:ro
     networks: [internal]
 
@@ -117,13 +120,16 @@ services:
       GATEWAY_URL: http://gateway:8081
       GATEWAY_TOKEN_FILE: /data/gateway/token
     volumes:
-      - bolter-data:/data
+      - keeluni-data:/data
     networks: [internal]
 
 volumes:
-  bolter-data:
-  bolter-pg:
+  keeluni-data:
+    name: keeluni-data
+  keeluni-pg:
+    name: keeluni-pg
   postgres-secrets:
+    name: keeluni-postgres-secrets
 
 networks:
   internal:

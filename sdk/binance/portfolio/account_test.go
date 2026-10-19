@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/internal/testenv"
+	"github.com/QuantProcessing/keeluni/internal/testenv"
 )
 
 func TestClient_GetBalances(t *testing.T) {

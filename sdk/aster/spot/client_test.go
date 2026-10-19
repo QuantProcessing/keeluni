@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/internal/testenv"
-	astercommon "github.com/QuantProcessing/boltertrader/sdk/aster/common"
+	"github.com/QuantProcessing/keeluni/internal/testenv"
+	astercommon "github.com/QuantProcessing/keeluni/sdk/aster/common"
 )
 
 func TestPublicEndpoints(t *testing.T) {

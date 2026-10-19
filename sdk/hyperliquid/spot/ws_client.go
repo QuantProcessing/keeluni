@@ -1,7 +1,7 @@
 package spot
 
 import (
-	"github.com/QuantProcessing/boltertrader/sdk/hyperliquid"
+	"github.com/QuantProcessing/keeluni/sdk/hyperliquid"
 )
 
 type WebsocketClient struct {

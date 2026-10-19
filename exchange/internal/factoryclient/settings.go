@@ -3,7 +3,7 @@ package factoryclient
 import (
 	"net/http"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
+	"github.com/QuantProcessing/keeluni/exchange"
 )
 
 // Settings carries validated local construction settings from exchange/factory

@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	hyperliquid "github.com/QuantProcessing/boltertrader/sdk/hyperliquid"
+	hyperliquid "github.com/QuantProcessing/keeluni/sdk/hyperliquid"
 	"github.com/stretchr/testify/require"
 )
 

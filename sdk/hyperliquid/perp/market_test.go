@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/internal/testenv"
-	hyperliquid "github.com/QuantProcessing/boltertrader/sdk/hyperliquid"
+	"github.com/QuantProcessing/keeluni/internal/testenv"
+	hyperliquid "github.com/QuantProcessing/keeluni/sdk/hyperliquid"
 	"github.com/stretchr/testify/require"
 )
 

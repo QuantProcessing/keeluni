@@ -14,7 +14,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/QuantProcessing/boltertrader/internal/mbx"
+	"github.com/QuantProcessing/keeluni/internal/mbx"
 
 	"github.com/gorilla/websocket"
 )

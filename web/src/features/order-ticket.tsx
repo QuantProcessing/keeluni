@@ -11,12 +11,14 @@ import { Dialog, PrimaryButton, Row, Tabs, cx } from "@/ui/primitives";
 import { useToast } from "@/ui/toast";
 import { AccountPicker, NoAccount } from "./account-picker";
 import { submitOrder } from "./submit";
+import { translate, useT } from "@/i18n";
 
 type OrderType = "market" | "limit";
 type Tif = "gtc" | "ioc" | "post_only";
 type Unit = "base" | "quote";
 
 export function OrderTicket() {
+  const t = useT();
   const { instrumentId, trackOrder, limitPriceHint, unconnectedBrokers } = useWorkspace();
   const { account, live, routes } = useTradingAccount();
   const instrument = useInstrument(instrumentId);
@@ -121,27 +123,27 @@ export function OrderTicket() {
         setPercent(0);
         void queryClient.invalidateQueries({ queryKey: ["orders", account.id] });
       } else {
-        toast.push({ kind: "error", title: outcome.kind === "rejected" ? "Order rejected" : "Order outcome unknown", detail: outcome.message });
+        toast.push({ kind: "error", title: t(outcome.kind === "rejected" ? "order.rejected" : "order.unknown"), detail: outcome.message });
       }
     } catch (error) {
-      toast.push({ kind: "error", title: "Order failed", detail: (error as Error).message });
+      toast.push({ kind: "error", title: t("order.failed"), detail: (error as Error).message });
     } finally {
       setSubmitting(false);
     }
   };
 
   const announce = (order: Order) => {
-    const verb = order.side === "buy" ? "Buy" : "Sell";
+    const verb = t(order.side === "buy" ? "common.buy" : "common.sell");
     const name = instrumentName(order.inst);
     if (order.status === "filled") {
-      toast.push({ kind: order.side === "buy" ? "long" : "short", title: `${verb} ${num(order.filled)} ${name} filled`, detail: order.avgPrice ? `Average price ${num(order.avgPrice)}` : undefined });
+      toast.push({ kind: order.side === "buy" ? "long" : "short", title: t("order.filled", { verb, qty: num(order.filled), name }), detail: order.avgPrice ? t("order.averagePrice", { price: num(order.avgPrice) }) : undefined });
     } else if (order.status === "open" || order.status === "partially_filled") {
-      toast.push({ kind: "info", title: `${verb} ${num(order.qty)} ${name} placed`, detail: order.price ? `Limit ${num(order.price)}` : undefined });
+      toast.push({ kind: "info", title: t("order.placed", { verb, qty: num(order.qty), name }), detail: order.price ? t("order.limitAt", { price: num(order.price) }) : undefined });
     } else if (order.status === "pending") {
       // Accepted by a broker, not yet on the exchange: it can still be refused.
-      toast.push({ kind: "info", title: `${verb} ${num(order.qty)} ${name} accepted`, detail: "Waiting for the exchange" });
+      toast.push({ kind: "info", title: t("order.accepted", { verb, qty: num(order.qty), name }), detail: t("order.waitingExchange") });
     } else {
-      toast.push({ kind: "info", title: `${verb} ${num(order.qty)} ${name} submitted`, detail: `Status: ${order.status}` });
+      toast.push({ kind: "info", title: t("order.submitted", { verb, qty: num(order.qty), name }), detail: t("order.statusIs", { status: order.status }) });
     }
   };
 
@@ -158,49 +160,49 @@ export function OrderTicket() {
       <AccountRow account={account} />
       {perp && (
         <div className="grid grid-cols-2 gap-2">
-          <div className="flex h-8 items-center justify-center rounded-lg bg-raised text-muted" title="Margin mode is managed on the venue">Cross</div>
+          <div className="flex h-8 items-center justify-center rounded-lg bg-raised text-muted" title={t("ticket.crossHint")}>{t("ticket.cross")}</div>
           <button
             disabled={!account}
             onClick={() => setLeverageOpen(true)}
             className="h-8 rounded-lg bg-raised hover:bg-line-strong/40 disabled:text-muted"
           >
-            {effectiveLeverage ? `${effectiveLeverage}x` : "Leverage"}
+            {effectiveLeverage ? `${effectiveLeverage}x` : t("ticket.leverage")}
           </button>
         </div>
       )}
 
-      <Tabs value={type} onChange={setType} options={[{ value: "market", label: "Market" }, { value: "limit", label: "Limit" }]} className="[&>button]:flex-1" />
+      <Tabs value={type} onChange={setType} options={[{ value: "market", label: t("common.market") }, { value: "limit", label: t("common.limit") }]} className="[&>button]:flex-1" />
 
       <div className="grid h-8 grid-cols-2 rounded-lg bg-raised p-0.5">
         <button onClick={() => setSide("buy")} className={cx("rounded-md", side === "buy" ? "bg-up text-on-accent" : "text-text")}>
-          {perp ? "Buy / Long" : "Buy"}
+          {perp ? t("ticket.buyLong") : t("common.buy")}
         </button>
         <button onClick={() => setSide("sell")} className={cx("rounded-md", side === "sell" ? "bg-down text-on-accent" : "text-text")}>
-          {perp ? "Sell / Short" : "Sell"}
+          {perp ? t("ticket.sellShort") : t("common.sell")}
         </button>
       </div>
 
       <div>
-        <Row label="Available to Trade">{available ? `${num(available.amount)} ${available.asset}` : "—"}</Row>
-        {perp && <Row label="Current Position">{position ? <span className={position.side === "long" ? "text-up" : "text-down"}>{(position.side === "short" ? "-" : "") + num(position.size)} {instrument?.base}</span> : `0 ${instrument?.base ?? ""}`}</Row>}
+        <Row label={t("ticket.available")}>{available ? `${num(available.amount)} ${available.asset}` : "—"}</Row>
+        {perp && <Row label={t("ticket.position")}>{position ? <span className={position.side === "long" ? "text-up" : "text-down"}>{(position.side === "short" ? "-" : "") + num(position.size)} {instrument?.base}</span> : `0 ${instrument?.base ?? ""}`}</Row>}
       </div>
 
       {type === "limit" && (
         <label className="flex h-10 items-center gap-2 rounded-lg border border-line px-3 focus-within:border-line-strong">
-          <span className="text-muted">Price ({instrument?.quote})</span>
+          <span className="text-muted">{t("ticket.priceIn", { quote: instrument?.quote ?? "" })}</span>
           <input inputMode="decimal" value={limitPrice} onChange={(e) => setLimitPrice(sanitize(e.target.value))} className="min-w-0 flex-1 bg-transparent text-right outline-none" />
-          <button className="text-accent" onClick={() => { const mid = midPrice(); if (mid) setLimitPrice(mid); }}>Mid</button>
+          <button className="text-accent" onClick={() => { const mid = midPrice(); if (mid) setLimitPrice(mid); }}>{t("ticket.mid")}</button>
         </label>
       )}
 
       <label className="flex h-10 items-center gap-2 rounded-lg border border-line px-3 focus-within:border-line-strong">
-        <span className="text-muted">Size</span>
+        <span className="text-muted">{t("common.size")}</span>
         <input inputMode="decimal" value={size} onChange={(e) => { setSize(sanitize(e.target.value)); setPercent(0); }} className="min-w-0 flex-1 bg-transparent text-right outline-none" />
         <select
           value={unit}
           onChange={(e) => { setUnit(e.target.value as Unit); setSize(""); setPercent(0); }}
           className="bg-transparent text-text outline-none"
-          aria-label="Size unit"
+          aria-label={t("ticket.sizeUnit")}
         >
           <option value="base">{instrument?.base ?? "Base"}</option>
           <option value="quote">{instrument?.quote ?? "Quote"}</option>
@@ -213,7 +215,7 @@ export function OrderTicket() {
           onChange={(e) => applyPercent(Number(e.target.value))}
           className="range flex-1" style={{ ["--fill" as string]: `${percent}%` }}
           disabled={!available || available.amount <= 0}
-          aria-label="Size as percent of available"
+          aria-label={t("ticket.percent")}
         />
         <div className="flex h-8 w-16 items-center justify-end gap-1 rounded-lg border border-line px-2">
           <span>{percent}</span><span className="text-muted">%</span>
@@ -224,16 +226,16 @@ export function OrderTicket() {
         {perp && (
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={reduceOnly} onChange={(e) => setReduceOnly(e.target.checked)} className="accent-[#50d2c1]" />
-            Reduce Only
+            {t("ticket.reduceOnly")}
           </label>
         )}
         {type === "limit" && (
           <label className="ml-auto flex items-center gap-2 text-muted">
-            TIF
+            {t("ticket.tif")}
             <select value={tif} onChange={(e) => setTif(e.target.value as Tif)} className="bg-transparent text-text outline-none">
               <option value="gtc">GTC</option>
               <option value="ioc">IOC</option>
-              <option value="post_only">Post Only</option>
+              <option value="post_only">{t("ticket.postOnly")}</option>
             </select>
           </label>
         )}
@@ -244,15 +246,15 @@ export function OrderTicket() {
         disabled={submitting || !!validation || !instrument}
         className={side === "sell" ? "bg-down hover:bg-down/80" : undefined}
       >
-        {submitting ? "Placing…" : validation && size ? validation : type === "market" ? `Market ${side === "buy" ? "Buy" : "Sell"}` : `Place ${side === "buy" ? "Buy" : "Sell"} Order`}
+        {submitting ? t("ticket.placing") : validation && size ? validation : t(type === "market" ? (side === "buy" ? "ticket.marketBuy" : "ticket.marketSell") : side === "buy" ? "ticket.placeBuy" : "ticket.placeSell")}
       </PrimaryButton>
 
       <div className="border-t border-line pt-2">
-        <Row label="Order Value">{notional > 0 ? usd(notional) : "N/A"}</Row>
-        {perp && <Row label="Margin Required" hint="Order value divided by leverage">{margin ? usd(margin) : "N/A"}</Row>}
-        {perp && position?.liquidationPrice && <Row label="Liquidation Price">{price(position.liquidationPrice, rules?.tickSize)}</Row>}
-        {type === "market" && <Row label="Est. Price" hint="Mark or last trade price; the fill may differ">{refPrice ? price(refPrice, rules?.tickSize) : "—"}</Row>}
-        {broker && rules && <Row label="Min Size" hint="Gate CrossEx's own minimum for this market">{rules.minQty}{rules.minNotional ? ` · ${usd(rules.minNotional, 0)}` : ""}</Row>}
+        <Row label={t("ticket.orderValue")}>{notional > 0 ? usd(notional) : t("ticket.na")}</Row>
+        {perp && <Row label={t("ticket.marginRequired")} hint={t("ticket.marginHint")}>{margin ? usd(margin) : t("ticket.na")}</Row>}
+        {perp && position?.liquidationPrice && <Row label={t("ticket.liquidation")}>{price(position.liquidationPrice, rules?.tickSize)}</Row>}
+        {type === "market" && <Row label={t("ticket.estPrice")} hint={t("ticket.estPriceHint")}>{refPrice ? price(refPrice, rules?.tickSize) : "—"}</Row>}
+        {broker && rules && <Row label={t("ticket.minSize")} hint={t("ticket.minSizeHint")}>{rules.minQty}{rules.minNotional ? ` · ${usd(rules.minNotional, 0)}` : ""}</Row>}
       </div>
 
       {instrument && perp && (
@@ -281,11 +283,11 @@ function sanitize(value: string): string {
 }
 
 export function validate(rules: Rules | undefined, baseQty: string, type: OrderType, limitPrice: string, notional: number): string | null {
-  if (!rules) return "Loading market";
-  if (!baseQty || Number(baseQty) <= 0) return "Enter a size";
-  if (Number(baseQty) < Number(rules.minQty)) return `Min size ${rules.minQty}`;
-  if (type === "limit" && !(Number(limitPrice) > 0)) return "Enter a price";
-  if (rules.minNotional && notional > 0 && notional < Number(rules.minNotional)) return `Min value ${rules.minNotional}`;
+  if (!rules) return translate("ticket.loadingMarket");
+  if (!baseQty || Number(baseQty) <= 0) return translate("ticket.enterSize");
+  if (Number(baseQty) < Number(rules.minQty)) return translate("ticket.minSizeIs", { min: rules.minQty });
+  if (type === "limit" && !(Number(limitPrice) > 0)) return translate("ticket.enterPrice");
+  if (rules.minNotional && notional > 0 && notional < Number(rules.minNotional)) return translate("ticket.minValueIs", { min: rules.minNotional });
   return null;
 }
 
@@ -309,6 +311,7 @@ export function LeverageDialog({ open, onOpenChange, instrument, accountId, curr
   current: number;
   onApplied: (value: number) => void;
 }) {
+  const t = useT();
   const [value, setValue] = useState(current);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -330,7 +333,7 @@ export function LeverageDialog({ open, onOpenChange, instrument, accountId, curr
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="Adjust Leverage" description={`Control the leverage used for ${instrument.base} positions on ${venueLabel(instrument.venue)}. The venue enforces its own maximum.`}>
+    <Dialog open={open} onOpenChange={onOpenChange} title={t("leverage.title")} description={t("leverage.description", { base: instrument.base, venue: venueLabel(instrument.venue) })}>
       <div className="flex items-center gap-4">
         <input type="range" min={1} max={max} value={value} onChange={(e) => setValue(Number(e.target.value))} className="range flex-1" style={{ ["--fill" as string]: `${((value - 1) / (max - 1)) * 100}%` }} />
         <div className="flex h-9 w-20 items-center gap-1 rounded-lg border border-line px-2">
@@ -338,10 +341,10 @@ export function LeverageDialog({ open, onOpenChange, instrument, accountId, curr
           <span className="text-muted">x</span>
         </div>
       </div>
-      <PrimaryButton className="mt-6" onClick={apply} disabled={busy}>{busy ? "Applying…" : "Confirm"}</PrimaryButton>
+      <PrimaryButton className="mt-6" onClick={apply} disabled={busy}>{busy ? t("leverage.applying") : t("leverage.confirm")}</PrimaryButton>
       {error && <div className="mt-3 text-center text-down">{error}</div>}
       <div className="mt-4 rounded-lg border border-down/60 bg-warn-bg px-3 py-2.5 text-center text-down">
-        Note that setting a higher leverage increases the risk of liquidation.
+        {t("leverage.warning")}
       </div>
     </Dialog>
   );

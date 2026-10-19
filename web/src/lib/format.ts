@@ -1,6 +1,11 @@
 // Display formatting. Values arrive as decimal strings; arithmetic for display
 // uses Number, which is exact enough for rendering but never for order sizes —
 // sizes are snapped with snapToStep, which works on strings.
+//
+// Numbers keep the en-US grouping (82,817.3) in both languages: traders read
+// prices that way on every venue. Dates follow the interface language.
+
+import { currentLang, locale, translate } from "@/i18n";
 
 export function decimals(step: string): number {
   const dot = step.indexOf(".");
@@ -54,10 +59,17 @@ export function compact(value: string | number | undefined): string {
   return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 }).format(n);
 }
 
+/** "10/19 14:05:09": month/day and a 24-hour clock in either language. */
 export function time(ms: number): string {
   if (!ms) return "—";
   const d = new Date(ms);
-  return d.toLocaleString("en-GB", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+  const two = (value: number) => String(value).padStart(2, "0");
+  return `${two(d.getMonth() + 1)}/${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
+}
+
+/** Locale of the interface language, for chart axes and Intl dates. */
+export function dateLocale(): string {
+  return locale(currentLang());
 }
 
 export function countdown(targetMs: number | undefined, now: number): string {
@@ -96,11 +108,11 @@ const VENUE_LABEL: Record<string, string> = {
 };
 export const venueLabel = (venue: string) => VENUE_LABEL[venue] ?? venue;
 
-/** "binance:perp:USDT" -> "Binance Perp USDT"; a broker pool ("crossex") -> its name. */
+/** "binance:perp:USDT" -> "Binance Perp USDT" (永续 in Chinese); a broker pool ("crossex") -> its name. */
 export function marketLabel(market: string): string {
   const [venue = "", product, settle] = market.split(":");
   if (!product) return venueLabel(venue);
-  return [venueLabel(venue), product === "perp" ? "Perp" : "Spot", settle].filter(Boolean).join(" ");
+  return [venueLabel(venue), translate(product === "perp" ? "common.perp" : "common.spot"), settle].filter(Boolean).join(" ");
 }
 
 export function instrumentName(id: string): string {

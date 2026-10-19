@@ -3,7 +3,7 @@ package spot
 import (
 	"testing"
 
-	sdkcore "github.com/QuantProcessing/boltertrader/sdk"
+	sdkcore "github.com/QuantProcessing/keeluni/sdk"
 )
 
 func TestApplySDKRequestOpts(t *testing.T) {

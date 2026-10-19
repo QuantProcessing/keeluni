@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	hyperliquidperp "github.com/QuantProcessing/boltertrader/sdk/hyperliquid/perp"
-	hyperliquidspot "github.com/QuantProcessing/boltertrader/sdk/hyperliquid/spot"
+	"github.com/QuantProcessing/keeluni/exchange"
+	hyperliquidperp "github.com/QuantProcessing/keeluni/sdk/hyperliquid/perp"
+	hyperliquidspot "github.com/QuantProcessing/keeluni/sdk/hyperliquid/spot"
 	"github.com/shopspring/decimal"
 )
 

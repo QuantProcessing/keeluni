@@ -1,4 +1,4 @@
-// Wire types of the gateway /v1 API (see docs/gateway-api.md).
+// Wire types of the gateway /v1 API (see docs/api/gateway-rest.md).
 
 export type Product = "spot" | "perp";
 export type Side = "buy" | "sell";

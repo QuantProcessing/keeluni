@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	deribit "github.com/QuantProcessing/boltertrader/sdk/deribit"
+	"github.com/QuantProcessing/keeluni/exchange"
+	deribit "github.com/QuantProcessing/keeluni/sdk/deribit"
 )
 
 // deribitWSBackend serves Deribit streams over JSON-RPC. Each public topic

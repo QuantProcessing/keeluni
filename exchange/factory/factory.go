@@ -7,8 +7,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	"github.com/QuantProcessing/boltertrader/exchange/internal/factoryclient"
+	"github.com/QuantProcessing/keeluni/exchange"
+	"github.com/QuantProcessing/keeluni/exchange/internal/factoryclient"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )

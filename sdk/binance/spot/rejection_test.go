@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	sdkcore "github.com/QuantProcessing/boltertrader/sdk"
+	sdkcore "github.com/QuantProcessing/keeluni/sdk"
 )
 
 func TestOrderAPIErrorPreservesHTTPStatusForDefinitiveRejection(t *testing.T) {

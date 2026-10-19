@@ -13,7 +13,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/QuantProcessing/boltertrader/internal/wsdispatch"
+	"github.com/QuantProcessing/keeluni/internal/wsdispatch"
 
 	"github.com/gorilla/websocket"
 )

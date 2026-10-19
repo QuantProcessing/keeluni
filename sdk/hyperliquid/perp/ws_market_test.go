@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/sdk/hyperliquid"
+	"github.com/QuantProcessing/keeluni/sdk/hyperliquid"
 )
 
 func TestSubscribeL2Book(t *testing.T) {

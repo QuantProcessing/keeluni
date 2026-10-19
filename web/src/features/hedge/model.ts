@@ -3,6 +3,7 @@
 import type { Account, FundingPoint, Instrument, Position, Route } from "@/api/types";
 import { marketOf, tradingAccounts } from "@/lib/routes";
 import type { AccountLive } from "@/state/hooks";
+import { translate } from "@/i18n";
 
 export type Side = "buy" | "sell";
 
@@ -243,11 +244,11 @@ export function marginCheck(legs: Array<{ accountId: string; shared: boolean; no
   if (legs.length === 2 && legs[0]!.shared && legs[0]!.accountId === legs[1]!.accountId) {
     const total = need[0]! + need[1]!;
     const available = legs[0]!.available;
-    return { need, short: available !== undefined && total > available ? `Needs ${money(total)} margin; the pool has ${money(available)}` : undefined };
+    return { need, short: available !== undefined && total > available ? translate("margin.poolShort", { need: money(total), available: money(available) }) : undefined };
   }
   for (let i = 0; i < legs.length; i++) {
     const available = legs[i]!.available;
-    if (available !== undefined && need[i]! > available) return { need, short: `Leg ${i + 1} needs ${money(need[i]!)} margin; ${money(available)} available` };
+    if (available !== undefined && need[i]! > available) return { need, short: translate("margin.legShort", { n: i + 1, need: money(need[i]!), available: money(available) }) };
   }
   return { need, short: undefined };
 }

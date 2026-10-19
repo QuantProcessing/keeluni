@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	sessionCookie    = "bolter_session"
+	sessionCookie    = "keeluni_session"
 	sessionIdle      = 12 * time.Hour
 	sessionAbsolute  = 7 * 24 * time.Hour
 	argonTime        = 3

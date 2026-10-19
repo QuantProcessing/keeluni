@@ -4,12 +4,12 @@ import (
 	"context"
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	binanceperp "github.com/QuantProcessing/boltertrader/sdk/binance/perp"
-	binancespot "github.com/QuantProcessing/boltertrader/sdk/binance/spot"
-	bitget "github.com/QuantProcessing/boltertrader/sdk/bitget"
-	bybit "github.com/QuantProcessing/boltertrader/sdk/bybit"
-	"github.com/QuantProcessing/boltertrader/sdk/okx"
+	"github.com/QuantProcessing/keeluni/exchange"
+	binanceperp "github.com/QuantProcessing/keeluni/sdk/binance/perp"
+	binancespot "github.com/QuantProcessing/keeluni/sdk/binance/spot"
+	bitget "github.com/QuantProcessing/keeluni/sdk/bitget"
+	bybit "github.com/QuantProcessing/keeluni/sdk/bybit"
+	"github.com/QuantProcessing/keeluni/sdk/okx"
 	"github.com/shopspring/decimal"
 )
 

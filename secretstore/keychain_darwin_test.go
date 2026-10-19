@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/secretstore"
+	"github.com/QuantProcessing/keeluni/secretstore"
 )
 
 type recordingRunner struct {

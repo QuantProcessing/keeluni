@@ -3,7 +3,7 @@ package perp
 import (
 	"context"
 
-	"github.com/QuantProcessing/boltertrader/sdk/hyperliquid"
+	"github.com/QuantProcessing/keeluni/sdk/hyperliquid"
 )
 
 // PlaceOrder via WS

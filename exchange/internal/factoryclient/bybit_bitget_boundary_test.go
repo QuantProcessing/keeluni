@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	bitget "github.com/QuantProcessing/boltertrader/sdk/bitget"
+	"github.com/QuantProcessing/keeluni/exchange"
+	bitget "github.com/QuantProcessing/keeluni/sdk/bitget"
 	"github.com/shopspring/decimal"
 )
 

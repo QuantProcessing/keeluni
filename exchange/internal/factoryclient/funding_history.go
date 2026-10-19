@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
+	"github.com/QuantProcessing/keeluni/exchange"
 )
 
 const fundingHistoryOperation = "FundingHistory.Load"

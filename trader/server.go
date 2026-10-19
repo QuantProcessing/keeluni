@@ -48,7 +48,7 @@ func backendProxy(target *url.URL, token, prefix, name string) *httputil.Reverse
 			request.Out.URL.Path = strings.TrimPrefix(request.In.URL.Path, prefix)
 			request.Out.URL.RawPath = ""
 			request.Out.Header.Del("Cookie")
-			request.Out.Header.Del("X-Bolter")
+			request.Out.Header.Del("X-KeelUni")
 			request.Out.Header.Set("Authorization", "Bearer "+token)
 		},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
@@ -101,7 +101,7 @@ func (server *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// CSRF: every state-changing API call must come from our own origin
 		// and carry a header a cross-site form cannot set.
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			if !sameOrigin(r) || r.Header.Get("X-Bolter") != "1" {
+			if !sameOrigin(r) || r.Header.Get("X-KeelUni") != "1" {
 				writeError(w, http.StatusForbidden, "CSRF", "cross-origin request refused")
 				return
 			}

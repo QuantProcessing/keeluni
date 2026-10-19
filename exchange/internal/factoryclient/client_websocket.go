@@ -1,6 +1,6 @@
 package factoryclient
 
-import "github.com/QuantProcessing/boltertrader/exchange"
+import "github.com/QuantProcessing/keeluni/exchange"
 
 func (client *binanceSpotClient) WebSocket() exchange.SpotWebSocket     { return client.ws }
 func (client *binancePerpClient) WebSocket() exchange.PerpWebSocket     { return client.ws }

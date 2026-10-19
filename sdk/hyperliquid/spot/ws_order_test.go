@@ -3,7 +3,7 @@ package spot
 import (
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/sdk/hyperliquid"
+	"github.com/QuantProcessing/keeluni/sdk/hyperliquid"
 )
 
 func TestWSOrderCompanion_BuildCancelOrderAction(t *testing.T) {

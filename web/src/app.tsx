@@ -18,6 +18,7 @@ import { WorkspaceProvider } from "@/state/workspace";
 import { Mark, Wordmark } from "@/ui/logo";
 import { PrimaryButton, cx } from "@/ui/primitives";
 import { ToastProvider } from "@/ui/toast";
+import { I18nProvider, Interpolate, LANGS, useI18n, useT } from "@/i18n";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 5_000 } },
@@ -25,11 +26,13 @@ const queryClient = new QueryClient({
 
 export function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        <Gate />
-      </ToastProvider>
-    </QueryClientProvider>
+    <I18nProvider>
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          <Gate />
+        </ToastProvider>
+      </QueryClientProvider>
+    </I18nProvider>
   );
 }
 
@@ -56,6 +59,7 @@ function Gate() {
 }
 
 function Shell() {
+  const t = useT();
   const path = usePath();
   const apps = useQuery({ queryKey: ["apps"], queryFn: api.apps, staleTime: Infinity, retry: false });
   const hedge = path.startsWith("/hedge");
@@ -72,7 +76,7 @@ function Shell() {
     return (
       <div className="flex h-full flex-col gap-[3px]">
         <TopBar hedge={false} />
-        <main className="flex flex-1 items-center justify-center bg-surface text-muted">The hedge app is not deployed with this trader.</main>
+        <main className="flex flex-1 items-center justify-center bg-surface text-muted">{t("hedge.notDeployed")}</main>
       </div>
     );
   }
@@ -80,6 +84,7 @@ function Shell() {
 }
 
 function Login() {
+  const t = useT();
   const client = useQueryClient();
   const [password, setPassword] = useState("");
   const [visible, setVisible] = useState(false);
@@ -98,7 +103,7 @@ function Login() {
       client.setQueryData(["session"], { authenticated: true });
     } catch (e) {
       const status = e instanceof ApiError ? e.status : 0;
-      setError(status === 401 ? "Incorrect password" : status === 429 ? "Too many attempts. Wait a minute and try again." : (e as Error).message);
+      setError(status === 401 ? t("login.incorrect") : status === 429 ? t("login.throttled") : (e as Error).message);
       setPassword("");
     } finally {
       setBusy(false);
@@ -110,10 +115,10 @@ function Login() {
       <main className="flex flex-1 items-center justify-center px-4">
         <form onSubmit={submit} className="w-full max-w-[320px]">
           <Mark size={40} />
-          <h1 className="mt-5 text-lg leading-tight">Sign in to Bolter</h1>
-          <p className="mt-1.5 text-muted">Your terminal for every connected exchange.</p>
+          <h1 className="mt-5 text-lg leading-tight">{t("login.title")}</h1>
+          <p className="mt-1.5 text-muted">{t("brand.tagline")}</p>
 
-          <label htmlFor="password" className="mt-7 block text-muted">Password</label>
+          <label htmlFor="password" className="mt-7 block text-muted">{t("login.password")}</label>
           <div className={cx("mt-1.5 flex h-10 items-center rounded-lg border bg-transparent pr-1 transition-colors", error ? "border-down/70" : "border-line focus-within:border-accent")}>
             <input
               id="password"
@@ -132,7 +137,7 @@ function Login() {
             <button
               type="button"
               onClick={() => setVisible(!visible)}
-              aria-label={visible ? "Hide password" : "Show password"}
+              aria-label={visible ? t("login.hide") : t("login.show")}
               className="flex size-8 items-center justify-center rounded-md text-muted hover:text-text"
             >
               <EyeGlyph open={!visible} />
@@ -142,15 +147,15 @@ function Login() {
             {error ? (
               <span id="login-error" className="text-down">{error}</span>
             ) : capsLock ? (
-              <span className="text-text-2">Caps Lock is on</span>
+              <span className="text-text-2">{t("login.capsLock")}</span>
             ) : null}
           </div>
 
-          <PrimaryButton type="submit" className="mt-3" disabled={busy || !password}>{busy ? "Signing in…" : "Sign in"}</PrimaryButton>
+          <PrimaryButton type="submit" className="mt-3" disabled={busy || !password}>{busy ? t("login.submitting") : t("login.submit")}</PrimaryButton>
         </form>
       </main>
       <footer className="px-4 pb-6 text-center text-muted">
-        The first start prints a password to the trader log. Change it with <code className="text-text-2">trader passwd</code>.
+        <Interpolate text={t("login.footer")} values={{ command: <code className="text-text-2">trader passwd</code> }} />
       </footer>
     </div>
   );
@@ -166,13 +171,12 @@ function EyeGlyph({ open }: { open: boolean }) {
   );
 }
 
-const REPO = "https://github.com/QuantProcessing/boltertrader";
+/** The documentation site (GitHub Pages, built from docs/ by .github/workflows/docs.yml). */
+const DOCS = "https://quantprocessing.github.io/keeluni/";
 const MORE_LINKS = [
-  { label: "Docs", href: REPO + "#readme" },
-  { label: "Gateway API", href: REPO + "/blob/master/docs/gateway-api.md" },
-  { label: "Design", href: REPO + "/blob/master/DESIGN.md" },
-  { label: "Report an Issue", href: REPO + "/issues" },
-];
+  { key: "nav.docs", href: DOCS },
+  { key: "nav.api", href: DOCS + "api/" },
+] as const;
 
 /** Panels are flat, 5px-rounded tiles; the canvas shows through 3px gaps. */
 const PANEL = "shrink-0 overflow-hidden rounded-md min-[1001px]:shrink";
@@ -217,12 +221,13 @@ function NavLink({ href, active, children }: { href: string; active: boolean; ch
 }
 
 function TopBar({ hedge, hedgeEnabled = true }: { hedge: boolean; hedgeEnabled?: boolean }) {
+  const t = useT();
   return (
     <header className="flex h-14 shrink-0 items-center bg-surface px-4">
-      <a href="/" aria-label="Bolter" onClick={(event) => { event.preventDefault(); navigate("/"); }} className="mr-[18px] flex items-center"><Wordmark /></a>
-      <nav aria-label="Main" className="flex items-center gap-2">
-        <NavLink href="/" active={!hedge}>Trade</NavLink>
-        {(hedge || hedgeEnabled) && <NavLink href="/hedge" active={hedge}>Hedge</NavLink>}
+      <a href="/" aria-label="KeelUni" onClick={(event) => { event.preventDefault(); navigate("/"); }} className="mr-[18px] flex items-center"><Wordmark /></a>
+      <nav aria-label={t("nav.main")} className="flex items-center gap-2">
+        <NavLink href="/" active={!hedge}>{t("nav.trade")}</NavLink>
+        {(hedge || hedgeEnabled) && <NavLink href="/hedge" active={hedge}>{t("nav.hedge")}</NavLink>}
         <MoreMenu />
       </nav>
       <div className="ml-auto flex items-center gap-2">
@@ -234,11 +239,12 @@ function TopBar({ hedge, hedgeEnabled = true }: { hedge: boolean; hedgeEnabled?:
 }
 
 function MoreMenu() {
+  const t = useT();
   const [open, setOpen] = useState(false);
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger className={cx("group flex items-center gap-2 px-2.5 py-2 transition-colors hover:text-accent-hover", open ? "text-accent-hover" : "text-text")}>
-        More
+        {t("nav.more")}
         <svg viewBox="0 0 14 9" width="14" height="9" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden className={cx("text-muted transition-transform group-hover:text-accent-hover", open && "rotate-180 text-accent-hover")}>
           <path d="m1 1.5 6 6 6-6" />
         </svg>
@@ -247,14 +253,14 @@ function MoreMenu() {
         <Popover.Content align="start" sideOffset={2} className="z-40 min-w-[140px] rounded-[10px] border border-line bg-overlay py-1">
           {MORE_LINKS.map((link) => (
             <a
-              key={link.label}
+              key={link.key}
               href={link.href}
               target="_blank"
               rel="noopener noreferrer"
               onClick={() => setOpen(false)}
               className="block px-2.5 py-[5px] leading-6 text-text transition-colors hover:text-accent-hover focus-visible:text-accent-hover"
             >
-              {link.label}
+              {t(link.key)}
             </a>
           ))}
         </Popover.Content>
@@ -264,6 +270,7 @@ function MoreMenu() {
 }
 
 function SessionMenu() {
+  const { t, lang, setLang } = useI18n();
   const [open, setOpen] = useState(false);
   const logout = async () => {
     setOpen(false);
@@ -274,7 +281,7 @@ function SessionMenu() {
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger
-        aria-label="Session"
+        aria-label={t("session.menu")}
         className={cx("flex size-8 items-center justify-center rounded-lg border border-line transition-colors hover:bg-overlay hover:text-text", open ? "bg-overlay text-text" : "text-muted")}
       >
         <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden>
@@ -284,10 +291,26 @@ function SessionMenu() {
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content align="end" sideOffset={6} className="z-40 w-52 rounded-[10px] border border-line bg-overlay py-1">
-          <div className="px-2.5 py-[5px] leading-6 text-muted">Signed in to this trader</div>
+          <div className="px-2.5 py-[5px] leading-6 text-muted">{t("session.signedIn")}</div>
+          <div className="mx-2.5 h-px bg-line" />
+          <div className="flex items-center gap-2 px-2.5 py-[5px] leading-6">
+            <span className="text-muted">{t("session.language")}</span>
+            <span className="ml-auto flex rounded-md bg-raised p-0.5">
+              {LANGS.map((item) => (
+                <button
+                  key={item.value}
+                  onClick={() => setLang(item.value)}
+                  aria-pressed={lang === item.value}
+                  className={cx("rounded px-2 leading-5", lang === item.value ? "bg-line-strong/60 text-text" : "text-muted hover:text-text")}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </span>
+          </div>
           <div className="mx-2.5 h-px bg-line" />
           <button onClick={logout} className="block w-full px-2.5 py-[5px] text-left leading-6 text-text transition-colors hover:text-down focus-visible:text-down">
-            Sign out
+            {t("session.signOut")}
           </button>
         </Popover.Content>
       </Popover.Portal>
@@ -296,12 +319,13 @@ function SessionMenu() {
 }
 
 function StatusBar() {
+  const t = useT();
   const state = useConnection();
   return (
     <footer className="flex h-6 shrink-0 items-center px-2">
       <span className={cx("flex items-center gap-1.5 rounded-md border px-2 text-xs", state === "online" ? "border-up/60 text-up" : "border-down/60 text-down")}>
         <span className={cx("size-1.5 rounded-full", state === "online" ? "bg-up" : "bg-down")} />
-        {state === "online" ? "Online" : state === "connecting" ? "Connecting" : "Reconnecting"}
+        {state === "online" ? t("status.online") : state === "connecting" ? t("status.connecting") : t("status.reconnecting")}
       </span>
     </footer>
   );

@@ -6,6 +6,7 @@ import { usd, venueLabel } from "@/lib/format";
 import { accountEquity, accountName, brokersReaching, tradingAccounts } from "@/lib/routes";
 import { useWorkspace } from "@/state/workspace";
 import { PrimaryButton, cx } from "@/ui/primitives";
+import { useT } from "@/i18n";
 
 /** Accounts that can trade instrument, and brokers that could once connected. */
 export function useAccountChoices(instrument: Instrument | undefined) {
@@ -35,6 +36,7 @@ export function AccountMenu({ instrument, account, candidates, unconnectedBroker
   className?: string;
   children: (open: boolean) => ReactNode;
 }) {
+  const t = useT();
   const { openConnect } = useWorkspace();
   const [open, setOpen] = useState(false);
   return (
@@ -44,7 +46,7 @@ export function AccountMenu({ instrument, account, candidates, unconnectedBroker
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content align="end" sideOffset={4} className="z-40 w-[288px] rounded-[10px] border border-line bg-overlay py-1">
-          <div className="px-3 pt-1.5 pb-1 text-muted">Trade {instrument?.symbol} with</div>
+          <div className="px-3 pt-1.5 pb-1 text-muted">{t("accounts.tradeWith", { symbol: instrument?.symbol ?? "" })}</div>
           {candidates.map((item) => (
             <AccountOption key={item.id} account={item} selected={item.id === account?.id} onChoose={() => { onChoose(item.id); setOpen(false); }} />
           ))}
@@ -54,8 +56,8 @@ export function AccountMenu({ instrument, account, candidates, unconnectedBroker
               onClick={() => { setOpen(false); openConnect(broker); }}
               className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-accent hover:bg-raised"
             >
-              + Connect {venueLabel(broker)}
-              <span className="ml-auto text-muted">one pool, many venues</span>
+              {t("accounts.connectBroker", { broker: venueLabel(broker) })}
+              <span className="ml-auto text-muted">{t("accounts.onePool")}</span>
             </button>
           ))}
         </Popover.Content>
@@ -66,11 +68,12 @@ export function AccountMenu({ instrument, account, candidates, unconnectedBroker
 
 /** Stream dot and name of an account. */
 export function AccountLabel({ account }: { account: Account }) {
+  const t = useT();
   const { live } = useWorkspace();
   const status = live[account.id]?.status;
   return (
     <>
-      <span className={cx("size-1.5 shrink-0 rounded-full", status ? (status.connected ? "bg-up" : "bg-down") : "bg-muted")} title={status ? (status.connected ? "Account stream live" : "Account stream down") : undefined} />
+      <span className={cx("size-1.5 shrink-0 rounded-full", status ? (status.connected ? "bg-up" : "bg-down") : "bg-muted")} title={status ? (status.connected ? t("accounts.streamLive") : t("accounts.streamDown")) : undefined} />
       <span className="truncate">{accountName(account)}</span>
     </>
   );
@@ -89,16 +92,17 @@ export function AccountPicker({ instrument, account, candidates, unconnectedBrok
   unconnectedBrokers: string[];
   onChoose: (id: string) => void;
 }) {
+  const t = useT();
   const choosable = candidates.length > 1 || unconnectedBrokers.length > 0;
   const row = (
     <>
       <AccountLabel account={account} />
-      {account.kind === "broker" && <span className="shrink-0 text-muted">· Cross-exchange</span>}
+      {account.kind === "broker" && <span className="shrink-0 text-muted">· {t("common.crossExchange")}</span>}
     </>
   );
   return (
     <div className="flex h-8 items-center gap-2">
-      <span className="shrink-0 text-muted">Account</span>
+      <span className="shrink-0 text-muted">{t("common.account")}</span>
       {choosable ? (
         <AccountMenu
           instrument={instrument} account={account} candidates={candidates} unconnectedBrokers={unconnectedBrokers} onChoose={onChoose}
@@ -114,6 +118,7 @@ export function AccountPicker({ instrument, account, candidates, unconnectedBrok
 }
 
 export function AccountOption({ account, selected, onChoose }: { account: Account; selected: boolean; onChoose: () => void }) {
+  const t = useT();
   const { live } = useWorkspace();
   const equity = accountEquity(account, live[account.id]);
   return (
@@ -121,11 +126,11 @@ export function AccountOption({ account, selected, onChoose }: { account: Accoun
       <span className="w-3 shrink-0">{selected ? "✓" : ""}</span>
       <span className="flex min-w-0 flex-col">
         <span className="truncate">{accountName(account)}</span>
-        <span className="text-muted">{account.kind === "broker" ? "Cross-exchange margin" : "Native"}</span>
+        <span className="text-muted">{account.kind === "broker" ? t("common.crossExchangeMargin") : t("common.native")}</span>
       </span>
       <span className="ml-auto shrink-0 text-right">
         <span className="block">{equity ? usd(equity.available) : "—"}</span>
-        <span className="block text-muted">available</span>
+        <span className="block text-muted">{t("common.available")}</span>
       </span>
     </button>
   );
@@ -137,14 +142,15 @@ export function AccountOption({ account, selected, onChoose }: { account: Accoun
  * reaches it.
  */
 export function NoAccount({ instrument, unconnectedBrokers, compact }: { instrument: Instrument; unconnectedBrokers: string[]; compact?: boolean }) {
+  const t = useT();
   const { venues, openConnect } = useWorkspace();
-  const where = `${venueLabel(instrument.venue)} ${instrument.product === "perp" ? "perps" : "spot"}`;
+  const where = t(instrument.product === "perp" ? "accounts.wherePerps" : "accounts.whereSpot", { venue: venueLabel(instrument.venue) });
   const native = venues.some((item) => item.venue === instrument.venue && item.kind === "native");
   if (compact) {
     return (
       <span className="flex min-w-0 items-center gap-2">
-        <span className="truncate text-muted">No account trades {where}</span>
-        {native && <button onClick={() => openConnect(instrument.venue)} className="shrink-0 text-accent hover:underline">Connect {venueLabel(instrument.venue)}</button>}
+        <span className="truncate text-muted">{t("accounts.noneTradesShort", { where })}</span>
+        {native && <button onClick={() => openConnect(instrument.venue)} className="shrink-0 text-accent hover:underline">{t("accounts.connectVenue", { venue: venueLabel(instrument.venue) })}</button>}
         {unconnectedBrokers.map((broker) => (
           <button key={broker} onClick={() => openConnect(broker)} className="shrink-0 text-accent hover:underline">{venueLabel(broker)}</button>
         ))}
@@ -157,15 +163,15 @@ export function NoAccount({ instrument, unconnectedBrokers, compact }: { instrum
         <span className="text-md">{instrument.symbol}</span>
         <span className="text-muted">{venueLabel(instrument.venue)}</span>
       </div>
-      <p className="text-text-2">No connected account trades {where}.</p>
-      {native && <PrimaryButton onClick={() => openConnect(instrument.venue)}>Connect {venueLabel(instrument.venue)}</PrimaryButton>}
+      <p className="text-text-2">{t("accounts.noneTrades", { where })}</p>
+      {native && <PrimaryButton onClick={() => openConnect(instrument.venue)}>{t("accounts.connectVenue", { venue: venueLabel(instrument.venue) })}</PrimaryButton>}
       {unconnectedBrokers.map((broker) => (
         <button key={broker} onClick={() => openConnect(broker)} className="h-10 rounded-lg border border-line text-text hover:bg-raised">
-          Connect {venueLabel(broker)}
-          <span className="ml-1.5 text-muted">· trades {venueLabel(instrument.venue)} from one pool</span>
+          {t("accounts.connectVenue", { venue: venueLabel(broker) })}
+          <span className="ml-1.5 text-muted">{t("accounts.brokerReaches", { venue: venueLabel(instrument.venue) })}</span>
         </button>
       ))}
-      <p className="text-muted">The chart, book and trades stay live without an account.</p>
+      <p className="text-muted">{t("accounts.marketDataLive")}</p>
     </>
   );
 }

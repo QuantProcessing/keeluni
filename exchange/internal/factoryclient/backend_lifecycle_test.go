@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
+	"github.com/QuantProcessing/keeluni/exchange"
 )
 
 func TestBackendLifecyclePairsGapRecoveryAndMarksResync(t *testing.T) {

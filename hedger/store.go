@@ -195,12 +195,12 @@ func (store *Store) StartAction(ctx context.Context, action Action, status strin
 }
 
 // SetGroupStatus updates a group's status and problem text.
-func (store *Store) SetGroupStatus(ctx context.Context, groupID, status, problem string) error {
+func (store *Store) SetGroupStatus(ctx context.Context, groupID, status string, problem Text) error {
 	closed := "closed_at"
 	if status == StatusClosed || status == StatusFailed {
 		closed = "coalesce(closed_at, now())"
 	}
-	_, err := store.pool.Exec(ctx, `update hedge_groups set status=$2, problem=$3, updated_at=now(), closed_at=`+closed+` where id=$1`, groupID, status, problem)
+	_, err := store.pool.Exec(ctx, `update hedge_groups set status=$2, problem=$3, updated_at=now(), closed_at=`+closed+` where id=$1`, groupID, status, problem.encode())
 	return err
 }
 
@@ -218,10 +218,12 @@ const groupColumns = `g.id, g.label, g.note, g.status, g.policy, g.match, g.rati
 func scanGroup(row pgx.Row) (Group, error) {
 	var group Group
 	var ratio string
-	if err := row.Scan(&group.ID, &group.Label, &group.Note, &group.Status, &group.Policy, &group.Match, &ratio, &group.Problem, &group.CreatedAt, &group.UpdatedAt, &group.ClosedAt); err != nil {
+	var problem string
+	if err := row.Scan(&group.ID, &group.Label, &group.Note, &group.Status, &group.Policy, &group.Match, &ratio, &problem, &group.CreatedAt, &group.UpdatedAt, &group.ClosedAt); err != nil {
 		return Group{}, err
 	}
 	group.Ratio = dec(&ratio)
+	group.Problem = decodeText(problem)
 	return group, nil
 }
 
@@ -306,7 +308,8 @@ func scanAction(row pgx.Row) (Action, error) {
 	var action Action
 	var maker *int16
 	var limit, t0, t1 string
-	if err := row.Scan(&action.ID, &action.GroupID, &action.Kind, &action.Mode, &maker, &limit, &action.TIF, &t0, &t1, &action.Status, &action.Error, &action.CreatedAt, &action.UpdatedAt); err != nil {
+	var failure string
+	if err := row.Scan(&action.ID, &action.GroupID, &action.Kind, &action.Mode, &maker, &limit, &action.TIF, &t0, &t1, &action.Status, &failure, &action.CreatedAt, &action.UpdatedAt); err != nil {
 		return Action{}, err
 	}
 	if maker != nil {
@@ -314,6 +317,7 @@ func scanAction(row pgx.Row) (Action, error) {
 		action.MakerLeg = &leg
 	}
 	action.LimitPrice, action.Target[0], action.Target[1] = dec(&limit), dec(&t0), dec(&t1)
+	action.Error = decodeText(failure)
 	return action, nil
 }
 
@@ -345,8 +349,8 @@ func (store *Store) queryActions(ctx context.Context, query string, args ...any)
 }
 
 // FinishAction sets a working action's final status.
-func (store *Store) FinishAction(ctx context.Context, actionID, status, message string) error {
-	_, err := store.pool.Exec(ctx, `update hedge_actions set status=$2, error=$3, updated_at=now() where id=$1 and status='working'`, actionID, status, message)
+func (store *Store) FinishAction(ctx context.Context, actionID, status string, message Text) error {
+	_, err := store.pool.Exec(ctx, `update hedge_actions set status=$2, error=$3, updated_at=now() where id=$1 and status='working'`, actionID, status, message.encode())
 	return err
 }
 
@@ -369,7 +373,7 @@ func (store *Store) UpdateOrder(ctx context.Context, order Order) error {
 	_, err := store.pool.Exec(ctx, `update hedge_orders set state=$2, venue_order_id=case when $3='' then venue_order_id else $3 end,
 		filled=greatest(filled, $4::numeric), avg_price=coalesce($5::numeric, avg_price), error=$6, updated_at=now()
 		where client_order_id=$1`,
-		order.ClientOrderID, order.State, order.VenueOrderID, order.Filled.String(), nullDec(order.AvgPrice), order.Error)
+		order.ClientOrderID, order.State, order.VenueOrderID, order.Filled.String(), nullDec(order.AvgPrice), order.Error.encode())
 	return err
 }
 
@@ -378,14 +382,15 @@ const orderColumns = `client_order_id, group_id, action_id, leg, role, account_i
 
 func scanOrder(row pgx.Row) (Order, error) {
 	var order Order
-	var qty, price, ref, filled, avg string
+	var qty, price, ref, filled, avg, orderError string
 	var leg int16
 	if err := row.Scan(&order.ClientOrderID, &order.GroupID, &order.ActionID, &leg, &order.Role, &order.AccountID, &order.Instrument, &order.Side, &order.Type,
-		&qty, &price, &ref, &order.TIF, &order.ReduceOnly, &order.State, &order.VenueOrderID, &filled, &avg, &order.Error, &order.CreatedAt, &order.UpdatedAt); err != nil {
+		&qty, &price, &ref, &order.TIF, &order.ReduceOnly, &order.State, &order.VenueOrderID, &filled, &avg, &orderError, &order.CreatedAt, &order.UpdatedAt); err != nil {
 		return Order{}, err
 	}
 	order.Leg = int(leg)
 	order.Qty, order.Price, order.RefPrice, order.Filled, order.AvgPrice = dec(&qty), dec(&price), dec(&ref), dec(&filled), dec(&avg)
+	order.Error = decodeText(orderError)
 	return order, nil
 }
 
@@ -468,11 +473,16 @@ func (store *Store) Fills(ctx context.Context, groupID string) ([]Fill, error) {
 // ---------------------------------------------------------------------------
 
 // AddEvent appends to a group's audit trail.
-func (store *Store) AddEvent(ctx context.Context, groupID, level, message string) error {
-	if len(message) > 1000 {
-		message = message[:1000]
+func (store *Store) AddEvent(ctx context.Context, groupID, level string, message Text) error {
+	// Bounded so a runaway venue message cannot bloat the log: an oversized
+	// text keeps its code and parameters but loses its English rendering.
+	encoded := message.encode()
+	if len(encoded) > 4000 {
+		message.Message = message.Message[:min(len(message.Message), 500)]
+		message.Reason, message.Also = nil, nil
+		encoded = message.encode()
 	}
-	_, err := store.pool.Exec(ctx, `insert into hedge_events (group_id, level, message) values ($1,$2,$3)`, groupID, level, message)
+	_, err := store.pool.Exec(ctx, `insert into hedge_events (group_id, level, message) values ($1,$2,$3)`, groupID, level, encoded)
 	return err
 }
 
@@ -486,9 +496,11 @@ func (store *Store) Events(ctx context.Context, groupID string, limit int) ([]Ev
 	var events []Event
 	for rows.Next() {
 		var event Event
-		if err := rows.Scan(&event.ID, &event.GroupID, &event.At, &event.Level, &event.Message); err != nil {
+		var message string
+		if err := rows.Scan(&event.ID, &event.GroupID, &event.At, &event.Level, &message); err != nil {
 			return nil, err
 		}
+		event.Message = decodeText(message)
 		events = append(events, event)
 	}
 	return events, rows.Err()

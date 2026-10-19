@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	sdkcore "github.com/QuantProcessing/boltertrader/sdk"
-	binanceperp "github.com/QuantProcessing/boltertrader/sdk/binance/perp"
+	"github.com/QuantProcessing/keeluni/exchange"
+	sdkcore "github.com/QuantProcessing/keeluni/sdk"
+	binanceperp "github.com/QuantProcessing/keeluni/sdk/binance/perp"
 	"github.com/shopspring/decimal"
 )
 

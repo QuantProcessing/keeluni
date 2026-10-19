@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	exchanges "github.com/QuantProcessing/boltertrader/internal/errs"
+	exchanges "github.com/QuantProcessing/keeluni/internal/errs"
 )
 
 type classifiedTransportError struct {

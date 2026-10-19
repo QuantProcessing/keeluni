@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
+	"github.com/QuantProcessing/keeluni/exchange"
 )
 
 func TestLighterCandlesDerivesNativeWindowWhenPortableBoundsAreOmitted(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"sync"
 
-	bitget "github.com/QuantProcessing/boltertrader/sdk/bitget"
+	bitget "github.com/QuantProcessing/keeluni/sdk/bitget"
 )
 
 const accountWideNative = "*"

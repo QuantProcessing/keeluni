@@ -5,6 +5,7 @@
 // the loaded bars, extrapolating by the interval before the first and after
 // the last bar so drawings can extend into the future.
 
+import { translate } from "@/i18n";
 import type {
   IChartApi, IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesApi, ISeriesPrimitive, ISeriesPrimitiveAxisView,
   Logical, PrimitiveHoveredItem, SeriesAttachedParameter, Time,
@@ -561,7 +562,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
     const bars = Math.round((this.logicalOf(q.time) ?? 0) - (this.logicalOf(p.time) ?? 0));
     const format = (value: number) => this.series?.priceFormatter().format(value) ?? value.toFixed(2);
     const sign = change > 0 ? "+" : change < 0 ? "-" : "";
-    const lines = [`${sign}${format(Math.abs(change))} (${sign}${Math.abs(percent).toFixed(2)}%)`, `${bars} bars, ${duration(Math.abs(q.time - p.time))}`];
+    const lines = [`${sign}${format(Math.abs(change))} (${sign}${Math.abs(percent).toFixed(2)}%)`, translate("chart.measureBars", { bars, duration: duration(Math.abs(q.time - p.time)) })];
     const boxWidth = Math.max(...lines.map((text) => ctx.measureText(text).width)) + 16;
     const boxHeight = 36;
     const bx = left + w / 2 - boxWidth / 2;
