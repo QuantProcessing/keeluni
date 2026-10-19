@@ -54,7 +54,11 @@ export function HedgeTicket({ pair, matching, onAccount }: {
   const [size, setSize] = useState("");
   const [maker, setMaker] = useState<0 | 1>(0);
   const [limitPrice, setLimitPrice] = useState("");
-  const [postOnly, setPostOnly] = useState(true);
+  // Post only belongs to the resting order, chosen per resting leg: picking
+  // the other leg to rest does not carry the choice over.
+  const [postOnlyByLeg, setPostOnlyByLeg] = useState<[boolean, boolean]>([true, true]);
+  const postOnly = postOnlyByLeg[maker];
+  const setPostOnly = (value: boolean) => setPostOnlyByLeg((current) => (maker === 0 ? [value, current[1]] : [current[0], value]));
   const [policy, setPolicy] = useState<"unwind" | "hold">("unwind");
   const [label, setLabel] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -171,7 +175,9 @@ export function HedgeTicket({ pair, matching, onAccount }: {
                   </button>
                 ))}
               </div>
-              <p className="mt-1 text-muted">Each fill is hedged at market on leg {2 - maker}.</p>
+              <p className="mt-1 text-muted">
+                {venueLabel(instruments[maker]?.venue ?? "")} rests a limit order; each fill is hedged with a market order on {venueLabel(instruments[1 - maker]?.venue ?? "")}.
+              </p>
             </div>
             <label className="flex h-10 items-center gap-2 rounded-lg border border-line px-3 focus-within:border-line-strong">
               <span className="text-muted">Price</span>
@@ -185,9 +191,10 @@ export function HedgeTicket({ pair, matching, onAccount }: {
                 </button>
               ))}
             </div>
-            <label className="flex items-center gap-2">
+            <label className="flex items-center gap-2" title="The resting order is cancelled rather than filled at once if it would cross the book. The hedge leg always trades at market.">
               <input type="checkbox" checked={postOnly} onChange={(event) => setPostOnly(event.target.checked)} className="accent-[#50d2c1]" />
-              Post only <span className="text-muted">(never takes)</span>
+              Post only
+              <span className="text-muted">· {venueLabel(instruments[maker]?.venue ?? "")} resting order only</span>
             </label>
           </>
         )}
@@ -205,7 +212,7 @@ export function HedgeTicket({ pair, matching, onAccount }: {
         </div>
 
         {/* The legs of this order: where each trades, its leverage, and what it would do. One grid so both legs align. */}
-        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5">
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1 gap-y-0.5">
           {([0, 1] as const).map((i) => {
             const instrument = instruments[i];
             const isMaker = mode === "limit" && i === maker;
@@ -280,6 +287,9 @@ export function HedgeTicket({ pair, matching, onAccount }: {
   );
 }
 
+/** The account cell's box: identical for a menu, a fixed account and no account. */
+const cell = "flex h-8 w-full min-w-0 items-center gap-2 rounded-lg px-2";
+
 /**
  * One leg of the order, on the ticket's three-column grid so both legs line
  * up: side and leg number · the account it trades on (a menu of the accounts
@@ -303,25 +313,29 @@ function LegRow({ index, leg, instrument, account, leverage, onAccount, onLevera
   const long = leg.side === "buy";
   return (
     <>
-      <span className="flex h-8 items-center gap-1.5 whitespace-nowrap">
-        <span className={cx("w-9", long ? "text-up" : "text-down")}>{long ? "Long" : "Short"}</span>
-        <span className="text-muted" title={`Leg ${index + 1}`}>{venueLabel(instrument?.venue ?? leg.inst.split(":")[0] ?? "")}</span>
+      <span className="flex h-8 w-[118px] min-w-0 items-center gap-1.5 whitespace-nowrap">
+        <span className={cx("w-9 shrink-0", long ? "text-up" : "text-down")}>{long ? "Long" : "Short"}</span>
+        <span className="truncate text-muted" title={`Leg ${index + 1}`}>{venueLabel(instrument?.venue ?? leg.inst.split(":")[0] ?? "")}</span>
       </span>
+      {/* Every account cell has the same box (padding, chevron slot), menu or not, so both legs line up. */}
       {instrument && candidates.length === 0 ? (
-        <span className="flex min-w-0 justify-end"><NoAccount instrument={instrument} unconnectedBrokers={unconnectedBrokers} compact /></span>
+        <span className={cell}><NoAccount instrument={instrument} unconnectedBrokers={unconnectedBrokers} compact /></span>
       ) : account && candidates.length === 1 && unconnectedBrokers.length === 0 ? (
         // The only account that trades this market: nothing to choose.
-        <span className="flex h-8 min-w-0 items-center justify-end gap-2 px-2"><AccountLabel account={account} /></span>
+        <span className={cell} title="The only connected account that trades this market">
+          <AccountLabel account={account} />
+          <span className="ml-auto w-3 shrink-0" />
+        </span>
       ) : (
         <AccountMenu
           instrument={instrument} account={account} candidates={candidates} unconnectedBrokers={unconnectedBrokers} onChoose={onAccount}
           ariaLabel={`Leg ${index + 1} account`}
-          className="flex h-8 min-w-0 items-center justify-end gap-2 rounded-lg px-2 hover:bg-raised"
+          className={cx(cell, "text-left hover:bg-raised")}
         >
           {(menuOpen) => (
             <>
               {account ? <AccountLabel account={account} /> : <span className="truncate text-accent">Choose account</span>}
-              <span className="shrink-0 text-muted">{menuOpen ? "▴" : "▾"}</span>
+              <span className="ml-auto w-3 shrink-0 text-right text-muted">{menuOpen ? "▴" : "▾"}</span>
             </>
           )}
         </AccountMenu>
@@ -341,7 +355,7 @@ function LegRow({ index, leg, instrument, account, leverage, onAccount, onLevera
       {outcome && (
         <>
           <span className={cx("pl-[42px] whitespace-nowrap", long ? "text-up" : "text-down")}>{num(outcome.qty)} {instrument?.base}</span>
-          <span className="truncate text-right text-muted">
+          <span className="truncate px-2 text-muted">
             {outcome.thin && <span className="text-down" title="The visible book cannot fill this size: the average is a lower bound">thin · </span>}
             {outcome.detail}
           </span>

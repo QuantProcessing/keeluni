@@ -409,7 +409,10 @@ function CloseDialog({ group, onDone }: { group: GroupView; onDone: () => void }
   const [mode, setMode] = useState<"market" | "limit">("market");
   const [maker, setMaker] = useState<0 | 1>(0);
   const [limitPrice, setLimitPrice] = useState("");
-  const [postOnly, setPostOnly] = useState(true);
+  // Post only applies to the resting order, chosen per resting leg.
+  const [postOnlyByLeg, setPostOnlyByLeg] = useState<[boolean, boolean]>([true, true]);
+  const postOnly = postOnlyByLeg[maker];
+  const setPostOnly = (value: boolean) => setPostOnlyByLeg((current) => (maker === 0 ? [value, current[1]] : [current[0], value]));
   const [busy, setBusy] = useState(false);
   const makerLeg = group.legView[maker];
   const book = useBook(makerLeg.inst);
@@ -460,7 +463,11 @@ function CloseDialog({ group, onDone }: { group: GroupView; onDone: () => void }
               <button onClick={() => fill("join")} className="text-accent">{closeSide === "buy" ? "Bid" : "Ask"}</button>
               <button onClick={() => fill("touch")} className="text-accent">{closeSide === "buy" ? "Ask" : "Bid"}</button>
             </label>
-            <label className="flex items-center gap-2"><input type="checkbox" checked={postOnly} onChange={(event) => setPostOnly(event.target.checked)} className="accent-[#50d2c1]" />Post only</label>
+            <label className="flex items-center gap-2" title="The resting order is cancelled rather than filled at once if it would cross the book. The hedge leg always trades at market.">
+              <input type="checkbox" checked={postOnly} onChange={(event) => setPostOnly(event.target.checked)} className="accent-[#50d2c1]" />
+              Post only
+              <span className="text-muted">· {venueLabel(makerLeg.venue)} resting order only</span>
+            </label>
           </>
         )}
         <PrimaryButton onClick={submit} disabled={busy || (mode === "limit" && !(Number(limitPrice) > 0))}>{busy ? "Starting…" : mode === "market" ? `Close ${percent}% at market` : `Place close ${percent}%`}</PrimaryButton>

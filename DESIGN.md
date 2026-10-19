@@ -275,11 +275,13 @@ the pair, laid out like the trade page:
   Blank rows pad venues that stream fewer levels so both spread rows line up.
 - **Ticket** — Market both / Limit + hedge, then size (quote or base),
   then **the legs** as one three-column grid so both align: side and venue
-  (Long OKX / Short Hyperliquid) · the account that trades it · the
-  leverage chip. The account is a menu of the accounts that can trade the
-  market (no default: "Choose account" in accent; a choice that can no
-  longer trade the market is cleared, never swapped); a sole possible
-  account shows without a chevron. The chip shows the leverage margin is
+  (Long OKX / Short Hyperliquid, a fixed-width column) · the account that
+  trades it, left-aligned · the leverage chip. Every account cell has the
+  same box (padding and a chevron slot) so the names line up whether or not
+  the cell is a menu. The menu lists the accounts that can trade the market
+  (no default: "Choose account" in accent; a choice that can no longer
+  trade the market is cleared, never swapped); a sole possible account
+  shows with an empty chevron slot. The chip shows the leverage margin is
   estimated with: one set here (applied on the venue via the Adjust
   Leverage dialog), else the account's position in the market, else 1x in
   muted text. Once there is a size each leg gets a second line on the same
@@ -287,7 +289,9 @@ the pair, laid out like the trade page:
   entry spread, size mismatch, crossing cost, net funding, breakeven and
   **Margin required / available**; margin beyond what the account (or the
   shared pool, both legs together) has blocks the button and says why in
-  pink. Failure policy and label come last.
+  pink. Failure policy and label come last. In Limit + hedge, Post only is
+  labelled with the resting venue ("· OKX resting order only") and kept per
+  resting leg: the hedge leg always trades at market.
 - **The money** — under the ticket: when both legs trade from one broker
   account, the pool (margin balance, available, margin rates with their
   warnings, equity per venue); else each leg account's available.

@@ -24,6 +24,8 @@ type fakeVenue struct {
 	nextID int
 	price  map[string]decimal.Decimal
 	script map[string][]string // instrument -> outcomes: "fill" | "reject" | "unknown-filled" | "unknown-missing" | "partial:<qty>" | "pending"
+	// requests are every placement as sent.
+	requests []gwclient.PlaceRequest
 	// forgetful makes Lookup answer "unconfirmed" for orders that are no
 	// longer open (Kraken, Deribit labels, CrossEx text lookups).
 	forgetful bool
@@ -104,6 +106,7 @@ func (venue *fakeVenue) next(instrument string) string {
 func (venue *fakeVenue) Place(_ context.Context, accountID string, request gwclient.PlaceRequest) (gwclient.PlaceResult, error) {
 	venue.mu.Lock()
 	venue.places[request.ClientOrderID]++
+	venue.requests = append(venue.requests, request)
 	outcome := "rest"
 	if request.Type == "market" {
 		outcome = venue.next(request.Instrument)
@@ -473,6 +476,16 @@ func TestLimitOpenHedgesEveryMakerFill(t *testing.T) {
 	// Maker rebate recorded as a negative fee.
 	if !books[1].Fees.Equal(d("-0.02")) {
 		t.Fatalf("maker fees = %s", books[1].Fees)
+	}
+	// Post only is the resting order's alone: the hedges are market orders
+	// with no time in force.
+	rig.venue.mu.Lock()
+	defer rig.venue.mu.Unlock()
+	for _, sent := range rig.venue.requests {
+		resting := sent.Instrument == "okx:perp:BTC-USDT-SWAP"
+		if resting && (sent.Type != "limit" || sent.TimeInForce != "post_only") || !resting && (sent.Type != "market" || sent.TimeInForce != "") {
+			t.Fatalf("sent %+v", sent)
+		}
 	}
 }
 
