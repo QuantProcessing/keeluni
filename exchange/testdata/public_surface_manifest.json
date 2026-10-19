@@ -7819,6 +7819,78 @@
         "TestNativePerpConfigsConstructWithoutIO",
         "TestNativePerpConfigsValidateLocally"
       ]
+    },
+    {
+      "id": "exchange/factory.PublicFundingBoard",
+      "kind": "type",
+      "coverage": "contract",
+      "tests": [
+        "TestPublicFundingBoardCoversEveryServedPerpMarket",
+        "TestPublicFundingBoardDeliversNativeFacts"
+      ]
+    },
+    {
+      "id": "exchange/factory.NewPublicFundingBoard",
+      "kind": "func",
+      "coverage": "contract",
+      "tests": [
+        "TestPublicFundingBoardCoversEveryServedPerpMarket",
+        "TestPublicFundingBoardDeliversNativeFacts"
+      ]
+    },
+    {
+      "id": "exchange/factory.PublicFundingBoard.Scope",
+      "kind": "method",
+      "coverage": "unit",
+      "tests": [
+        "TestPublicFundingBoardCoversEveryServedPerpMarket",
+        "TestPublicFundingBoardDeliversNativeFacts"
+      ]
+    },
+    {
+      "id": "exchange/factory.PublicFundingBoard.Streams",
+      "kind": "method",
+      "coverage": "unit",
+      "tests": [
+        "TestPublicFundingBoardCoversEveryServedPerpMarket",
+        "TestPublicFundingBoardDeliversNativeFacts"
+      ]
+    },
+    {
+      "id": "exchange/factory.PublicFundingBoard.Cadence",
+      "kind": "method",
+      "coverage": "unit",
+      "tests": [
+        "TestPublicFundingBoardCoversEveryServedPerpMarket",
+        "TestPublicFundingBoardDeliversNativeFacts"
+      ]
+    },
+    {
+      "id": "exchange/factory.PublicFundingBoard.Run",
+      "kind": "method",
+      "coverage": "contract",
+      "tests": [
+        "TestPublicFundingBoardCoversEveryServedPerpMarket",
+        "TestPublicFundingBoardDeliversNativeFacts"
+      ]
+    },
+    {
+      "id": "exchange/factory.PublicFundingBoard.Close",
+      "kind": "method",
+      "coverage": "unit",
+      "tests": [
+        "TestPublicFundingBoardCoversEveryServedPerpMarket",
+        "TestPublicFundingBoardDeliversNativeFacts"
+      ]
+    },
+    {
+      "id": "exchange/factory.nativeIdentityResolver.ResolveDerivativeInstrument",
+      "kind": "method",
+      "coverage": "unit",
+      "tests": [
+        "TestPublicFundingBoardCoversEveryServedPerpMarket",
+        "TestPublicFundingBoardDeliversNativeFacts"
+      ]
     }
   ]
 }

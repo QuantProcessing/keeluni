@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantProcessing/boltertrader/exchange"
 	hyperliquidperp "github.com/QuantProcessing/boltertrader/sdk/hyperliquid/perp"
@@ -38,6 +39,8 @@ func (loader hyperliquidDerivativeSnapshotLoader) LoadDerivativeSnapshot(ctx con
 		return DerivativeSnapshot{}, hlNormalizeQueryErr(exchange.ProductPerp, derivativeSnapshotOperation, err, nil)
 	}
 	entries := make([]DerivativeSnapshotEntry, 0)
+	// Hyperliquid settles on every hour, on the primary dex and on HIP-3 dexes.
+	next := time.Now().UTC().Truncate(time.Hour).Add(time.Hour)
 	for _, dex := range directory {
 		if scope.Settlement != "" && dex.collateral != scope.Settlement {
 			continue
@@ -63,14 +66,15 @@ func (loader hyperliquidDerivativeSnapshotLoader) LoadDerivativeSnapshot(ctx con
 				NativeSymbol: universe.Name,
 				// The HIP-3 dex index is part of the asset id. Keeping the same
 				// identity as the catalog is what makes the row executable.
-				NativeID:      strconv.Itoa(hyperliquidAssetID(dex.index, index)),
-				BaseAsset:     hyperliquidUnderlying(universe.Name),
-				QuoteAsset:    dex.collateral,
-				Rate:          rate,
-				IntervalHours: exchange.OptionalInt{Value: 1, Valid: true},
-				MarkPrice:     fundingOptionalDecimal(asset.MarkPx),
-				IndexPrice:    fundingOptionalDecimal(asset.OraclePx),
-				OpenInterest:  fundingOptionalNonNegative(asset.OpenInterest),
+				NativeID:        strconv.Itoa(hyperliquidAssetID(dex.index, index)),
+				BaseAsset:       hyperliquidUnderlying(universe.Name),
+				QuoteAsset:      dex.collateral,
+				Rate:            rate,
+				IntervalHours:   exchange.OptionalInt{Value: 1, Valid: true},
+				NextFundingTime: next,
+				MarkPrice:       fundingOptionalDecimal(asset.MarkPx),
+				IndexPrice:      fundingOptionalDecimal(asset.OraclePx),
+				OpenInterest:    fundingOptionalNonNegative(asset.OpenInterest),
 				OpenInterestNotional: fundingOpenInterestNotional(
 					asset.OpenInterest, asset.MarkPx, decimal.NewFromInt(1),
 				),
@@ -146,4 +150,49 @@ func (loader hyperliquidFundingHistoryLoader) LoadFundingHistory(ctx context.Con
 		cursor = newest + 1
 	}
 	return fundingHistorySnapshot(request, points), nil
+}
+
+type hyperliquidFundingDirectoryLoader struct {
+	settings Settings
+}
+
+// NewHyperliquidFundingDirectoryLoader lists every perpetual of every dex
+// (allPerpMetas, perpDexs and spotMeta: three reads) without their asset
+// contexts. It bootstraps the whole-venue funding board, whose rates then
+// arrive on the allDexsAssetCtxs stream: reading metaAndAssetCtxs for every
+// dex would spend most of the venue's REST weight on a value the stream
+// pushes anyway. Rows carry identity, the hourly period and the next
+// settlement; their rate is absent until the stream reports it.
+func NewHyperliquidFundingDirectoryLoader(settings Settings) DerivativeSnapshotLoader {
+	return hyperliquidFundingDirectoryLoader{settings: settings}
+}
+
+func (loader hyperliquidFundingDirectoryLoader) LoadDerivativeSnapshot(ctx context.Context, scope exchange.CatalogScope) (DerivativeSnapshot, error) {
+	directory, _, err := hyperliquidPerpDirectory(ctx, newHyperliquidPublicSDK(loader.settings), false, false)
+	if err != nil {
+		return DerivativeSnapshot{}, hlNormalizeQueryErr(exchange.ProductPerp, derivativeSnapshotOperation, err, nil)
+	}
+	next := time.Now().UTC().Truncate(time.Hour).Add(time.Hour)
+	entries := make([]DerivativeSnapshotEntry, 0)
+	for _, dex := range directory {
+		if scope.Settlement != "" && dex.collateral != scope.Settlement {
+			continue
+		}
+		for index, universe := range dex.prep.Universe {
+			if universe.IsDelisted || !hyperliquidValidPerpCoin(universe.Name, dex.name) {
+				continue
+			}
+			symbol := hyperliquidUnderlying(universe.Name) + "-" + dex.collateral
+			if dex.index > 0 {
+				symbol = universe.Name + "-" + dex.collateral
+			}
+			entries = append(entries, DerivativeSnapshotEntry{
+				Symbol: symbol, NativeSymbol: universe.Name, NativeID: strconv.Itoa(hyperliquidAssetID(dex.index, index)),
+				BaseAsset: hyperliquidUnderlying(universe.Name), QuoteAsset: dex.collateral,
+				IntervalHours: exchange.OptionalInt{Value: 1, Valid: true}, NextFundingTime: next,
+			})
+		}
+	}
+	// Built directly, not through derivativeSnapshot: these rows have no rate yet.
+	return DerivativeSnapshot{SchemaVersion: 1, Scope: scope, ObservedAt: time.Now().UTC(), Entries: entries}, nil
 }

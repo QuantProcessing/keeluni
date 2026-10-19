@@ -11,7 +11,7 @@ import { cx } from "@/ui/primitives";
 export { venueLabel } from "@/lib/format";
 
 export function MarketHeader() {
-  const { instrumentId } = useWorkspace();
+  const { instrumentId, setInstrumentId } = useWorkspace();
   const instrument = useInstrument(instrumentId);
   const perp = instrument?.product === "perp";
   const stats = useStats(instrumentId).data;
@@ -22,12 +22,14 @@ export function MarketHeader() {
   const open = Number(stats?.open24h);
   const change = last && open ? Number(last) - open : undefined;
   const funding = ticker?.funding ?? stats?.funding;
+  const fundingHours = ticker?.fundingIntervalHours ?? stats?.fundingIntervalHours;
+  const fundingApr = ticker?.fundingApr ?? stats?.fundingApr;
   const nextFunding = ticker?.nextFunding ?? stats?.nextFunding;
   const tick = instrument?.tickSize;
 
   return (
     <div className="flex h-14 shrink-0 items-center gap-6 overflow-x-auto bg-surface px-3">
-      <InstrumentPicker />
+      <InstrumentPicker value={instrumentId} onChange={setInstrumentId} hotkey />
       <Stat label="Price" value={price(last, tick)} />
       {perp && <Stat label="Mark" hint="Price used for margining and liquidation" value={price(ticker?.mark ?? stats?.mark, tick)} />}
       {perp && ticker?.index && <Stat label="Index" hint="Spot index price" value={price(ticker.index, tick)} />}
@@ -40,15 +42,25 @@ export function MarketHeader() {
       {perp && ticker?.oi && <Stat label="Open Interest" value={compact(ticker.oi) + " " + (instrument?.base ?? "")} />}
       {perp && (
         <div className="shrink-0">
-          <div className="dotted text-muted" title="Current funding rate / time to next settlement">Funding / Countdown</div>
+          <div className="dotted text-muted" title="Rate charged at the next settlement, per settlement period / annualized (simple) / time to the settlement. Positive: longs pay shorts.">Funding / APR / Countdown</div>
           <div className="mt-1 flex gap-3">
-            <span className={Number(funding) >= 0 ? "text-up" : "text-down"}>{funding ? (Number(funding) * 100).toFixed(4) + "%" : "—"}</span>
+            <span className={Number(funding) >= 0 ? "text-up" : "text-down"}>
+              {fundingRate(funding)}{fundingHours ? <span className="text-muted"> /{fundingHours}h</span> : null}
+            </span>
+            <span className={Number(fundingApr) >= 0 ? "text-up" : "text-down"}>{fundingApr ? pct(Number(fundingApr)) : "—"}</span>
             <span>{countdown(nextFunding, now)}</span>
           </div>
         </div>
       )}
     </div>
   );
+}
+
+/** Funding per settlement, as a percentage with enough digits for hourly venues. */
+export function fundingRate(value: string | undefined): string {
+  if (!value) return "—";
+  const percent = Number(value) * 100;
+  return (Math.abs(percent) < 0.001 && percent !== 0 ? percent.toFixed(6) : percent.toFixed(4)) + "%";
 }
 
 function Stat({ label, value, tone, hint }: { label: string; value: string; tone?: "up" | "down"; hint?: string }) {
@@ -62,8 +74,17 @@ function Stat({ label, value, tone, hint }: { label: string; value: string; tone
 
 type Category = "all" | "tradable" | "perp" | "spot" | string;
 
-function InstrumentPicker() {
-  const { instrumentId, setInstrumentId, accounts, routes } = useWorkspace();
+/**
+ * Searchable picker over every venue's markets, marking those a connected
+ * account trades. The Trade page opens it with ⌘K; the hedge legs reuse it.
+ */
+export function InstrumentPicker({ value: instrumentId, onChange, hotkey, small }: {
+  value: string;
+  onChange: (id: string) => void;
+  hotkey?: boolean;
+  small?: boolean;
+}) {
+  const { accounts, routes } = useWorkspace();
   const instrument = useInstrument(instrumentId);
   const { data: instruments = [] } = useInstruments();
   const [open, setOpen] = useState(false);
@@ -73,6 +94,7 @@ function InstrumentPicker() {
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!hotkey) return;
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
@@ -81,7 +103,7 @@ function InstrumentPicker() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [hotkey]);
 
   const venues = useMemo(() => [...new Set(instruments.map((item) => item.venue))], [instruments]);
   // Which connected accounts trade each market: shown, never used to hide one.
@@ -102,7 +124,7 @@ function InstrumentPicker() {
       } else if (category === "perp" || category === "spot") {
         if (item.product !== category) return false;
       } else if (category !== "all" && item.venue !== category) return false;
-      return !term || item.symbol.toUpperCase().includes(term) || item.base.toUpperCase().startsWith(term);
+      return !term || item.symbol.toUpperCase().includes(term) || item.base.toUpperCase().startsWith(term) || item.venue.toUpperCase().startsWith(term);
     });
     // Exact base matches, majors, perps, the current venue; tradable ones a little ahead.
     const currentVenue = instrument?.venue;
@@ -118,7 +140,7 @@ function InstrumentPicker() {
 
   const choose = (item: Instrument | undefined) => {
     if (!item) return;
-    setInstrumentId(item.id);
+    onChange(item.id);
     setOpen(false);
     setSearch("");
   };
@@ -126,7 +148,7 @@ function InstrumentPicker() {
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger className="flex shrink-0 items-center gap-2 text-left">
-        <span className="text-lg whitespace-nowrap">{instrument?.symbol ?? instrumentId.split(":").slice(2).join(":")}</span>
+        <span className={cx(small ? "text-md" : "text-lg", "whitespace-nowrap")}>{instrument?.symbol ?? instrumentId.split(":").slice(2).join(":")}</span>
         <span className="text-muted">{open ? "▴" : "▾"}</span>
         <span className="rounded-md bg-accent-soft px-1.5 py-0.5 text-accent">{venueLabel(instrument?.venue ?? "")} · {instrument?.product === "perp" ? "Perp" : "Spot"}</span>
       </Popover.Trigger>
@@ -182,7 +204,7 @@ function InstrumentPicker() {
             {filtered.length === 0 && <div className="px-3 py-6 text-center text-muted">No markets match</div>}
           </div>
           <div className="flex gap-4 border-t border-line px-3 py-2 text-muted">
-            <span><kbd className="text-text">⌘K</kbd> Open</span>
+            {hotkey && <span><kbd className="text-text">⌘K</kbd> Open</span>}
             <span><kbd className="text-text">↑↓</kbd> Navigate</span>
             <span><kbd className="text-text">Enter</kbd> Select</span>
             <span><kbd className="text-text">Esc</kbd> Close</span>

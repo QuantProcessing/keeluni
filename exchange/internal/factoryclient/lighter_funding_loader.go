@@ -3,6 +3,7 @@ package factoryclient
 import (
 	"context"
 	"strconv"
+	"time"
 
 	"github.com/QuantProcessing/boltertrader/exchange"
 	"github.com/shopspring/decimal"
@@ -16,10 +17,11 @@ import (
 // this is the one that departs from the house convention.
 var lighterFundingPercent = decimal.NewFromInt(100)
 
-// Lighter settles every hour but applies one eighth of the displayed funding
-// rate at each settlement. The public all-market comparison endpoint therefore
-// carries an eight-hour-equivalent quote, which is the period consumers need
-// when normalising the rate to a day.
+// Lighter settles every hour. Its all-market comparison endpoint quotes an
+// eight-hour equivalent (eight hourly settlements), so the rate paid at the
+// next settlement is the quote divided by eight. Verified against the live
+// market_stats stream, whose current_funding_rate is a percentage per hour:
+// board = 8 × stream / 100.
 const lighterFundingQuoteHours int64 = 8
 
 type lighterDerivativeSnapshotLoader struct {
@@ -67,21 +69,20 @@ func (loader lighterDerivativeSnapshotLoader) LoadDerivativeSnapshot(ctx context
 	}
 
 	entries := make([]DerivativeSnapshotEntry, 0, len(rows))
+	next := time.Now().UTC().Truncate(time.Hour).Add(time.Hour)
 	for _, row := range rows {
 		if row == nil || row.Symbol == "" {
 			continue
 		}
 		entry := DerivativeSnapshotEntry{
-			Symbol:       row.Symbol + "-USDC",
-			NativeSymbol: row.Symbol,
-			NativeID:     strconv.Itoa(row.MarketId),
-			BaseAsset:    row.Symbol,
-			QuoteAsset:   "USDC",
-			Rate:         decimal.NewFromFloat(row.Rate),
-			IntervalHours: exchange.OptionalInt{
-				Value: lighterFundingQuoteHours,
-				Valid: true,
-			},
+			Symbol:          row.Symbol + "-USDC",
+			NativeSymbol:    row.Symbol,
+			NativeID:        strconv.Itoa(row.MarketId),
+			BaseAsset:       row.Symbol,
+			QuoteAsset:      "USDC",
+			Rate:            decimal.NewFromFloat(row.Rate).Div(decimal.NewFromInt(lighterFundingQuoteHours)),
+			IntervalHours:   exchange.OptionalInt{Value: 1, Valid: true},
+			NextFundingTime: next,
 		}
 		if detail, ok := details[row.MarketId]; ok {
 			entry.MarkPrice = fundingOptionalDecimal(detail.markPrice)

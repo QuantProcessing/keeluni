@@ -13,25 +13,45 @@ import (
 
 	"github.com/QuantProcessing/boltertrader/exchange"
 	"github.com/QuantProcessing/boltertrader/gateway/account"
+	"github.com/QuantProcessing/boltertrader/gateway/funding"
 	"github.com/QuantProcessing/boltertrader/gateway/hub"
 	"github.com/QuantProcessing/boltertrader/gateway/market"
+	"github.com/QuantProcessing/boltertrader/gateway/resident"
 	"github.com/QuantProcessing/boltertrader/gateway/venue"
 )
 
 const maxBodyBytes = 64 << 10
+
+// Deps are the gateway's components the API serves.
+type Deps struct {
+	Catalog  *market.Catalog
+	Accounts *account.Manager
+	Feeds    *market.Feeds
+	Funding  *funding.Dataset
+	Resident *resident.Registry
+	// Hubs: public market streams, private account streams, resident datasets.
+	Public, Private, Datasets *hub.Hub
+}
 
 type Server struct {
 	token    []byte
 	catalog  *market.Catalog
 	accounts *account.Manager
 	feeds    *market.Feeds
+	funding  *funding.Dataset
+	resident *resident.Registry
 	public   *hub.Hub
 	private  *hub.Hub
+	datasets *hub.Hub
 	mux      *http.ServeMux
 }
 
-func NewServer(token []byte, catalog *market.Catalog, accounts *account.Manager, feeds *market.Feeds, public, private *hub.Hub) *Server {
-	server := &Server{token: token, catalog: catalog, accounts: accounts, feeds: feeds, public: public, private: private, mux: http.NewServeMux()}
+func NewServer(token []byte, deps Deps) *Server {
+	server := &Server{
+		token: token, catalog: deps.Catalog, accounts: deps.Accounts, feeds: deps.Feeds,
+		funding: deps.Funding, resident: deps.Resident,
+		public: deps.Public, private: deps.Private, datasets: deps.Datasets, mux: http.NewServeMux(),
+	}
 	m := server.mux
 	m.HandleFunc("GET /v1/health", server.health)
 	m.HandleFunc("GET /v1/venues", server.venues)
@@ -39,6 +59,8 @@ func NewServer(token []byte, catalog *market.Catalog, accounts *account.Manager,
 	m.HandleFunc("GET /v1/orderbook", server.orderBook)
 	m.HandleFunc("GET /v1/candles", server.candles)
 	m.HandleFunc("GET /v1/ticker", server.ticker)
+	m.HandleFunc("GET /v1/funding", server.fundingTable)
+	m.HandleFunc("GET /v1/funding/history", server.fundingHistory)
 
 	m.HandleFunc("GET /v1/accounts", server.listAccounts)
 	m.HandleFunc("POST /v1/accounts", server.createAccount)
@@ -102,7 +124,15 @@ func (recorder *statusRecorder) Unwrap() http.ResponseWriter { return recorder.R
 // ---------------------------------------------------------------------------
 
 func (server *Server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "markets": server.catalog.Status(), "topics": server.public.Topics() + server.private.Topics()})
+	datasets := []resident.Status{}
+	if server.resident != nil {
+		datasets = server.resident.Statuses()
+	}
+	topics := server.public.Topics() + server.private.Topics()
+	if server.datasets != nil {
+		topics += server.datasets.Topics()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "markets": server.catalog.Status(), "datasets": datasets, "topics": topics})
 }
 
 func (server *Server) venues(w http.ResponseWriter, _ *http.Request) {
@@ -129,8 +159,26 @@ func (server *Server) candles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) ticker(w http.ResponseWriter, r *http.Request) {
-	stats, err := server.catalog.Stats(r.Context(), venue.InstrumentID(r.URL.Query().Get("inst")))
+	stats, err := server.feeds.Stats(r.Context(), venue.InstrumentID(r.URL.Query().Get("inst")))
 	server.respond(w, stats, err)
+}
+
+// fundingTable serves the resident funding table, optionally filtered by
+// venue and base asset; ?inst= returns one quote.
+func (server *Server) fundingTable(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	if inst := query.Get("inst"); inst != "" {
+		quote, err := server.funding.Get(venue.InstrumentID(inst))
+		server.respond(w, quote, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, server.funding.Table(exchange.Venue(query.Get("venue")), query.Get("base")))
+}
+
+func (server *Server) fundingHistory(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	points, err := server.funding.History(r.Context(), venue.InstrumentID(query.Get("inst")), parseMillis(query.Get("since")), parseMillis(query.Get("until")))
+	server.respond(w, nonNil(points), err)
 }
 
 // ---------------------------------------------------------------------------
@@ -271,6 +319,15 @@ func (server *Server) fail(w http.ResponseWriter, err error) {
 		return
 	case errors.Is(err, account.ErrUnsupported):
 		writeError(w, http.StatusNotImplemented, "UNSUPPORTED", "operation is not supported for this venue")
+		return
+	case errors.Is(err, funding.ErrNotPerpetual), errors.Is(err, funding.ErrInvalidWindow):
+		writeError(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		return
+	case errors.Is(err, funding.ErrNoQuote):
+		writeError(w, http.StatusNotFound, "NO_FUNDING", err.Error())
+		return
+	case errors.Is(err, funding.ErrNoHistory):
+		writeError(w, http.StatusNotImplemented, "UNSUPPORTED", err.Error())
 		return
 	}
 	failure := account.Classify(err)

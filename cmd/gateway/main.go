@@ -29,9 +29,11 @@ import (
 
 	"github.com/QuantProcessing/boltertrader/gateway/account"
 	"github.com/QuantProcessing/boltertrader/gateway/api"
+	"github.com/QuantProcessing/boltertrader/gateway/funding"
 	"github.com/QuantProcessing/boltertrader/gateway/hub"
 	"github.com/QuantProcessing/boltertrader/gateway/market"
 	"github.com/QuantProcessing/boltertrader/gateway/ratelimit"
+	"github.com/QuantProcessing/boltertrader/gateway/resident"
 	"github.com/QuantProcessing/boltertrader/gateway/store"
 	"github.com/QuantProcessing/boltertrader/secretstore"
 )
@@ -125,16 +127,30 @@ func run() error {
 	manager.Start()
 	defer manager.Close()
 
-	feeds := market.NewFeeds(catalog)
+	// Resident datasets: current market-wide venue facts kept in memory by
+	// background collection (at most a quarter of each venue's budget).
+	residents := resident.NewRegistry()
+	fundingData, err := funding.New(catalog, residents, httpClient)
+	if err != nil {
+		return err
+	}
+	go fundingData.Run(ctx)
+
+	feeds := market.NewFeeds(catalog, fundingData)
 	publicHub := hub.New(feeds.Source, 30*time.Second)
 	defer publicHub.Close()
 	privateHub := hub.New(manager.Source, 30*time.Second)
 	defer privateHub.Close()
+	datasetHub := hub.New(fundingData.Source, 30*time.Second)
+	defer datasetHub.Close()
 	go market.Warm(ctx, catalog, publicHub)
 
 	server := &http.Server{
-		Addr:              env("GATEWAY_ADDR", "127.0.0.1:8081"),
-		Handler:           api.NewServer(token, catalog, manager, feeds, publicHub, privateHub),
+		Addr: env("GATEWAY_ADDR", "127.0.0.1:8081"),
+		Handler: api.NewServer(token, api.Deps{
+			Catalog: catalog, Accounts: manager, Feeds: feeds, Funding: fundingData, Resident: residents,
+			Public: publicHub, Private: privateHub, Datasets: datasetHub,
+		}),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}

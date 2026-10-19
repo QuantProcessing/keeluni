@@ -3,7 +3,7 @@
 dev:            ## run gateway + trader locally (builds web)
 	scripts/dev.sh
 
-test:           ## all offline tests
+test:           ## all offline tests (hedger DB tests run when HEDGER_TEST_DATABASE_URL is set)
 	go test -short ./... -count=1
 	cd web && npm test
 
@@ -11,6 +11,7 @@ build:
 	cd web && npm ci && npm run build
 	go build -o bin/gateway ./cmd/gateway
 	go build -o bin/trader ./cmd/trader
+	go build -o bin/hedger ./cmd/hedger
 
 up:
 	docker compose up -d --build --force-recreate

@@ -18,7 +18,12 @@ import (
 
 const derivativeSnapshotOperation = "DerivativeSnapshot.Load"
 
+// derivativeSnapshot wraps a loader's entries. Loaders skip a row whose rate
+// does not parse, so every entry carries a rate.
 func derivativeSnapshot(scope exchange.CatalogScope, entries []DerivativeSnapshotEntry) DerivativeSnapshot {
+	for index := range entries {
+		entries[index].RateValid = true
+	}
 	return DerivativeSnapshot{
 		SchemaVersion: 1,
 		Scope:         scope,

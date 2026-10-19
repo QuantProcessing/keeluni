@@ -53,22 +53,46 @@ type Candle struct {
 }
 
 // Ticker carries derivative reference values; any field may be empty when the
-// venue does not publish it.
+// venue does not publish it. Funding fields come from the resident funding
+// dataset (one normalized source for every consumer), never from the venue's
+// ticker stream, whose units and clocks differ by venue.
 type Ticker struct {
-	Mark         string `json:"mark,omitempty"`
-	Index        string `json:"index,omitempty"`
-	Funding      string `json:"funding,omitempty"`
-	NextFunding  int64  `json:"nextFunding,omitempty"`
-	OpenInterest string `json:"oi,omitempty"`
-	Time         int64  `json:"ts"`
+	Mark                 string `json:"mark,omitempty"`
+	Index                string `json:"index,omitempty"`
+	Funding              string `json:"funding,omitempty"`
+	FundingIntervalHours int64  `json:"fundingIntervalHours,omitempty"`
+	FundingApr           string `json:"fundingApr,omitempty"`
+	NextFunding          int64  `json:"nextFunding,omitempty"`
+	OpenInterest         string `json:"oi,omitempty"`
+	Time                 int64  `json:"ts"`
+}
+
+// FundingLookup is the resident funding dataset as the market feeds see it.
+type FundingLookup interface {
+	FundingOf(venue.InstrumentID) (FundingView, bool)
+}
+
+// FundingView is one instrument's normalized funding (see gateway/funding).
+type FundingView struct {
+	Rate          string
+	IntervalHours int64
+	Apr           string
+	NextFunding   int64
+}
+
+func (ticker *Ticker) applyFunding(view FundingView) {
+	ticker.Funding, ticker.FundingIntervalHours, ticker.FundingApr, ticker.NextFunding = view.Rate, view.IntervalHours, view.Apr, view.NextFunding
 }
 
 // Feeds implements hub.Source for public channels.
 type Feeds struct {
 	catalog *Catalog
+	funding FundingLookup
 }
 
-func NewFeeds(catalog *Catalog) *Feeds { return &Feeds{catalog: catalog} }
+func NewFeeds(catalog *Catalog, funding FundingLookup) *Feeds {
+	return &Feeds{catalog: catalog, funding: funding}
+}
 
 // ValidKey reports whether key names a servable public topic.
 func (feeds *Feeds) ValidKey(key hub.Key) error {
@@ -146,8 +170,14 @@ func (feeds *Feeds) Source(ctx context.Context, key hub.Key, emit hub.Emit) erro
 			return err
 		}
 		var current Ticker
+		id := venue.InstrumentID(key.Instrument)
 		return pump(ctx, subscription, func(event exchange.DerivativeReferenceEvent) {
 			mergeTicker(&current, event)
+			if feeds.funding != nil {
+				if view, ok := feeds.funding.FundingOf(id); ok {
+					current.applyFunding(view)
+				}
+			}
 			emit(hub.Message{Channel: ChannelTicker, Instrument: key.Instrument, Data: current}, true)
 		})
 	}
@@ -310,11 +340,7 @@ func mergeTicker(current *Ticker, event exchange.DerivativeReferenceEvent) {
 	}
 	set(&current.Mark, event.MarkPrice)
 	set(&current.Index, event.IndexPrice)
-	set(&current.Funding, event.FundingRate)
 	set(&current.OpenInterest, event.OpenInterest)
-	if !event.NextFundingTime.IsZero() {
-		current.NextFunding = event.NextFundingTime.UnixMilli()
-	}
 	current.Time = time.Now().UnixMilli()
 }
 
@@ -367,16 +393,33 @@ func (catalog *Catalog) Candles(ctx context.Context, id venue.InstrumentID, inte
 
 // Stats24h derives last price and 24h change/volume from hourly candles.
 type Stats24h struct {
-	Last        string `json:"last"`
-	Open24h     string `json:"open24h"`
-	High24h     string `json:"high24h"`
-	Low24h      string `json:"low24h"`
-	Volume24h   string `json:"volume24h"`
-	Funding     string `json:"funding,omitempty"`
-	NextFunding int64  `json:"nextFunding,omitempty"`
-	Mark        string `json:"mark,omitempty"`
+	Last                 string `json:"last"`
+	Open24h              string `json:"open24h"`
+	High24h              string `json:"high24h"`
+	Low24h               string `json:"low24h"`
+	Volume24h            string `json:"volume24h"`
+	Funding              string `json:"funding,omitempty"`
+	FundingIntervalHours int64  `json:"fundingIntervalHours,omitempty"`
+	FundingApr           string `json:"fundingApr,omitempty"`
+	NextFunding          int64  `json:"nextFunding,omitempty"`
+	Mark                 string `json:"mark,omitempty"`
 }
 
+// Stats derives 24h statistics from candles; funding comes from the resident
+// funding dataset (the same source as the ticker stream) when available.
+func (feeds *Feeds) Stats(ctx context.Context, id venue.InstrumentID) (Stats24h, error) {
+	stats, err := feeds.catalog.Stats(ctx, id)
+	if err != nil || feeds.funding == nil {
+		return stats, err
+	}
+	if view, ok := feeds.funding.FundingOf(id); ok {
+		stats.Funding, stats.FundingIntervalHours, stats.FundingApr, stats.NextFunding = view.Rate, view.IntervalHours, view.Apr, view.NextFunding
+	}
+	return stats, nil
+}
+
+// Stats derives 24h statistics from hourly candles and the mark price. It
+// reports no funding: funding has one source, the resident dataset.
 func (catalog *Catalog) Stats(ctx context.Context, id venue.InstrumentID) (Stats24h, error) {
 	instrument, client, err := catalog.connector(id)
 	if err != nil {
@@ -403,12 +446,12 @@ func (catalog *Catalog) Stats(ctx context.Context, id venue.InstrumentID) (Stats
 		stats = Stats24h{Last: candles[len(candles)-1].Close.String(), Open24h: candles[0].Open.String(), High24h: high.String(), Low24h: low.String(), Volume24h: volume.String()}
 	}
 	if instrument.Product == exchange.ProductPerp {
-		if rate, supported, err := client.FundingRate(ctx, exchange.FundingRateRequest{Instrument: instrument.Native()}); supported && err == nil {
-			stats.Funding = rate.Rate.String()
-			if !rate.NextFundingTime.IsZero() {
-				stats.NextFunding = rate.NextFundingTime.UnixMilli()
-			}
-			if rate.MarkPrice.Valid {
+		if mark, supported, err := client.MarkPrice(ctx, instrument.Native()); supported && err == nil && mark.Price.IsPositive() {
+			stats.Mark = mark.Price.String()
+		} else if !supported {
+			// Venues without a mark endpoint return the mark with their funding
+			// read; only the mark is taken from it.
+			if rate, ok, err := client.FundingRate(ctx, exchange.FundingRateRequest{Instrument: instrument.Native()}); ok && err == nil && rate.MarkPrice.Valid {
 				stats.Mark = rate.MarkPrice.Value.String()
 			}
 		}

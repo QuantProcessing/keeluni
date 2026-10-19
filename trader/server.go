@@ -23,6 +23,9 @@ import (
 type Config struct {
 	GatewayURL   *url.URL // e.g. http://127.0.0.1:8081
 	GatewayToken string
+	// HedgerURL is the hedge app (optional); its API is served at /api/hedge.
+	HedgerURL    *url.URL
+	HedgerToken  string
 	Password     PasswordHash
 	WebDir       string // built SPA; empty disables static serving
 	SecureCookie bool   // set when served over HTTPS
@@ -33,31 +36,46 @@ type Server struct {
 	sessions *Sessions
 	throttle *Throttle
 	proxy    *httputil.ReverseProxy
+	hedger   *httputil.ReverseProxy
 	mux      *http.ServeMux
+}
+
+// backendProxy forwards a prefix of /api to a bearer-authenticated backend.
+func backendProxy(target *url.URL, token, prefix, name string) *httputil.ReverseProxy {
+	return &httputil.ReverseProxy{
+		Rewrite: func(request *httputil.ProxyRequest) {
+			request.SetURL(target)
+			request.Out.URL.Path = strings.TrimPrefix(request.In.URL.Path, prefix)
+			request.Out.URL.RawPath = ""
+			request.Out.Header.Del("Cookie")
+			request.Out.Header.Del("X-Bolter")
+			request.Out.Header.Set("Authorization", "Bearer "+token)
+		},
+		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
+			slog.Warn(name+" unreachable", "error", err)
+			writeError(w, http.StatusBadGateway, strings.ToUpper(name)+"_UNAVAILABLE", name+" is unreachable")
+		},
+	}
 }
 
 func NewServer(config Config) *Server {
 	server := &Server{config: config, sessions: NewSessions(), throttle: NewThrottle(), mux: http.NewServeMux()}
-	target := config.GatewayURL
-	server.proxy = &httputil.ReverseProxy{
-		Rewrite: func(request *httputil.ProxyRequest) {
-			request.SetURL(target)
-			request.Out.URL.Path = strings.TrimPrefix(request.In.URL.Path, "/api/gw")
-			request.Out.URL.RawPath = ""
-			request.Out.Header.Del("Cookie")
-			request.Out.Header.Del("X-Bolter")
-			request.Out.Header.Set("Authorization", "Bearer "+config.GatewayToken)
-		},
-		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
-			slog.Warn("gateway unreachable", "error", err)
-			writeError(w, http.StatusBadGateway, "GATEWAY_UNAVAILABLE", "gateway is unreachable")
-		},
-	}
+	server.proxy = backendProxy(config.GatewayURL, config.GatewayToken, "/api/gw", "gateway")
 	server.mux.HandleFunc("POST /api/auth/login", server.login)
 	server.mux.HandleFunc("POST /api/auth/logout", server.logout)
 	server.mux.HandleFunc("GET /api/auth/session", server.session)
-	server.mux.HandleFunc("GET /api/ws", server.authenticated(server.websocket))
+	server.mux.HandleFunc("GET /api/apps", server.authenticated(server.apps))
+	server.mux.HandleFunc("GET /api/ws", server.authenticated(func(w http.ResponseWriter, r *http.Request) {
+		server.relay(w, r, config.GatewayURL, config.GatewayToken, "/v1/ws")
+	}))
 	server.mux.HandleFunc("/api/gw/v1/", server.authenticated(server.forward))
+	if config.HedgerURL != nil {
+		server.hedger = backendProxy(config.HedgerURL, config.HedgerToken, "/api/hedge", "hedger")
+		server.mux.HandleFunc("GET /api/hedge/ws", server.authenticated(func(w http.ResponseWriter, r *http.Request) {
+			server.relay(w, r, config.HedgerURL, config.HedgerToken, "/v1/ws")
+		}))
+		server.mux.HandleFunc("/api/hedge/v1/", server.authenticated(server.hedger.ServeHTTP))
+	}
 	server.mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "unknown endpoint")
 	})
@@ -173,9 +191,15 @@ func (server *Server) forward(w http.ResponseWriter, r *http.Request) {
 	server.proxy.ServeHTTP(w, r)
 }
 
-// websocket bridges one browser socket to one gateway socket. Messages are
-// relayed verbatim in both directions; the gateway validates subscriptions.
-func (server *Server) websocket(w http.ResponseWriter, r *http.Request) {
+// apps lists the optional apps this trader serves, so the web app shows
+// only the menus it can use.
+func (server *Server) apps(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]bool{"hedge": server.hedger != nil})
+}
+
+// relay bridges one browser socket to one backend socket. Messages are
+// relayed verbatim in both directions; the backend validates subscriptions.
+func (server *Server) relay(w http.ResponseWriter, r *http.Request, backend *url.URL, token, path string) {
 	if !sameOrigin(r) {
 		writeError(w, http.StatusForbidden, "CSRF", "cross-origin websocket refused")
 		return
@@ -189,21 +213,21 @@ func (server *Server) websocket(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	upstreamURL := *server.config.GatewayURL
+	upstreamURL := *backend
 	upstreamURL.Scheme = map[string]string{"https": "wss"}[upstreamURL.Scheme]
 	if upstreamURL.Scheme == "" {
 		upstreamURL.Scheme = "ws"
 	}
-	upstreamURL.Path = "/v1/ws"
+	upstreamURL.Path = path
 	dialCtx, stopDial := context.WithTimeout(ctx, 10*time.Second)
 	upstream, _, err := websocket.Dial(dialCtx, upstreamURL.String(), &websocket.DialOptions{
-		HTTPHeader:      http.Header{"Authorization": {"Bearer " + server.config.GatewayToken}},
+		HTTPHeader:      http.Header{"Authorization": {"Bearer " + token}},
 		CompressionMode: websocket.CompressionContextTakeover,
 	})
 	stopDial()
 	if err != nil {
-		slog.Warn("gateway websocket unreachable", "error", err)
-		browser.Close(websocket.StatusTryAgainLater, "gateway unavailable")
+		slog.Warn("backend websocket unreachable", "backend", backend.Host, "error", err)
+		browser.Close(websocket.StatusTryAgainLater, "backend unavailable")
 		return
 	}
 	defer upstream.CloseNow()

@@ -21,9 +21,9 @@ func NewBinanceDerivativeSnapshotLoader(settlement string, settings Settings) De
 // Two calls rather than one because Binance splits the answer: premiumIndex
 // carries the rate and the next settlement, fundingInfo carries the interval,
 // and an interval is only published for the symbols that deviate from eight
-// hours. A symbol missing from fundingInfo is therefore not an error — it is
-// Binance saying "the default", which we do not invent here; the board renders
-// the gap and the caller decides.
+// hours. A symbol missing from a successful fundingInfo read settles every
+// eight hours; when fundingInfo cannot be read the period stays unknown, since
+// a 4h deviation would then be indistinguishable from the default.
 //
 // Open interest is absent by construction: Binance only serves it one symbol at
 // a time, and paying several hundred requests for one column is not a trade a
@@ -36,7 +36,9 @@ func (loader binanceDerivativeSnapshotLoader) LoadDerivativeSnapshot(ctx context
 		return DerivativeSnapshot{}, binancePerpNormalizeError(derivativeSnapshotOperation, err)
 	}
 	intervals := map[string]int64{}
+	periodsKnown := false
 	if info, err := sdk.GetFundingInfo(ctx); err == nil {
+		periodsKnown = true
 		for _, row := range info {
 			if row.FundingIntervalHours > 0 {
 				intervals[row.Symbol] = row.FundingIntervalHours
@@ -68,6 +70,10 @@ func (loader binanceDerivativeSnapshotLoader) LoadDerivativeSnapshot(ctx context
 		}
 		if hours, ok := intervals[row.Symbol]; ok {
 			entry.IntervalHours = exchange.OptionalInt{Value: hours, Valid: true}
+		} else if periodsKnown {
+			// fundingInfo lists only instruments that deviate from the default
+			// eight-hour period; without it the period stays unknown.
+			entry.IntervalHours = exchange.OptionalInt{Value: binanceDefaultFundingHours, Valid: true}
 		}
 		if row.NextFundingTime > 0 {
 			entry.NextFundingTime = time.UnixMilli(row.NextFundingTime).UTC()
@@ -76,6 +82,8 @@ func (loader binanceDerivativeSnapshotLoader) LoadDerivativeSnapshot(ctx context
 	}
 	return derivativeSnapshot(scope, entries), nil
 }
+
+const binanceDefaultFundingHours = 8
 
 // binanceSplitPerpSymbol recovers base and quote from a concatenated symbol.
 //

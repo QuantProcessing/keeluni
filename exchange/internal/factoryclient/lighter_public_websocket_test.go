@@ -688,7 +688,8 @@ func TestLighterPublicTradesAndPerpReferenceMapping(t *testing.T) {
 	reference := <-referenceCh
 	if reference.MarkPrice.Instrument.Identity.Symbol != "ETH-USDC" ||
 		!reference.MarkPrice.Price.Equal(decimal.RequireFromString("2000.75")) ||
-		!reference.FundingRate.Rate.Equal(decimal.RequireFromString("-0.00012")) ||
+		// current_funding_rate is a percentage per hourly settlement.
+		!reference.FundingRate.Rate.Equal(decimal.RequireFromString("-0.0000012")) ||
 		!reference.FundingRate.EffectiveAt.Equal(time.UnixMilli(1_700_000_000_200).UTC()) ||
 		!reference.FundingRate.NextAt.IsZero() {
 		t.Fatalf("reference = %+v", reference)

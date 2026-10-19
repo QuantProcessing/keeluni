@@ -2,10 +2,15 @@
 #
 # The trader password is printed once in the trader log on first start:
 #   docker compose logs trader | grep password
-# Only 127.0.0.1:8080 is published. The gateway is reachable only inside the
-# compose network. All state lives in the bolter-data volume.
+# Only 127.0.0.1:8080 is published. The gateway, hedger and Postgres are
+# reachable only inside the compose network. App state lives in the
+# bolter-data volume; Postgres data in bolter-pg.
 #
 # Venues behind a proxy: set BOLTER_PROXY, e.g. http://host.docker.internal:7892
+#
+# Apps that need a database each get their own role and database on the one
+# Postgres (see hedger-initdb); the admin password never leaves the
+# postgres-secrets directory.
 
 x-common: &common
   image: boltertrader:latest
@@ -25,7 +30,7 @@ services:
       GATEWAY_DATA_DIR: /data/gateway
       HTTPS_PROXY: ${BOLTER_PROXY:-}
       HTTP_PROXY: ${BOLTER_PROXY:-}
-      NO_PROXY: localhost,127.0.0.1,gateway,trader
+      NO_PROXY: localhost,127.0.0.1,gateway,trader,hedger,postgres
     volumes:
       - bolter-data:/data
     networks: [internal]
@@ -39,14 +44,86 @@ services:
       TRADER_DATA_DIR: /data/trader
       GATEWAY_URL: http://gateway:8081
       GATEWAY_TOKEN_FILE: /data/gateway/token
+      # Remove these two lines to run the trader without the hedge app.
+      HEDGER_URL: http://hedger:8082
+      HEDGER_TOKEN_FILE: /data/hedger/token
     volumes:
       - bolter-data:/data
     ports:
       - "127.0.0.1:8080:8080"
     networks: [internal]
 
+  # One Postgres for every app that needs a database. The superuser password
+  # is generated once into the postgres-secrets volume (pg-secret), which only
+  # Postgres and the per-app initdb jobs mount.
+  # Readable by postgres (owner) and by app initdb jobs (group 65532), nobody else.
+  pg-secret:
+    image: postgres:17-alpine
+    restart: "no"
+    network_mode: none
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -e
+        test -s /secrets/admin.password || (umask 077; head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > /secrets/admin.password)
+        chown postgres:65532 /secrets/admin.password
+        chmod 640 /secrets/admin.password
+    volumes:
+      - postgres-secrets:/secrets
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    depends_on:
+      pg-secret: { condition: service_completed_successfully }
+    environment:
+      POSTGRES_PASSWORD_FILE: /secrets/admin.password
+    volumes:
+      - bolter-pg:/var/lib/postgresql/data
+      - postgres-secrets:/secrets:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks: [internal]
+
+  # Creates the hedger role and database once, and writes the hedger's own
+  # connection URL to /data/hedger/database.url (0600). Idempotent.
+  hedger-initdb:
+    <<: *common
+    restart: "no"
+    entrypoint: ["/usr/local/bin/hedger", "initdb"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      HEDGER_DATA_DIR: /data/hedger
+      POSTGRES_HOST: postgres:5432
+      POSTGRES_ADMIN_PASSWORD_FILE: /secrets/admin.password
+    volumes:
+      - bolter-data:/data
+      - postgres-secrets:/secrets:ro
+    networks: [internal]
+
+  hedger:
+    <<: *common
+    entrypoint: ["/usr/local/bin/hedger"]
+    depends_on:
+      gateway: { condition: service_started }
+      hedger-initdb: { condition: service_completed_successfully }
+    environment:
+      HEDGER_ADDR: 0.0.0.0:8082
+      HEDGER_DATA_DIR: /data/hedger
+      GATEWAY_URL: http://gateway:8081
+      GATEWAY_TOKEN_FILE: /data/gateway/token
+    volumes:
+      - bolter-data:/data
+    networks: [internal]
+
 volumes:
   bolter-data:
+  bolter-pg:
+  postgres-secrets:
 
 networks:
   internal:

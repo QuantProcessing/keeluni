@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/QuantProcessing/boltertrader/gateway/funding"
 	"github.com/QuantProcessing/boltertrader/gateway/hub"
 	"github.com/coder/websocket"
 )
@@ -138,6 +139,12 @@ func (server *Server) websocket(w http.ResponseWriter, r *http.Request) {
 
 // route normalizes and validates a topic key and returns the hub serving it.
 func (server *Server) route(key hub.Key) (hub.Key, *hub.Hub, error) {
+	if key.Channel == funding.Channel {
+		if server.datasets == nil || server.funding == nil {
+			return key, nil, errInvalidTopic
+		}
+		return key, server.datasets, server.funding.ValidKey(key)
+	}
 	if key.Channel == "account" {
 		if key.Instrument != "" || key.Interval != "" {
 			return key, nil, errInvalidTopic

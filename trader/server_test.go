@@ -154,3 +154,40 @@ func TestSecurityHeaders(t *testing.T) {
 		}
 	}
 }
+
+func TestHedgerIsForwardedOnlyWhenConfigured(t *testing.T) {
+	server, _, _ := newTestServer(t)
+	cookie := login(t, server)
+	if got := request(server, "GET", "/api/hedge/v1/groups", "", func(r *http.Request) { r.AddCookie(cookie) }).Code; got != 404 {
+		t.Fatalf("hedger without config = %d", got)
+	}
+	apps := request(server, "GET", "/api/apps", "", func(r *http.Request) { r.AddCookie(cookie) })
+	if apps.Code != 200 || !strings.Contains(apps.Body.String(), `"hedge":false`) {
+		t.Fatalf("apps = %d %s", apps.Code, apps.Body)
+	}
+
+	var seen *http.Request
+	hedger := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Clone(r.Context())
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	t.Cleanup(hedger.Close)
+	target, _ := url.Parse(hedger.URL)
+	server.config.HedgerURL, server.config.HedgerToken = target, "hedger-secret"
+	server = NewServer(server.config)
+	cookie = login(t, server)
+	if got := request(server, "GET", "/api/hedge/v1/groups", "", nil).Code; got != 401 {
+		t.Fatalf("anonymous = %d", got)
+	}
+	response := request(server, "GET", "/api/hedge/v1/groups?days=3", "", func(r *http.Request) { r.AddCookie(cookie) })
+	if response.Code != 200 || seen == nil || seen.URL.Path != "/v1/groups" || seen.URL.RawQuery != "days=3" {
+		t.Fatalf("forward = %d %v", response.Code, seen)
+	}
+	if seen.Header.Get("Authorization") != "Bearer hedger-secret" || seen.Header.Get("Cookie") != "" {
+		t.Fatalf("hedger headers = %v", seen.Header)
+	}
+	if got := request(server, "POST", "/api/hedge/v1/groups", `{}`, func(r *http.Request) { r.AddCookie(cookie) }).Code; got != 403 {
+		t.Fatalf("cross-site mutation = %d", got)
+	}
+}

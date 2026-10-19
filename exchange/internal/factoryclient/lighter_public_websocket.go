@@ -734,6 +734,9 @@ func lighterReferenceEvent(payload []byte, meta lighterMarketMeta) (perpReferenc
 	if err != nil {
 		return perpReferenceEvent{}, err
 	}
+	// The stream quotes a percentage per hourly settlement; the exchange layer
+	// reports the fraction paid per settlement.
+	funding = funding.Div(lighterFundingPercent)
 	observedAt := lighterFlexibleUnix(row.Timestamp)
 	return perpReferenceEvent{
 		MarkPrice: exchange.MarkPriceEvent{

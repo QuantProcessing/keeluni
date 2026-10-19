@@ -48,11 +48,18 @@ func TestLighterMarketStatCarriesComparableFundingPeriodAndPrices(t *testing.T) 
 	identity.QuoteAsset = "USDC"
 	identity.SettleAsset = "USDC"
 	observedAt := time.Date(2026, time.August, 21, 1, 2, 3, 0, time.UTC)
+	// current_funding_rate is a percentage per hourly settlement: 0.0012 %/h
+	// is 0.000012 per settlement, settled on every hour.
 	fact, fields := lighterMarketStatFact(identity, lighterMarketStat{
-		CurrentFundingRate: "0.00008", MarkPrice: "64000", IndexPrice: "63990", OpenInterest: "12.5",
+		CurrentFundingRate: "0.0012", MarkPrice: "64000", IndexPrice: "63990", OpenInterest: "12.5",
+		FundingTimestamp: time.Date(2026, time.August, 21, 1, 0, 0, 2_000_000, time.UTC).UnixMilli(),
 	}, observedAt)
+	if !fact.FundingRate.Valid || !fact.FundingRate.Value.Equal(decimal.RequireFromString("0.000012")) ||
+		!fact.NextFundingTime.Equal(time.Date(2026, time.August, 21, 2, 0, 0, 0, time.UTC)) {
+		t.Fatalf("funding fact=%+v", fact)
+	}
 	if !fields.Has(nativeDerivativeFieldFundingInterval) ||
-		!fact.FundingIntervalHours.Valid || fact.FundingIntervalHours.Value != lighterFundingQuoteHours ||
+		!fact.FundingIntervalHours.Valid || fact.FundingIntervalHours.Value != 1 ||
 		!fact.MarkPrice.Valid || !fact.IndexPrice.Valid ||
 		!fact.OpenInterestNotional.Valid || !fact.OpenInterestNotional.Value.Equal(decimal.NewFromInt(800000)) {
 		t.Fatalf("fact=%+v fields=%b", fact, fields)
