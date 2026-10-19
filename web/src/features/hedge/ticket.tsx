@@ -9,7 +9,7 @@ import { useBook, useInstrument, type AccountLive } from "@/state/hooks";
 import { useWorkspace } from "@/state/workspace";
 import { PrimaryButton, Row, Tabs, cx } from "@/ui/primitives";
 import { useToast } from "@/ui/toast";
-import { AccountPicker, NoAccount, useAccountChoices } from "../account-picker";
+import { AccountLabel, AccountMenu, NoAccount, useAccountChoices } from "../account-picker";
 import { MarginPool } from "../account-summary";
 import { LeverageDialog } from "../order-ticket";
 import { aprText, bpsText, breakevenDays, legAccount, legAvailable, legLeverage, legPosition, makePrice, marginCheck, takePrice, tone, type LegChoice, type Pair } from "./model";
@@ -158,21 +158,6 @@ export function HedgeTicket({ pair, matching, onAccount }: {
 
   return (
     <div className="flex flex-col bg-surface">
-      <div className="flex flex-col gap-1 border-b border-line p-3">
-        {([0, 1] as const).map((i) => (
-          <LegAccount
-            key={i}
-            index={i}
-            leg={pair[i]}
-            instrument={instruments[i]}
-            account={legAccounts[i]}
-            leverage={leverage[i]!}
-            onAccount={(id) => onAccount(i, id)}
-            onLeverage={(value) => setChosen((current) => (i === 0 ? [value, current[1]] : [current[0], value]))}
-          />
-        ))}
-      </div>
-
       <div className="flex flex-col gap-3 p-3">
         <Tabs value={mode} onChange={setMode} options={[{ value: "market", label: "Market both" }, { value: "limit", label: "Limit + hedge" }]} className="[&>button]:flex-1" />
 
@@ -219,29 +204,38 @@ export function HedgeTicket({ pair, matching, onAccount }: {
           <p className="mt-1 text-muted">{unit === "quote" ? `Value of each leg, in ${units.quote}` : `Quantity of leg 1, in ${units.base}`}{matching?.match === "notional" ? "; legs matched by value" : ""}</p>
         </div>
 
+        {/* The legs of this order: where each trades, its leverage, and what it would do. One grid so both legs align. */}
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5">
+          {([0, 1] as const).map((i) => {
+            const instrument = instruments[i];
+            const isMaker = mode === "limit" && i === maker;
+            const sweep = preview?.sweep[i];
+            return (
+              <LegRow
+                key={i}
+                index={i}
+                leg={pair[i]}
+                instrument={instrument}
+                account={legAccounts[i]}
+                leverage={leverage[i]!}
+                onAccount={(id) => onAccount(i, id)}
+                onLeverage={(value) => setChosen((current) => (i === 0 ? [value, current[1]] : [current[0], value]))}
+                outcome={preview ? {
+                  qty: preview.qty[i],
+                  notional: preview.notional[i],
+                  detail: isMaker
+                    ? `rests @ ${price(limitPrice, preview.legs?.[i]?.tickSize || instrument?.tickSize)}`
+                    : sweep?.avgPrice && Number(sweep.avgPrice) > 0 ? `≈ ${price(sweep.avgPrice, instrument?.tickSize)} · ${bpsText(sweep.slippageBps)}` : "—",
+                  thin: !!sweep?.short && !isMaker,
+                } : undefined}
+              />
+            );
+          })}
+        </div>
+
         {preview && (
           <div>
-            <div className="flex flex-col gap-1.5">
-              {([0, 1] as const).map((i) => {
-                const instrument = instruments[i];
-                const isMaker = mode === "limit" && i === maker;
-                const sweep = preview.sweep[i];
-                return (
-                  <PreviewLeg
-                    key={i}
-                    side={pair[i].side}
-                    qty={preview.qty[i]}
-                    base={instrument?.base}
-                    notional={preview.notional[i]}
-                    detail={isMaker
-                      ? `rests @ ${price(limitPrice, preview.legs?.[i]?.tickSize || instrument?.tickSize)}`
-                      : sweep?.avgPrice && Number(sweep.avgPrice) > 0 ? `≈ ${price(sweep.avgPrice, instrument?.tickSize)} · ${bpsText(sweep.slippageBps)}` : "—"}
-                    thin={!!sweep?.short && !isMaker}
-                  />
-                );
-              })}
-            </div>
-            <div className="mt-2 border-t border-line pt-1">
+            <div className="border-t border-line pt-1">
               {matching?.match === "base" && <Row label="Entry spread" hint="Leg 2 over leg 1 at the expected entry prices">{bpsText(preview.spreadBps)}</Row>}
               <Row label="Size mismatch" hint="Leg 2 value minus leg 1 value after rounding both legs to their accounts' steps: the directional exposure the hedge keeps">{usd(preview.mismatch)}</Row>
               <Row label="Crossing cost" hint="Slippage from the touch for the taker legs, weighted by value (fees not included)">{bpsText(costBps)}</Row>
@@ -286,8 +280,14 @@ export function HedgeTicket({ pair, matching, onAccount }: {
   );
 }
 
-/** One leg's account and the leverage its margin is estimated with. */
-function LegAccount({ index, leg, instrument, account, leverage, onAccount, onLeverage }: {
+/**
+ * One leg of the order, on the ticket's three-column grid so both legs line
+ * up: side and leg number · the account it trades on (a menu of the accounts
+ * that can) · the leverage its margin is estimated with. Once there is a
+ * size, a second line shows what the leg would do: quantity, expected price
+ * and slippage, value.
+ */
+function LegRow({ index, leg, instrument, account, leverage, onAccount, onLeverage, outcome }: {
   index: 0 | 1;
   leg: LegChoice;
   instrument: Instrument | undefined;
@@ -295,58 +295,63 @@ function LegAccount({ index, leg, instrument, account, leverage, onAccount, onLe
   leverage: { value: number; source: "set" | "position" | "default" };
   onAccount: (id: string) => void;
   onLeverage: (value: number) => void;
+  outcome: { qty: string; notional: string; detail: string; thin: boolean } | undefined;
 }) {
   const { candidates, unconnectedBrokers } = useAccountChoices(instrument);
   const [open, setOpen] = useState(false);
   const perp = instrument?.product === "perp";
-  const label = (
-    <span className="flex items-center gap-1.5">
-      <span className={leg.side === "buy" ? "text-up" : "text-down"}>{leg.side === "buy" ? "L" : "S"}</span>
-      <span className="text-muted">Leg {index + 1}</span>
-    </span>
-  );
-  if (instrument && candidates.length === 0) {
-    return (
-      <div className="flex h-8 items-center gap-2">
-        {label}
-        <span className="ml-auto min-w-0"><NoAccount instrument={instrument} unconnectedBrokers={unconnectedBrokers} compact /></span>
-      </div>
-    );
-  }
+  const long = leg.side === "buy";
   return (
-    <div className="flex items-center gap-1">
-      <div className="min-w-0 flex-1">
-        <AccountPicker instrument={instrument} account={account} candidates={candidates} unconnectedBrokers={unconnectedBrokers} onChoose={onAccount} label={label} ariaLabel={`Leg ${index + 1} account`} />
-      </div>
-      {perp && account && (
-        <button
-          onClick={() => setOpen(true)}
-          title={{ set: "Leverage set here on the venue", position: "Leverage of the account's position in this market", default: "No position here: margin is estimated at 1x. Set the venue's leverage to estimate with it." }[leverage.source]}
-          className={cx("h-7 shrink-0 rounded-md bg-raised px-2 hover:bg-line-strong/40", leverage.source === "default" ? "text-muted" : "text-text")}
+    <>
+      <span className="flex h-8 items-center gap-1.5 whitespace-nowrap">
+        <span className={cx("w-9", long ? "text-up" : "text-down")}>{long ? "Long" : "Short"}</span>
+        <span className="text-muted" title={`Leg ${index + 1}`}>{venueLabel(instrument?.venue ?? leg.inst.split(":")[0] ?? "")}</span>
+      </span>
+      {instrument && candidates.length === 0 ? (
+        <span className="flex min-w-0 justify-end"><NoAccount instrument={instrument} unconnectedBrokers={unconnectedBrokers} compact /></span>
+      ) : account && candidates.length === 1 && unconnectedBrokers.length === 0 ? (
+        // The only account that trades this market: nothing to choose.
+        <span className="flex h-8 min-w-0 items-center justify-end gap-2 px-2"><AccountLabel account={account} /></span>
+      ) : (
+        <AccountMenu
+          instrument={instrument} account={account} candidates={candidates} unconnectedBrokers={unconnectedBrokers} onChoose={onAccount}
+          ariaLabel={`Leg ${index + 1} account`}
+          className="flex h-8 min-w-0 items-center justify-end gap-2 rounded-lg px-2 hover:bg-raised"
         >
-          {num(leverage.value, 0)}x
-        </button>
+          {(menuOpen) => (
+            <>
+              {account ? <AccountLabel account={account} /> : <span className="truncate text-accent">Choose account</span>}
+              <span className="shrink-0 text-muted">{menuOpen ? "▴" : "▾"}</span>
+            </>
+          )}
+        </AccountMenu>
+      )}
+      <span className="flex w-10 justify-end">
+        {perp && account ? (
+          <button
+            onClick={() => setOpen(true)}
+            aria-label={`Leg ${index + 1} leverage`}
+            title={{ set: "Leverage set here on the venue", position: "Leverage of the account's position in this market", default: "No position here: margin is estimated at 1x. Set the venue's leverage to estimate with it." }[leverage.source]}
+            className={cx("h-7 w-10 rounded-md bg-raised hover:bg-line-strong/40", leverage.source === "default" ? "text-muted" : "text-text")}
+          >
+            {num(leverage.value, 0)}x
+          </button>
+        ) : null}
+      </span>
+      {outcome && (
+        <>
+          <span className={cx("pl-[42px] whitespace-nowrap", long ? "text-up" : "text-down")}>{num(outcome.qty)} {instrument?.base}</span>
+          <span className="truncate text-right text-muted">
+            {outcome.thin && <span className="text-down" title="The visible book cannot fill this size: the average is a lower bound">thin · </span>}
+            {outcome.detail}
+          </span>
+          <span className="text-right whitespace-nowrap">{usd(outcome.notional, 0)}</span>
+        </>
       )}
       {perp && account && instrument && (
         <LeverageDialog open={open} onOpenChange={setOpen} instrument={instrument} accountId={account.id} current={Math.round(leverage.value)} onApplied={onLeverage} />
       )}
-    </div>
-  );
-}
-
-/** One leg of the preview: what it buys or sells, and at what. */
-function PreviewLeg({ side, qty, base, notional, detail, thin }: { side: string; qty: string; base: string | undefined; notional: string; detail: string; thin: boolean }) {
-  return (
-    <div>
-      <div className="flex justify-between gap-2">
-        <span className={cx("truncate", side === "buy" ? "text-up" : "text-down")}>{side === "buy" ? "Long" : "Short"} {num(qty)} {base}</span>
-        <span className="shrink-0">{usd(notional)}</span>
-      </div>
-      <div className="flex justify-between gap-2 text-muted">
-        <span className="truncate">{detail}</span>
-        {thin && <span className="shrink-0 text-down" title="The visible book cannot fill this size: the average is a lower bound">book thin</span>}
-      </div>
-    </div>
+    </>
   );
 }
 

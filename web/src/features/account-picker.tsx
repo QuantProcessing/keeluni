@@ -21,64 +21,91 @@ export function useAccountChoices(instrument: Instrument | undefined) {
 }
 
 /**
- * The account an order goes to, as one row: its name, stream state and kind;
- * a menu of every account that trades this order book (with what each has
- * available) when there is a choice, plus brokers that could. Nothing is
- * chosen behind the user's back: with no selection the row asks for one.
+ * The menu of accounts that can trade a market, opened from any trigger:
+ * one line per account (name, kind, what it has available, ✓ on the current
+ * one), then brokers that could once connected.
  */
-export function AccountPicker({ instrument, account, candidates, unconnectedBrokers, onChoose, label = "Account", ariaLabel = "Trading account" }: {
+export function AccountMenu({ instrument, account, candidates, unconnectedBrokers, onChoose, ariaLabel, className, children }: {
   instrument: Instrument | undefined;
   account: Account | undefined;
   candidates: Account[];
   unconnectedBrokers: string[];
   onChoose: (id: string) => void;
-  label?: ReactNode;
-  ariaLabel?: string;
+  ariaLabel: string;
+  className?: string;
+  children: (open: boolean) => ReactNode;
 }) {
-  const { live, openConnect } = useWorkspace();
+  const { openConnect } = useWorkspace();
   const [open, setOpen] = useState(false);
-  const choosable = candidates.length > 1 || unconnectedBrokers.length > 0 || (!account && candidates.length > 0);
-  const status = account ? live[account.id]?.status : undefined;
-  const row = account ? (
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger aria-label={ariaLabel} className={cx(className, open && "bg-raised")}>
+        {children(open)}
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content align="end" sideOffset={4} className="z-40 w-[288px] rounded-[10px] border border-line bg-overlay py-1">
+          <div className="px-3 pt-1.5 pb-1 text-muted">Trade {instrument?.symbol} with</div>
+          {candidates.map((item) => (
+            <AccountOption key={item.id} account={item} selected={item.id === account?.id} onChoose={() => { onChoose(item.id); setOpen(false); }} />
+          ))}
+          {unconnectedBrokers.map((broker) => (
+            <button
+              key={broker}
+              onClick={() => { setOpen(false); openConnect(broker); }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-accent hover:bg-raised"
+            >
+              + Connect {venueLabel(broker)}
+              <span className="ml-auto text-muted">one pool, many venues</span>
+            </button>
+          ))}
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+/** Stream dot and name of an account. */
+export function AccountLabel({ account }: { account: Account }) {
+  const { live } = useWorkspace();
+  const status = live[account.id]?.status;
+  return (
     <>
-      <span className={cx("size-1.5 shrink-0 rounded-full", status ? (status.connected ? "bg-up" : "bg-down") : "bg-muted")} />
+      <span className={cx("size-1.5 shrink-0 rounded-full", status ? (status.connected ? "bg-up" : "bg-down") : "bg-muted")} title={status ? (status.connected ? "Account stream live" : "Account stream down") : undefined} />
       <span className="truncate">{accountName(account)}</span>
+    </>
+  );
+}
+
+/**
+ * The account an order goes to, as one row: its name, stream state and kind;
+ * a menu of every account that trades this order book (with what each has
+ * available) when there is a choice, plus brokers that could. Nothing is
+ * chosen behind the user's back.
+ */
+export function AccountPicker({ instrument, account, candidates, unconnectedBrokers, onChoose }: {
+  instrument: Instrument | undefined;
+  account: Account;
+  candidates: Account[];
+  unconnectedBrokers: string[];
+  onChoose: (id: string) => void;
+}) {
+  const choosable = candidates.length > 1 || unconnectedBrokers.length > 0;
+  const row = (
+    <>
+      <AccountLabel account={account} />
       {account.kind === "broker" && <span className="shrink-0 text-muted">· Cross-exchange</span>}
     </>
-  ) : (
-    <span className="truncate text-accent">Choose account</span>
   );
   return (
     <div className="flex h-8 items-center gap-2">
-      <span className="shrink-0 text-muted">{label}</span>
+      <span className="shrink-0 text-muted">Account</span>
       {choosable ? (
-        <Popover.Root open={open} onOpenChange={setOpen}>
-          <Popover.Trigger
-            aria-label={ariaLabel}
-            className={cx("ml-auto flex h-8 min-w-0 items-center gap-2 rounded-lg px-2.5 hover:bg-raised", open && "bg-raised")}
-          >
-            {row}
-            <span className="shrink-0 text-muted">{open ? "▴" : "▾"}</span>
-          </Popover.Trigger>
-          <Popover.Portal>
-            <Popover.Content align="end" sideOffset={4} className="z-40 w-[288px] rounded-[10px] border border-line bg-overlay py-1">
-              <div className="px-3 pt-1.5 pb-1 text-muted">Trade {instrument?.symbol} with</div>
-              {candidates.map((item) => (
-                <AccountOption key={item.id} account={item} selected={item.id === account?.id} onChoose={() => { onChoose(item.id); setOpen(false); }} />
-              ))}
-              {unconnectedBrokers.map((broker) => (
-                <button
-                  key={broker}
-                  onClick={() => { setOpen(false); openConnect(broker); }}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-accent hover:bg-raised"
-                >
-                  + Connect {venueLabel(broker)}
-                  <span className="ml-auto text-muted">one pool, many venues</span>
-                </button>
-              ))}
-            </Popover.Content>
-          </Popover.Portal>
-        </Popover.Root>
+        <AccountMenu
+          instrument={instrument} account={account} candidates={candidates} unconnectedBrokers={unconnectedBrokers} onChoose={onChoose}
+          ariaLabel="Trading account" className="ml-auto flex h-8 min-w-0 items-center gap-2 rounded-lg px-2.5 hover:bg-raised"
+        >
+          {(open) => <>{row}<span className="shrink-0 text-muted">{open ? "▴" : "▾"}</span></>}
+        </AccountMenu>
       ) : (
         <span className="ml-auto flex min-w-0 items-center gap-2 px-2.5">{row}</span>
       )}
@@ -86,7 +113,7 @@ export function AccountPicker({ instrument, account, candidates, unconnectedBrok
   );
 }
 
-function AccountOption({ account, selected, onChoose }: { account: Account; selected: boolean; onChoose: () => void }) {
+export function AccountOption({ account, selected, onChoose }: { account: Account; selected: boolean; onChoose: () => void }) {
   const { live } = useWorkspace();
   const equity = accountEquity(account, live[account.id]);
   return (

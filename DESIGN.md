@@ -273,17 +273,21 @@ the pair, laid out like the trade page:
 - **Leg books** — one compact column per leg: side and funding on one line
   (rate /period, APR, countdown; "continuous" for Deribit), then the book.
   Blank rows pad venues that stream fewer levels so both spread rows line up.
-- **Ticket** — first where each leg trades: "L Leg 1" / "S Leg 2" with the
-  shared account picker (no default; a choice that can no longer trade the
-  market is cleared, never swapped) and a leverage chip. The chip shows the
-  leverage margin is estimated with: one set here (applied on the venue via
-  the Adjust Leverage dialog), else the account's position in the market,
-  else 1x in muted text. Then Market both / Limit + hedge, size (quote or
-  base), the preview (each leg on two lines: side, quantity and value; then
-  expected price and slippage), entry spread, size mismatch, crossing cost,
-  net funding, breakeven, and **Margin required / available**. Margin beyond
-  what the account (or the shared pool, for both legs together) has blocks
-  the button and says why in pink. Failure policy and label come last.
+- **Ticket** — Market both / Limit + hedge, then size (quote or base),
+  then **the legs** as one three-column grid so both align: side and venue
+  (Long OKX / Short Hyperliquid) · the account that trades it · the
+  leverage chip. The account is a menu of the accounts that can trade the
+  market (no default: "Choose account" in accent; a choice that can no
+  longer trade the market is cleared, never swapped); a sole possible
+  account shows without a chevron. The chip shows the leverage margin is
+  estimated with: one set here (applied on the venue via the Adjust
+  Leverage dialog), else the account's position in the market, else 1x in
+  muted text. Once there is a size each leg gets a second line on the same
+  grid: quantity in side colour, expected price and slippage, value. Then
+  entry spread, size mismatch, crossing cost, net funding, breakeven and
+  **Margin required / available**; margin beyond what the account (or the
+  shared pool, both legs together) has blocks the button and says why in
+  pink. Failure policy and label come last.
 - **The money** — under the ticket: when both legs trade from one broker
   account, the pool (margin balance, available, margin rates with their
   warnings, equity per venue); else each leg account's available.
