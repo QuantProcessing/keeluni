@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
+	"github.com/QuantProcessing/keeluni/exchange"
 )
 
 func TestCrossExPerpConfigConstructsABrokeredClientWithoutIO(t *testing.T) {

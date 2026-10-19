@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	hyperliquid "github.com/QuantProcessing/boltertrader/sdk/hyperliquid"
+	hyperliquid "github.com/QuantProcessing/keeluni/sdk/hyperliquid"
 )
 
 func TestClient_SubmitOutcomeActionsBuildUserOutcomeRequests(t *testing.T) {

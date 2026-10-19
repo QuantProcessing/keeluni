@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/QuantProcessing/boltertrader/sdk/hyperliquid"
+	"github.com/QuantProcessing/keeluni/sdk/hyperliquid"
 	"github.com/shopspring/decimal"
 )
 

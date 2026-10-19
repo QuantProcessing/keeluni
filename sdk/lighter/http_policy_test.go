@@ -2,7 +2,7 @@ package lighter
 
 import (
 	"context"
-	"github.com/QuantProcessing/boltertrader/internal/venuehttp"
+	"github.com/QuantProcessing/keeluni/internal/venuehttp"
 	"io"
 	"net/http"
 	"strconv"

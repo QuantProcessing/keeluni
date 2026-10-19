@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/QuantProcessing/boltertrader/internal/venuehttp"
+	"github.com/QuantProcessing/keeluni/internal/venuehttp"
 )
 
 func (c *Client) GetWalletBalance(ctx context.Context, accountType, coin string) (*WalletBalanceResult, error) {

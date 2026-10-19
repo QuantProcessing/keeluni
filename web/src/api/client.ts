@@ -24,7 +24,7 @@ export function setUnauthenticatedHandler(handler: () => void) {
 }
 
 async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  const headers: Record<string, string> = { "X-Bolter": "1" };
+  const headers: Record<string, string> = { "X-KeelUni": "1" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const response = await fetch(path, {
     method, headers, signal, credentials: "same-origin",

@@ -166,7 +166,7 @@ function EyeGlyph({ open }: { open: boolean }) {
   );
 }
 
-const REPO = "https://github.com/QuantProcessing/boltertrader";
+const REPO = "https://github.com/QuantProcessing/keeluni";
 const MORE_LINKS = [
   { label: "Docs", href: REPO + "#readme" },
   { label: "Gateway API", href: REPO + "/blob/master/docs/gateway-api.md" },

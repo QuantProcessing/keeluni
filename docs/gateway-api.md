@@ -237,7 +237,7 @@ PUT    /leverage                        {inst, leverage}
 |---|---|
 | 密码 | 首次启动生成随机密码并打印一次；存 argon2id 哈希（`x/crypto/argon2`），可用 `trader passwd` 重置 |
 | 会话 | 32 字节随机 token，服务端内存保存（重启需重新登录）；cookie `HttpOnly; SameSite=Strict; Path=/`，HTTPS 时 `Secure`；空闲 12h / 绝对 7d 过期 |
-| CSRF | SameSite=Strict + 非 GET 请求校验 `Origin` 同源 + 要求自定义头 `X-Bolter: 1` |
+| CSRF | SameSite=Strict + 非 GET 请求校验 `Origin` 同源 + 要求自定义头 `X-KeelUni: 1` |
 | WS | 握手校验 cookie 与 `Origin` |
 | 暴力破解 | 按 IP 指数退避（1s 起，上限 15min），全局失败计数 |
 | 头 | CSP `default-src 'self'`、`X-Frame-Options: DENY`、`Referrer-Policy: no-referrer`、HSTS(HTTPS) |

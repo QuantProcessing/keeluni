@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	sdkcore "github.com/QuantProcessing/boltertrader/sdk"
+	sdkcore "github.com/QuantProcessing/keeluni/sdk"
 )
 
 type rawRoundTripFunc func(*http.Request) (*http.Response, error)

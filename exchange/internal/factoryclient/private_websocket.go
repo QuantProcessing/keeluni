@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
+	"github.com/QuantProcessing/keeluni/exchange"
 )
 
 type privateWSBackend interface {

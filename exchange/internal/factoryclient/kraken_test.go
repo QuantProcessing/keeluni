@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	kraken "github.com/QuantProcessing/boltertrader/sdk/kraken"
+	"github.com/QuantProcessing/keeluni/exchange"
+	kraken "github.com/QuantProcessing/keeluni/sdk/kraken"
 	"github.com/gorilla/websocket"
 	"github.com/shopspring/decimal"
 )

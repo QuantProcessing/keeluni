@@ -1,7 +1,7 @@
 package factoryclient
 
 import (
-	"github.com/QuantProcessing/boltertrader/exchange"
+	"github.com/QuantProcessing/keeluni/exchange"
 	"github.com/shopspring/decimal"
 )
 

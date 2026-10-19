@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/internal/venuehttp"
+	"github.com/QuantProcessing/keeluni/internal/venuehttp"
 )
 
 func (c *Client) getJSON(ctx context.Context, path string, params url.Values, auth bool, out any) (returnErr error) {

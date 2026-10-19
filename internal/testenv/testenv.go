@@ -94,15 +94,15 @@ func RequireEnv(t testing.TB, vars ...string) {
 
 // RequireLiveRead gates a test that reads a real venue's public or private
 // endpoints. It is off under -short, and off again unless
-// BOLTER_ENABLE_LIVE_READ_TESTS=1. No Make target sets that variable.
+// KEELUNI_ENABLE_LIVE_READ_TESTS=1. No Make target sets that variable.
 func RequireLiveRead(t testing.TB, vars ...string) {
 	t.Helper()
 
 	if testing.Short() {
 		t.Skip("skipping: live read test excluded by -short")
 	}
-	if os.Getenv("BOLTER_ENABLE_LIVE_READ_TESTS") != "1" {
-		t.Skip("skipping live read test: set BOLTER_ENABLE_LIVE_READ_TESTS=1 to enable real exchange read execution")
+	if os.Getenv("KEELUNI_ENABLE_LIVE_READ_TESTS") != "1" {
+		t.Skip("skipping live read test: set KEELUNI_ENABLE_LIVE_READ_TESTS=1 to enable real exchange read execution")
 	}
 	if err := LoadRepoEnv(); err != nil {
 		t.Fatalf("load repo .env: %v", err)

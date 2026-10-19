@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/internal/testenv"
+	"github.com/QuantProcessing/keeluni/internal/testenv"
 )
 
 func TestClient_PlaceOrder(t *testing.T) {

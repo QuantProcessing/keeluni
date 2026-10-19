@@ -3,8 +3,8 @@ package account
 import (
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	"github.com/QuantProcessing/boltertrader/gateway/venue"
+	"github.com/QuantProcessing/keeluni/exchange"
+	"github.com/QuantProcessing/keeluni/gateway/venue"
 )
 
 // Position is one open position. Size is always positive; Side says which way.

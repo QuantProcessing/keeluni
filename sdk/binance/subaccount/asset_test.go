@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/internal/testenv"
+	"github.com/QuantProcessing/keeluni/internal/testenv"
 )
 
 func TestClient_GetAssetsV4(t *testing.T) {

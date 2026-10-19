@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	hyperliquid "github.com/QuantProcessing/boltertrader/sdk/hyperliquid"
+	"github.com/QuantProcessing/keeluni/exchange"
+	hyperliquid "github.com/QuantProcessing/keeluni/sdk/hyperliquid"
 	"github.com/shopspring/decimal"
 )
 

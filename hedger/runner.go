@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/gwclient"
+	"github.com/QuantProcessing/keeluni/gwclient"
 	"github.com/shopspring/decimal"
 )
 

@@ -50,7 +50,7 @@ const (
 
 // MarketCapability is a static description of a venue-native data path. It is
 // intentionally free of runtime state: reconnects, freshness and hot-symbol
-// selection are BolterTrader behavior, not exchange capabilities.
+// selection are KeelUni behavior, not exchange capabilities.
 type MarketCapability struct {
 	Venue                  Venue             `json:"venue"`
 	NativeMarketFamily     string            `json:"nativeMarketFamily"`

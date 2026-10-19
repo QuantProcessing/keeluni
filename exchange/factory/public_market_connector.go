@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	"github.com/QuantProcessing/boltertrader/exchange/internal/factoryclient"
+	"github.com/QuantProcessing/keeluni/exchange"
+	"github.com/QuantProcessing/keeluni/exchange/internal/factoryclient"
 )
 
 // PublicMarketConnector is the credential-free market surface used by Gateway

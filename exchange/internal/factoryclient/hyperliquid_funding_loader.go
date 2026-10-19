@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	hyperliquidperp "github.com/QuantProcessing/boltertrader/sdk/hyperliquid/perp"
+	"github.com/QuantProcessing/keeluni/exchange"
+	hyperliquidperp "github.com/QuantProcessing/keeluni/sdk/hyperliquid/perp"
 	"github.com/shopspring/decimal"
 )
 

@@ -15,7 +15,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	astercommon "github.com/QuantProcessing/boltertrader/sdk/aster/common"
+	astercommon "github.com/QuantProcessing/keeluni/sdk/aster/common"
 )
 
 func TestSpotPrivateStreamFixturesDecodeAndRoute(t *testing.T) {

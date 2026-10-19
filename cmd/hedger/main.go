@@ -35,8 +35,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/gwclient"
-	"github.com/QuantProcessing/boltertrader/hedger"
+	"github.com/QuantProcessing/keeluni/gwclient"
+	"github.com/QuantProcessing/keeluni/hedger"
 	"github.com/jackc/pgx/v5"
 )
 

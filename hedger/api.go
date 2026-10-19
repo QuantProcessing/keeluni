@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/gwclient"
+	"github.com/QuantProcessing/keeluni/gwclient"
 	"github.com/coder/websocket"
 	"github.com/shopspring/decimal"
 )

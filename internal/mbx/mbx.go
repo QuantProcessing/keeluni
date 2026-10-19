@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	exchanges "github.com/QuantProcessing/boltertrader/internal/errs"
+	exchanges "github.com/QuantProcessing/keeluni/internal/errs"
 )
 
 type redactedTransportCause struct {

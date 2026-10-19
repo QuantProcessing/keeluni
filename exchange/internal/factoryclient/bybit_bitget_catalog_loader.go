@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	bitget "github.com/QuantProcessing/boltertrader/sdk/bitget"
-	bybit "github.com/QuantProcessing/boltertrader/sdk/bybit"
+	"github.com/QuantProcessing/keeluni/exchange"
+	bitget "github.com/QuantProcessing/keeluni/sdk/bitget"
+	bybit "github.com/QuantProcessing/keeluni/sdk/bybit"
 )
 
 type bybitInstrumentLoader struct {

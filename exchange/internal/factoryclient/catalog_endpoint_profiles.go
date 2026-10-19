@@ -1,19 +1,19 @@
 package factoryclient
 
 import (
-	"github.com/QuantProcessing/boltertrader/exchange"
-	astercommon "github.com/QuantProcessing/boltertrader/sdk/aster/common"
-	binanceperp "github.com/QuantProcessing/boltertrader/sdk/binance/perp"
-	binancespot "github.com/QuantProcessing/boltertrader/sdk/binance/spot"
-	bitget "github.com/QuantProcessing/boltertrader/sdk/bitget"
-	bybit "github.com/QuantProcessing/boltertrader/sdk/bybit"
-	deribit "github.com/QuantProcessing/boltertrader/sdk/deribit"
-	gate "github.com/QuantProcessing/boltertrader/sdk/gate"
-	hyperliquid "github.com/QuantProcessing/boltertrader/sdk/hyperliquid"
-	kraken "github.com/QuantProcessing/boltertrader/sdk/kraken"
-	"github.com/QuantProcessing/boltertrader/sdk/lighter"
-	nadosdk "github.com/QuantProcessing/boltertrader/sdk/nado"
-	"github.com/QuantProcessing/boltertrader/sdk/okx"
+	"github.com/QuantProcessing/keeluni/exchange"
+	astercommon "github.com/QuantProcessing/keeluni/sdk/aster/common"
+	binanceperp "github.com/QuantProcessing/keeluni/sdk/binance/perp"
+	binancespot "github.com/QuantProcessing/keeluni/sdk/binance/spot"
+	bitget "github.com/QuantProcessing/keeluni/sdk/bitget"
+	bybit "github.com/QuantProcessing/keeluni/sdk/bybit"
+	deribit "github.com/QuantProcessing/keeluni/sdk/deribit"
+	gate "github.com/QuantProcessing/keeluni/sdk/gate"
+	hyperliquid "github.com/QuantProcessing/keeluni/sdk/hyperliquid"
+	kraken "github.com/QuantProcessing/keeluni/sdk/kraken"
+	"github.com/QuantProcessing/keeluni/sdk/lighter"
+	nadosdk "github.com/QuantProcessing/keeluni/sdk/nado"
+	"github.com/QuantProcessing/keeluni/sdk/okx"
 )
 
 // ApplyDefaultCatalogEndpoints fills a Catalog SourceDescriptor with the same

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
+	"github.com/QuantProcessing/keeluni/exchange"
 )
 
 func TestBinanceExactOrderLookupByClientOrderID(t *testing.T) {

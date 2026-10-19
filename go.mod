@@ -1,4 +1,4 @@
-module github.com/QuantProcessing/boltertrader
+module github.com/QuantProcessing/keeluni
 
 go 1.26
 

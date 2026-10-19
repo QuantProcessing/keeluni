@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
+	"github.com/QuantProcessing/keeluni/exchange"
 )
 
 // PublicInstrumentConnector owns only credential-free instrument discovery.

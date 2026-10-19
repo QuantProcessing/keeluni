@@ -19,7 +19,7 @@ type View = "spread" | "funding";
  */
 export function SpreadChart({ pair, matching }: { pair: Pair; matching: { match: "base" | "notional"; ratio: number } | undefined }) {
   const [view, setView] = useState<View>("spread");
-  const [interval, setIntervalValue] = useState<string>(() => localStorage.getItem("bolter.hedge.interval") ?? "15m");
+  const [interval, setIntervalValue] = useState<string>(() => localStorage.getItem("keeluni.hedge.interval") ?? "15m");
   const [days, setDays] = useState<number>(7);
   const inst0 = useInstrument(pair[0].inst);
   const inst1 = useInstrument(pair[1].inst);
@@ -67,7 +67,7 @@ export function SpreadChart({ pair, matching }: { pair: Pair; matching: { match:
           <span className="flex whitespace-nowrap">
             {view === "spread"
               ? INTERVALS.map((item) => (
-                <button key={item} onClick={() => { setIntervalValue(item); localStorage.setItem("bolter.hedge.interval", item); }} className={cx("rounded px-1.5 py-0.5", interval === item ? "text-text" : "text-muted hover:text-text")}>{item}</button>
+                <button key={item} onClick={() => { setIntervalValue(item); localStorage.setItem("keeluni.hedge.interval", item); }} className={cx("rounded px-1.5 py-0.5", interval === item ? "text-text" : "text-muted hover:text-text")}>{item}</button>
               ))
               : WINDOWS.map(([label, value]) => (
                 <button key={label} onClick={() => setDays(value)} className={cx("rounded px-1.5 py-0.5", days === value ? "text-text" : "text-muted hover:text-text")}>{label}</button>

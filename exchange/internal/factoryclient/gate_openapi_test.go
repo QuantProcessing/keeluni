@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	gate "github.com/QuantProcessing/boltertrader/sdk/gate"
+	"github.com/QuantProcessing/keeluni/exchange"
+	gate "github.com/QuantProcessing/keeluni/sdk/gate"
 	"github.com/shopspring/decimal"
 )
 

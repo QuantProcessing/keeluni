@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/internal/testenv"
+	"github.com/QuantProcessing/keeluni/internal/testenv"
 )
 
 func TestTradeWSClient_PlaceOrder(t *testing.T) {

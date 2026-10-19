@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	hyperliquidbase "github.com/QuantProcessing/boltertrader/sdk/hyperliquid"
+	hyperliquidbase "github.com/QuantProcessing/keeluni/sdk/hyperliquid"
 )
 
 func TestHyperliquidPerpDirectoryBoundsFanoutAndRetriesOneDex(t *testing.T) {

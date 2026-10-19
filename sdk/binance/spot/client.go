@@ -12,9 +12,9 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/QuantProcessing/boltertrader/internal/mbx"
-	"github.com/QuantProcessing/boltertrader/internal/venuehttp"
-	sdkcore "github.com/QuantProcessing/boltertrader/sdk"
+	"github.com/QuantProcessing/keeluni/internal/mbx"
+	"github.com/QuantProcessing/keeluni/internal/venuehttp"
+	sdkcore "github.com/QuantProcessing/keeluni/sdk"
 )
 
 const (

@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	astercommon "github.com/QuantProcessing/boltertrader/sdk/aster/common"
+	"github.com/QuantProcessing/keeluni/exchange"
+	astercommon "github.com/QuantProcessing/keeluni/sdk/aster/common"
 	"github.com/shopspring/decimal"
 )
 

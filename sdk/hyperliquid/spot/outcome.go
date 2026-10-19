@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	hyperliquid "github.com/QuantProcessing/boltertrader/sdk/hyperliquid"
+	hyperliquid "github.com/QuantProcessing/keeluni/sdk/hyperliquid"
 )
 
 func (c *Client) SubmitSplitOutcome(ctx context.Context, outcome int, amount string) (string, error) {

@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	binanceperp "github.com/QuantProcessing/boltertrader/sdk/binance/perp"
-	binancespot "github.com/QuantProcessing/boltertrader/sdk/binance/spot"
+	"github.com/QuantProcessing/keeluni/exchange"
+	binanceperp "github.com/QuantProcessing/keeluni/sdk/binance/perp"
+	binancespot "github.com/QuantProcessing/keeluni/sdk/binance/spot"
 	"github.com/shopspring/decimal"
 )
 

@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	crossex "github.com/QuantProcessing/boltertrader/sdk/crossex"
+	"github.com/QuantProcessing/keeluni/exchange"
+	crossex "github.com/QuantProcessing/keeluni/sdk/crossex"
 )
 
 // crossExWebSocket is the PerpWebSocket facet of a CrossEx client. One login

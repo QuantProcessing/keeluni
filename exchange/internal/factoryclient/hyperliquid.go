@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	hyperliquidbase "github.com/QuantProcessing/boltertrader/sdk/hyperliquid"
-	hyperliquidperp "github.com/QuantProcessing/boltertrader/sdk/hyperliquid/perp"
-	hyperliquidspot "github.com/QuantProcessing/boltertrader/sdk/hyperliquid/spot"
+	"github.com/QuantProcessing/keeluni/exchange"
+	hyperliquidbase "github.com/QuantProcessing/keeluni/sdk/hyperliquid"
+	hyperliquidperp "github.com/QuantProcessing/keeluni/sdk/hyperliquid/perp"
+	hyperliquidspot "github.com/QuantProcessing/keeluni/sdk/hyperliquid/spot"
 )
 
 type hyperliquidSpotClient struct {

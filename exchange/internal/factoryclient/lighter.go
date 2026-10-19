@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	"github.com/QuantProcessing/boltertrader/internal/venuehttp"
-	"github.com/QuantProcessing/boltertrader/sdk/lighter"
+	"github.com/QuantProcessing/keeluni/exchange"
+	"github.com/QuantProcessing/keeluni/internal/venuehttp"
+	"github.com/QuantProcessing/keeluni/sdk/lighter"
 )
 
 type lighterSpotClient struct {

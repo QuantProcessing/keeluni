@@ -10,10 +10,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	hyperliquid "github.com/QuantProcessing/boltertrader/sdk/hyperliquid"
-	hyperliquidperp "github.com/QuantProcessing/boltertrader/sdk/hyperliquid/perp"
-	hyperliquidspot "github.com/QuantProcessing/boltertrader/sdk/hyperliquid/spot"
+	"github.com/QuantProcessing/keeluni/exchange"
+	hyperliquid "github.com/QuantProcessing/keeluni/sdk/hyperliquid"
+	hyperliquidperp "github.com/QuantProcessing/keeluni/sdk/hyperliquid/perp"
+	hyperliquidspot "github.com/QuantProcessing/keeluni/sdk/hyperliquid/spot"
 	"github.com/shopspring/decimal"
 )
 

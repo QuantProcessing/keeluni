@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
+	"github.com/QuantProcessing/keeluni/exchange"
 )
 
 func TestBybitExactOrderLookupUsesRealtimeThenHistory(t *testing.T) {

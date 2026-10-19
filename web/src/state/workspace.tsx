@@ -119,18 +119,18 @@ export function originLabel(origin: Order["origin"]): string | undefined {
 }
 
 /** The remembered account per instrument venue ("kraken" -> acc_...). */
-const CHOICE_KEY = "bolter.tradeAccount";
+const CHOICE_KEY = "keeluni.tradeAccount";
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const toast = useToast();
   const queryClient = useQueryClient();
-  const [savedInstrument, setInstrument] = useState(() => stored("bolter.instrument", DEFAULT_INSTRUMENT));
+  const [savedInstrument, setInstrument] = useState(() => stored("keeluni.instrument", DEFAULT_INSTRUMENT));
   const { data: instruments } = useInstruments();
   const fallback = useMemo(() => fallbackInstrument(savedInstrument, instruments ?? []), [savedInstrument, instruments]);
   const instrumentId = fallback?.id ?? savedInstrument;
   const instrument = useInstrument(instrumentId);
   const [choices, setChoices] = useState(() => storedMap(CHOICE_KEY));
-  const [accountFilter, setFilter] = useState(() => stored("bolter.accountFilter", ""));
+  const [accountFilter, setFilter] = useState(() => stored("keeluni.accountFilter", ""));
   const [limitPriceHint, setHint] = useState<{ price: string; at: number } | null>(null);
   const [connectOpen, setConnectOpenState] = useState(false);
   const [connectVenue, setConnectVenue] = useState<string | undefined>(undefined);
@@ -141,11 +141,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const setInstrumentId = useCallback((id: string) => {
     setInstrument(id);
-    localStorage.setItem("bolter.instrument", id);
+    localStorage.setItem("keeluni.instrument", id);
   }, []);
   const setAccountFilter = useCallback((id: string) => {
     setFilter(id);
-    localStorage.setItem("bolter.accountFilter", id);
+    localStorage.setItem("keeluni.accountFilter", id);
   }, []);
 
   // Order rules: per account, loaded once and kept.

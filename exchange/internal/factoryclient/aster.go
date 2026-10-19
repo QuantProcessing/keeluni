@@ -11,10 +11,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	astercommon "github.com/QuantProcessing/boltertrader/sdk/aster/common"
-	asterperp "github.com/QuantProcessing/boltertrader/sdk/aster/perp"
-	asterspot "github.com/QuantProcessing/boltertrader/sdk/aster/spot"
+	"github.com/QuantProcessing/keeluni/exchange"
+	astercommon "github.com/QuantProcessing/keeluni/sdk/aster/common"
+	asterperp "github.com/QuantProcessing/keeluni/sdk/aster/perp"
+	asterspot "github.com/QuantProcessing/keeluni/sdk/aster/spot"
 	"github.com/shopspring/decimal"
 )
 

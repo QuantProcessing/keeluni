@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
+	"github.com/QuantProcessing/keeluni/exchange"
 )
 
 type clientMeta struct {
@@ -255,6 +255,8 @@ type fundingPaymentCursorToken struct {
 
 func fundingPaymentCursorKey(parts ...string) []byte {
 	hash := sha256.New()
+	// Domain label from before the KeelUni rename; it keys cursors already
+	// handed out, so it stays as is.
 	_, _ = hash.Write([]byte("boltertrader:funding-payment-cursor-key:v1\n"))
 	for _, part := range parts {
 		_, _ = hash.Write([]byte(part))
@@ -321,6 +323,7 @@ func decodeFundingPaymentCursor(cursor string, key []byte, expected fundingPayme
 
 func fundingPaymentCursorScopeTokenDigest(key []byte, scopeDigest string) string {
 	mac := hmac.New(sha256.New, key)
+	// Domain label from before the KeelUni rename; kept for issued cursors.
 	_, _ = mac.Write([]byte("boltertrader:funding-payment-cursor-scope:v1\n"))
 	_, _ = mac.Write([]byte(scopeDigest))
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))

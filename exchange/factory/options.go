@@ -3,7 +3,7 @@ package factory
 import (
 	"net/http"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
+	"github.com/QuantProcessing/keeluni/exchange"
 )
 
 type settings struct {

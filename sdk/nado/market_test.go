@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/internal/testenv"
+	"github.com/QuantProcessing/keeluni/internal/testenv"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,7 +23,7 @@ func requireFullEnv(t *testing.T) {
 
 func requireWriteEnv(t *testing.T) {
 	t.Helper()
-	testenv.RequireLiveWrite(t, "BOLTER_ENABLE_NADO_UNSAFE_RAW_SDK_WRITES", "NADO_PRIVATE_KEY")
+	testenv.RequireLiveWrite(t, "KEELUNI_ENABLE_NADO_UNSAFE_RAW_SDK_WRITES", "NADO_PRIVATE_KEY")
 }
 
 func GetEnv() (string, string) {

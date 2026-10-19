@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	sdkcore "github.com/QuantProcessing/boltertrader/sdk"
+	sdkcore "github.com/QuantProcessing/keeluni/sdk"
 )
 
 type Client struct {

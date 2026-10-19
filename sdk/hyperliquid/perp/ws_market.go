@@ -3,7 +3,7 @@ package perp
 import (
 	"encoding/json"
 
-	"github.com/QuantProcessing/boltertrader/sdk/hyperliquid"
+	"github.com/QuantProcessing/keeluni/sdk/hyperliquid"
 )
 
 // Helper to subscribe to L2Book

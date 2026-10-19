@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/gateway/funding"
-	"github.com/QuantProcessing/boltertrader/gateway/hub"
+	"github.com/QuantProcessing/keeluni/gateway/funding"
+	"github.com/QuantProcessing/keeluni/gateway/hub"
 	"github.com/coder/websocket"
 )
 

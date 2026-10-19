@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	bitget "github.com/QuantProcessing/boltertrader/sdk/bitget"
-	bybit "github.com/QuantProcessing/boltertrader/sdk/bybit"
-	gate "github.com/QuantProcessing/boltertrader/sdk/gate"
+	"github.com/QuantProcessing/keeluni/exchange"
+	bitget "github.com/QuantProcessing/keeluni/sdk/bitget"
+	bybit "github.com/QuantProcessing/keeluni/sdk/bybit"
+	gate "github.com/QuantProcessing/keeluni/sdk/gate"
 	"github.com/shopspring/decimal"
 )
 

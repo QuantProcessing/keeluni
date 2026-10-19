@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	hyperliquid "github.com/QuantProcessing/boltertrader/sdk/hyperliquid"
+	hyperliquid "github.com/QuantProcessing/keeluni/sdk/hyperliquid"
 )
 
 func TestWSMarketCompanion_SubscriptionTypes(t *testing.T) {

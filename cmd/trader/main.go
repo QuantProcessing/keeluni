@@ -31,7 +31,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/trader"
+	"github.com/QuantProcessing/keeluni/trader"
 )
 
 func env(name, fallback string) string {

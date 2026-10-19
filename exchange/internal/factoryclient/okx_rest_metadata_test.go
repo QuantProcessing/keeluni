@@ -3,7 +3,7 @@ package factoryclient
 import (
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/sdk/okx"
+	"github.com/QuantProcessing/keeluni/sdk/okx"
 )
 
 func TestOKXPerpMetasFilterNonUSDTLinearSwapRows(t *testing.T) {

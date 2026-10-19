@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
+	"github.com/QuantProcessing/keeluni/exchange"
 )
 
 type binanceDerivativeSnapshotLoader struct {

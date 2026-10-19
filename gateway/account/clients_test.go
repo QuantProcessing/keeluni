@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/credential"
-	"github.com/QuantProcessing/boltertrader/exchange"
-	"github.com/QuantProcessing/boltertrader/gateway/venue"
+	"github.com/QuantProcessing/keeluni/credential"
+	"github.com/QuantProcessing/keeluni/exchange"
+	"github.com/QuantProcessing/keeluni/gateway/venue"
 )
 
 // Binance USDT and USDC perps are one USD-M account: one client trades both,

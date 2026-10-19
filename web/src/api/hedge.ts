@@ -219,7 +219,7 @@ export interface Matching {
 }
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { "X-Bolter": "1" };
+  const headers: Record<string, string> = { "X-KeelUni": "1" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const response = await fetch("/api/hedge/v1" + path, {
     method, headers, credentials: "same-origin", body: body === undefined ? undefined : JSON.stringify(body),

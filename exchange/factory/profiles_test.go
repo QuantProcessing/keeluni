@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/credential"
-	"github.com/QuantProcessing/boltertrader/exchange"
-	"github.com/QuantProcessing/boltertrader/routeprofile"
+	"github.com/QuantProcessing/keeluni/credential"
+	"github.com/QuantProcessing/keeluni/exchange"
+	"github.com/QuantProcessing/keeluni/routeprofile"
 )
 
 func TestEveryRouteHasOneFactoryBindingCredentialSchemaAndMarketFamily(t *testing.T) {

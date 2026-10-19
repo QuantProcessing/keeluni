@@ -1,6 +1,6 @@
 package sdk
 
-import "github.com/QuantProcessing/boltertrader/internal/errs"
+import "github.com/QuantProcessing/keeluni/internal/errs"
 
 var (
 	ErrAuthFailed     = errs.ErrAuthFailed

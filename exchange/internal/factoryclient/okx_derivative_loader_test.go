@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	"github.com/QuantProcessing/boltertrader/sdk/okx"
+	"github.com/QuantProcessing/keeluni/exchange"
+	"github.com/QuantProcessing/keeluni/sdk/okx"
 )
 
 func TestOKXDerivativeLoaderCoordinatesFourNativeBatchOperations(t *testing.T) {

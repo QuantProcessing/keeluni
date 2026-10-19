@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
+	"github.com/QuantProcessing/keeluni/exchange"
 )
 
 func loadDerivativeSnapshot(ctx context.Context, scope exchange.CatalogScope, loader DerivativeSnapshotLoader, settings Settings) (DerivativeSnapshot, error) {

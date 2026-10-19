@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	deribit "github.com/QuantProcessing/boltertrader/sdk/deribit"
+	"github.com/QuantProcessing/keeluni/exchange"
+	deribit "github.com/QuantProcessing/keeluni/sdk/deribit"
 	"github.com/shopspring/decimal"
 )
 

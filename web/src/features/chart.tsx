@@ -23,7 +23,7 @@ type Gesture =
 export function ChartPanel() {
   const { instrumentId } = useWorkspace();
   const instrument = useInstrument(instrumentId);
-  const [interval, setIntervalValue] = useState<string>(() => localStorage.getItem("bolter.interval") ?? "15m");
+  const [interval, setIntervalValue] = useState<string>(() => localStorage.getItem("keeluni.interval") ?? "15m");
   const host = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
   const candles = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -34,7 +34,7 @@ export function ChartPanel() {
   const [attempt, setAttempt] = useState(0);
 
   const [tool, setToolState] = useState<Tool>("cursor");
-  const [magnet, setMagnet] = useState(() => localStorage.getItem("bolter.chart.magnet") === "1");
+  const [magnet, setMagnet] = useState(() => localStorage.getItem("keeluni.chart.magnet") === "1");
   const [hidden, setHidden] = useState(false);
   const [count, setCount] = useState(0);
   const toolRef = useRef(tool);
@@ -72,7 +72,7 @@ export function ChartPanel() {
   }, []);
 
   useEffect(() => {
-    layer.current.load("bolter.drawings." + instrumentId);
+    layer.current.load("keeluni.drawings." + instrumentId);
     gesture.current = { kind: "none" };
     refreshCount();
   }, [instrumentId, refreshCount]);
@@ -247,7 +247,7 @@ export function ChartPanel() {
     gesture.current = { kind: "none" };
     layer.current.cancel();
     setIntervalValue(value);
-    localStorage.setItem("bolter.interval", value);
+    localStorage.setItem("keeluni.interval", value);
   };
 
   const pick = (next: Tool) => {
@@ -285,7 +285,7 @@ export function ChartPanel() {
             label={magnet ? "Magnet on: snap to open, high, low, close" : "Magnet off"}
             active={magnet}
             onClick={() => {
-              localStorage.setItem("bolter.chart.magnet", magnet ? "0" : "1");
+              localStorage.setItem("keeluni.chart.magnet", magnet ? "0" : "1");
               setMagnet(!magnet);
             }}
           >

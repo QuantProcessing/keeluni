@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	exchanges "github.com/QuantProcessing/boltertrader/internal/errs"
-	astercommon "github.com/QuantProcessing/boltertrader/sdk/aster/common"
+	exchanges "github.com/QuantProcessing/keeluni/internal/errs"
+	astercommon "github.com/QuantProcessing/keeluni/sdk/aster/common"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	binanceperp "github.com/QuantProcessing/boltertrader/sdk/binance/perp"
-	binancespot "github.com/QuantProcessing/boltertrader/sdk/binance/spot"
-	gate "github.com/QuantProcessing/boltertrader/sdk/gate"
-	"github.com/QuantProcessing/boltertrader/sdk/lighter"
+	"github.com/QuantProcessing/keeluni/exchange"
+	binanceperp "github.com/QuantProcessing/keeluni/sdk/binance/perp"
+	binancespot "github.com/QuantProcessing/keeluni/sdk/binance/spot"
+	gate "github.com/QuantProcessing/keeluni/sdk/gate"
+	"github.com/QuantProcessing/keeluni/sdk/lighter"
 	"github.com/shopspring/decimal"
 )
 

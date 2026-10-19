@@ -38,7 +38,7 @@ func (box *Cipher) Seal(accountID, venue string, material []byte) ([]byte, error
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, ErrUnavailable
 	}
-	return box.aead.Seal(nonce, nonce, material, []byte("bolter-account-v1\x00"+accountID+"\x00"+venue)), nil
+	return box.aead.Seal(nonce, nonce, material, associatedData(accountID, venue)), nil
 }
 
 func (box *Cipher) Open(accountID, venue string, sealed []byte) ([]byte, error) {
@@ -46,7 +46,7 @@ func (box *Cipher) Open(accountID, venue string, sealed []byte) ([]byte, error) 
 		return nil, ErrIntegrity
 	}
 	n := box.aead.NonceSize()
-	plain, err := box.aead.Open(nil, sealed[:n], sealed[n:], []byte("bolter-account-v1\x00"+accountID+"\x00"+venue))
+	plain, err := box.aead.Open(nil, sealed[:n], sealed[n:], associatedData(accountID, venue))
 	if err != nil {
 		return nil, ErrIntegrity
 	}
@@ -56,3 +56,11 @@ func (box *Cipher) Open(accountID, venue string, sealed []byte) ([]byte, error) 
 func (*Cipher) String() string               { return "secretstore.Cipher{key:redacted}" }
 func (box *Cipher) GoString() string         { return box.String() }
 func (*Cipher) MarshalJSON() ([]byte, error) { return []byte(`{"key":"redacted"}`), nil }
+
+// associatedData binds a sealed credential to its account and venue. The
+// "bolter-account-v1" label predates the KeelUni name and is part of every
+// sealed record: changing it makes existing accounts.enc files unreadable.
+// Do not rename it; a new label needs a re-encryption migration.
+func associatedData(accountID, venue string) []byte {
+	return []byte("bolter-account-v1\x00" + accountID + "\x00" + venue)
+}

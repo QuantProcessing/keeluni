@@ -3,8 +3,8 @@ package sdk
 import (
 	"errors"
 	"fmt"
-	"github.com/QuantProcessing/boltertrader/internal/venuehttp"
-	sdkcore "github.com/QuantProcessing/boltertrader/sdk"
+	"github.com/QuantProcessing/keeluni/internal/venuehttp"
+	sdkcore "github.com/QuantProcessing/keeluni/sdk"
 	"strings"
 )
 

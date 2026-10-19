@@ -13,7 +13,7 @@ import { HedgeTicket } from "./ticket";
 
 function savedPair(): Pair {
   try {
-    const saved = JSON.parse(localStorage.getItem("bolter.hedge.pair") ?? "null") as Pair | null;
+    const saved = JSON.parse(localStorage.getItem("keeluni.hedge.pair") ?? "null") as Pair | null;
     if (saved?.length === 2 && saved.every((leg) => leg.inst && leg.side)) return normalizePair(saved);
   } catch {
     // ignore a corrupt saved pair
@@ -38,7 +38,7 @@ export function HedgeApp() {
   const savePair = (next: Pair) => {
     const normal = normalizePair(next, spot);
     setPair(normal);
-    localStorage.setItem("bolter.hedge.pair", JSON.stringify(normal));
+    localStorage.setItem("keeluni.hedge.pair", JSON.stringify(normal));
   };
   const setInstrument = (index: 0 | 1, inst: string) => {
     const next: Pair = [{ ...pair[0] }, { ...pair[1] }];
@@ -47,7 +47,7 @@ export function HedgeApp() {
     nextSpot[index] = instruments?.find((item) => item.id === inst)?.product === "spot";
     const normal = normalizePair(next, nextSpot);
     setPair(normal);
-    localStorage.setItem("bolter.hedge.pair", JSON.stringify(normal));
+    localStorage.setItem("keeluni.hedge.pair", JSON.stringify(normal));
   };
   const setAccount = (index: 0 | 1, accountId: string) => {
     const next: Pair = [{ ...pair[0] }, { ...pair[1] }];

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strconv"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	binanceperp "github.com/QuantProcessing/boltertrader/sdk/binance/perp"
+	"github.com/QuantProcessing/keeluni/exchange"
+	binanceperp "github.com/QuantProcessing/keeluni/sdk/binance/perp"
 )
 
 const binanceExactLookupOperation = "LookupExactOrder"

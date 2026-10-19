@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/QuantProcessing/boltertrader/exchange"
-	binanceperp "github.com/QuantProcessing/boltertrader/sdk/binance/perp"
+	"github.com/QuantProcessing/keeluni/exchange"
+	binanceperp "github.com/QuantProcessing/keeluni/sdk/binance/perp"
 	"github.com/shopspring/decimal"
 )
 
