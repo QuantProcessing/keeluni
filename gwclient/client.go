@@ -143,6 +143,25 @@ func (client *Client) Accounts(ctx context.Context) ([]Account, error) {
 	return out, client.get(ctx, "/v1/accounts", nil, &out)
 }
 
+// Routes lists the instruments an account trades and the rules its orders
+// follow there.
+func (client *Client) Routes(ctx context.Context, accountID string) ([]Route, error) {
+	var out []Route
+	return out, client.get(ctx, account(accountID, "/instruments"), nil, &out)
+}
+
+// Margin is a broker account's pool; nil for a native account.
+func (client *Client) Margin(ctx context.Context, accountID string) (*Margin, error) {
+	var out *Margin
+	return out, client.get(ctx, account(accountID, "/margin"), nil, &out)
+}
+
+// OpenOrders lists an account's resting orders on one instrument.
+func (client *Client) OpenOrders(ctx context.Context, accountID, instrument string) ([]Order, error) {
+	var out []Order
+	return out, client.get(ctx, account(accountID, "/orders"), url.Values{"inst": {instrument}}, &out)
+}
+
 func (client *Client) Book(ctx context.Context, instrument string, depth int) (Book, error) {
 	var out Book
 	return out, client.get(ctx, "/v1/orderbook", url.Values{"inst": {instrument}, "depth": {strconv.Itoa(depth)}}, &out)

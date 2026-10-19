@@ -119,7 +119,11 @@ func (market *Market) SetConnected(connected bool) {
 	defer market.mu.Unlock()
 	market.connected = connected
 	if !connected {
+		// Nothing cached is current any more: books, positions and account
+		// liveness all come back with the replay after reconnecting.
 		market.books = map[string]bookState{}
+		market.positions = map[string][]gwclient.Position{}
+		market.accountUp = map[string]bool{}
 	}
 }
 
@@ -237,6 +241,13 @@ func (market *Market) Position(accountID, instrument string) (gwclient.Position,
 		}
 	}
 	return gwclient.Position{}, false, known
+}
+
+// Connected reports whether the gateway stream is up.
+func (market *Market) Connected() bool {
+	market.mu.Lock()
+	defer market.mu.Unlock()
+	return market.connected
 }
 
 // AccountLive reports whether an account's private stream is connected.

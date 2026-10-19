@@ -53,6 +53,7 @@ type runner struct {
 	action  Action
 	events  chan event
 	control chan string
+	done    chan struct{} // closed when run returns
 
 	orders   map[string]*Order
 	sequence []string
@@ -81,6 +82,7 @@ func (r *runner) deliver(ev event) {
 }
 
 func (r *runner) run(ctx context.Context) {
+	defer close(r.done)
 	r.orders, r.fills = map[string]*Order{}, map[string][]Fill{}
 	r.placing, r.looking, r.lastLookup, r.cancelSent, r.unknownWarned = map[string]bool{}, map[string]bool{}, map[string]time.Time{}, map[string]bool{}, map[string]bool{}
 	if err := r.load(ctx); err != nil {
@@ -537,10 +539,17 @@ func (r *runner) markUnknown(ctx context.Context, order *Order, reason string) {
 		r.unknownWarned[order.ClientOrderID] = true
 		r.engine.event(r.group.ID, "warn", "Leg %d order outcome unknown (%s); checking with the exchange — it will not be placed again", order.Leg+1, reason)
 	}
-	// Look it up soon, on the unknown-outcome schedule.
+	// Look it up soon, on the unknown-outcome schedule. The schedule ends
+	// with the runner; the poll keeps looking after it.
 	go func(id string) {
 		for _, delay := range r.engine.lookupDelays {
-			time.Sleep(delay)
+			select {
+			case <-ctx.Done():
+				return
+			case <-r.done:
+				return
+			case <-time.After(delay):
+			}
 			r.deliver(event{looked: &lookedUp{clientOrderID: id, err: errScheduledLookup}})
 		}
 	}(order.ClientOrderID)
@@ -570,17 +579,69 @@ func (r *runner) applyLookup(ctx context.Context, result lookedUp) {
 		if result.result.Order != nil {
 			r.merge(ctx, order, *result.result.Order, "")
 		}
-	case "not_found":
+	case gwclient.LookupNotFound:
 		// A just-sent order may not be indexed yet: only an order old enough
 		// is proven never placed.
 		if r.engine.now().Sub(order.CreatedAt) >= notFoundAfter && (order.State == OrderUnknown || order.State == OrderSending) {
 			r.setTerminal(ctx, order, OrderNotFound, "the exchange has no such order; it was never placed")
 		}
+	case gwclient.LookupUnconfirmed:
+		r.reconcile(ctx, order)
 	}
 }
 
 // notFoundAfter is how long after sending a "not found" lookup is trusted.
 const notFoundAfter = 10 * time.Second
+
+// unresolvedAfter bounds how long an order the venue can neither show nor
+// deny is searched for in fills and open orders before the operator is asked.
+const unresolvedAfter = 2 * time.Minute
+
+// reconcile establishes an order the venue's lookup cannot confirm (Kraken
+// forgets closed orders after seconds, Deribit labels after 30 minutes,
+// CrossEx by text). Its fills prove what it executed; an open order with its
+// client id proves it rests. When neither appears within unresolvedAfter the
+// order is marked unresolved: the leg's size is then unknown, so the action
+// stops and the group is left for the operator.
+func (r *runner) reconcile(ctx context.Context, order *Order) {
+	if OrderTerminal(order.State) {
+		return
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if open, err := r.engine.gateway.OpenOrders(callCtx, order.AccountID, order.Instrument); err == nil {
+		for _, candidate := range open {
+			if candidate.ClientOrderID == order.ClientOrderID || (order.VenueOrderID != "" && candidate.OrderID == order.VenueOrderID) {
+				r.merge(ctx, order, candidate, "")
+				return
+			}
+		}
+	}
+	if fills, err := r.engine.gateway.Fills(callCtx, order.AccountID, order.Instrument, order.CreatedAt.Add(-time.Minute)); err == nil {
+		matched := decimal.Zero
+		var venueOrderID string
+		for _, fill := range fills {
+			if fill.ClientOrderID == order.ClientOrderID || (order.VenueOrderID != "" && fill.OrderID == order.VenueOrderID) {
+				fill.ClientOrderID = order.ClientOrderID
+				r.applyFill(ctx, fill)
+				qty, _ := decimal.NewFromString(fill.Quantity)
+				matched, venueOrderID = matched.Add(qty), fill.OrderID
+			}
+		}
+		if matched.IsPositive() {
+			// Executed and no longer open: filled, or the rest was cancelled.
+			state := OrderFilled
+			if matched.LessThan(order.Qty) {
+				state = OrderCanceled
+			}
+			r.merge(ctx, order, gwclient.Order{OrderID: venueOrderID, Status: state, Filled: matched.String()}, "")
+			return
+		}
+	}
+	if r.engine.now().Sub(order.CreatedAt) >= unresolvedAfter {
+		r.setTerminal(ctx, order, OrderUnresolved, "the exchange can neither show nor deny this order and no fill of it was found; check the venue before acting")
+	}
+}
 
 func (r *runner) setTerminal(ctx context.Context, order *Order, state, reason string) {
 	order.State, order.Error = state, reason
@@ -590,10 +651,30 @@ func (r *runner) setTerminal(ctx context.Context, order *Order, state, reason st
 		level = "error"
 	}
 	r.engine.event(r.group.ID, level, "Leg %d %s order %s: %s", order.Leg+1, order.Side, state, reason)
-	if order.Role == RoleHedge && state == OrderRejected && r.failure == "" {
-		r.failure = fmt.Sprintf("hedge on leg %d rejected: %s", order.Leg+1, reason)
+	if state == OrderRejected {
+		r.noteRejection(order, reason)
 	}
-	if order.Role == RoleTaker && state == OrderRejected && r.failure == "" {
+	if state == OrderUnresolved && r.failure == "" {
+		r.failure = fmt.Sprintf("leg %d order outcome could not be established: %s", order.Leg+1, reason)
+	}
+}
+
+// rejected records a rejection reported on the order itself.
+func (r *runner) rejected(order *Order, reason string) {
+	r.engine.event(r.group.ID, "error", "Leg %d %s order rejected: %s", order.Leg+1, order.Side, reason)
+	r.noteRejection(order, reason)
+}
+
+// noteRejection stops the action on a rejected taker or hedge: continuing
+// would only add exposure. A rejected maker ends the action by itself.
+func (r *runner) noteRejection(order *Order, reason string) {
+	if r.failure != "" {
+		return
+	}
+	switch order.Role {
+	case RoleHedge:
+		r.failure = fmt.Sprintf("hedge on leg %d rejected: %s", order.Leg+1, reason)
+	case RoleTaker:
 		r.failure = fmt.Sprintf("leg %d rejected: %s", order.Leg+1, reason)
 	}
 }
@@ -610,8 +691,19 @@ func (r *runner) merge(ctx context.Context, order *Order, update gwclient.Order,
 	if order.State == OrderFilled && order.Filled.IsZero() {
 		order.Filled = order.Qty // a fill report without a quantity
 	}
-	if order.State != OrderUnknown && order.State != OrderSending && before.State == OrderUnknown {
+	if order.State != OrderUnknown && order.State != OrderSending && order.State != OrderRejected && before.State == OrderUnknown {
 		order.Error = ""
+	}
+	if order.State == OrderRejected && before.State != OrderRejected {
+		// A broker accepts first and rejects later: the rejection arrives here,
+		// not as the placement's answer. It stops the action the same way.
+		reason := order.Error
+		if reason == "" {
+			reason = "rejected by the exchange"
+		}
+		r.persist(ctx, order)
+		r.rejected(order, reason)
+		return
 	}
 	if order.State == before.State && order.VenueOrderID == before.VenueOrderID && order.Error == before.Error &&
 		order.Filled.Equal(before.Filled) && order.AvgPrice.Equal(before.AvgPrice) {

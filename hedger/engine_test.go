@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -16,15 +17,18 @@ import (
 // top of book; limit orders rest until the test fills them; outcomes can be
 // scripted per instrument.
 type fakeVenue struct {
-	mu      sync.Mutex
-	engine  *Engine
-	orders  map[string]*gwclient.Order // by client id
-	fills   map[string][]gwclient.Fill // by instrument
-	nextID  int
-	price   map[string]decimal.Decimal
-	script  map[string][]string // instrument -> outcomes: "fill" | "reject" | "unknown-filled" | "unknown-missing" | "partial:<qty>"
-	places  map[string]int      // client id -> placements (must be 1)
-	cancels int
+	mu     sync.Mutex
+	engine *Engine
+	orders map[string]*gwclient.Order // by client id
+	fills  map[string][]gwclient.Fill // by instrument
+	nextID int
+	price  map[string]decimal.Decimal
+	script map[string][]string // instrument -> outcomes: "fill" | "reject" | "unknown-filled" | "unknown-missing" | "partial:<qty>" | "pending"
+	// forgetful makes Lookup answer "unconfirmed" for orders that are no
+	// longer open (Kraken, Deribit labels, CrossEx text lookups).
+	forgetful bool
+	places    map[string]int // client id -> placements (must be 1)
+	cancels   int
 }
 
 func newFakeVenue() *fakeVenue {
@@ -43,7 +47,46 @@ func (venue *fakeVenue) Instruments(context.Context) ([]gwclient.Instrument, err
 }
 
 func (venue *fakeVenue) Accounts(context.Context) ([]gwclient.Account, error) {
-	return []gwclient.Account{{ID: "acc_a", Venue: "binance", Label: "a", Active: true}, {ID: "acc_b", Venue: "okx", Label: "b", Active: true}}, nil
+	return []gwclient.Account{
+		{ID: "acc_a", Venue: "binance", Kind: gwclient.AccountNative, Label: "a", Active: true, Markets: []string{"binance:perp:USDT"}},
+		{ID: "acc_b", Venue: "okx", Kind: gwclient.AccountNative, Label: "b", Active: true, Markets: []string{"okx:perp:USDT"}},
+		{ID: "acc_cx", Venue: "crossex", Kind: gwclient.AccountBroker, Label: "cx", Active: true, Markets: []string{"binance:perp:USDT", "okx:perp:USDT"}},
+	}, nil
+}
+
+// Routes: native accounts trade on the venue's rules; the broker on its own
+// (finer step on OKX, a minimum value on Binance).
+func (venue *fakeVenue) Routes(_ context.Context, accountID string) ([]gwclient.Route, error) {
+	switch accountID {
+	case "acc_a":
+		return []gwclient.Route{{Instrument: "binance:perp:BTC-USDT", TickSize: "0.1", StepSize: "0.001", MinQty: "0.001", MinNotional: "5"}}, nil
+	case "acc_b":
+		return []gwclient.Route{{Instrument: "okx:perp:BTC-USDT-SWAP", TickSize: "0.1", StepSize: "0.0001", MinQty: "0.0001"}}, nil
+	case "acc_cx":
+		return []gwclient.Route{
+			{Instrument: "binance:perp:BTC-USDT", TickSize: "0.1", StepSize: "0.001", MinQty: "0.001", MinNotional: "50"},
+			{Instrument: "okx:perp:BTC-USDT-SWAP", TickSize: "0.1", StepSize: "0.00001", MinQty: "0.00001"},
+		}, nil
+	}
+	return nil, nil
+}
+
+func (venue *fakeVenue) Margin(context.Context, string) (*gwclient.Margin, error) { return nil, nil }
+
+func (venue *fakeVenue) OpenOrders(_ context.Context, _ string, instrument string) ([]gwclient.Order, error) {
+	venue.mu.Lock()
+	defer venue.mu.Unlock()
+	var out []gwclient.Order
+	for _, order := range venue.orders {
+		if order.Instrument == instrument && !order.Terminal() {
+			out = append(out, *order)
+		}
+	}
+	return out, nil
+}
+
+func (venue *fakeVenue) Positions(context.Context, string) ([]gwclient.Position, error) {
+	return nil, nil
 }
 
 func (venue *fakeVenue) Book(context.Context, string, int) (gwclient.Book, error) {
@@ -95,6 +138,9 @@ func (venue *fakeVenue) Place(_ context.Context, accountID string, request gwcli
 		return gwclient.PlaceResult{}, errors.New("connection reset")
 	case len(outcome) > 8 && outcome[:8] == "partial:":
 		fillAll(outcome[8:])
+	case outcome == "pending":
+		// A broker accepted it; the exchange's answer comes later.
+		order.Status = "pending"
 	}
 	venue.orders[request.ClientOrderID] = order
 	if fill != nil {
@@ -113,8 +159,14 @@ func (venue *fakeVenue) Lookup(_ context.Context, _ string, _ string, clientOrde
 	venue.mu.Lock()
 	defer venue.mu.Unlock()
 	if order, ok := venue.orders[clientOrderID]; ok {
+		if venue.forgetful && order.Terminal() {
+			return gwclient.LookupResult{Status: gwclient.LookupUnconfirmed}, nil
+		}
 		copied := *order
 		return gwclient.LookupResult{Status: "found", Order: &copied}, nil
+	}
+	if venue.forgetful {
+		return gwclient.LookupResult{Status: gwclient.LookupUnconfirmed}, nil
 	}
 	return gwclient.LookupResult{Status: "not_found"}, nil
 }
@@ -254,7 +306,7 @@ func (rig *testRig) books(t *testing.T, groupID string) [2]LegBook {
 func openRequest(mode string) OpenRequest {
 	return OpenRequest{
 		Legs: [2]LegInput{{AccountID: "acc_a", Instrument: "binance:perp:BTC-USDT", Side: "buy"}, {AccountID: "acc_b", Instrument: "okx:perp:BTC-USDT-SWAP", Side: "sell"}},
-		Size: d("0.01"), Unit: UnitBase, Match: MatchBase, Mode: mode, Policy: PolicyUnwind,
+		Size: d("0.01"), Unit: UnitBase, Mode: mode, Policy: PolicyUnwind,
 	}
 }
 
@@ -622,5 +674,207 @@ func TestALateFillOnAFinishedActionRechecksTheGroup(t *testing.T) {
 	broken := rig.waitStatus(t, group.ID, StatusBroken)
 	if broken.Problem == "" {
 		t.Fatal("no problem text")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// The account model and order lifecycle of the current gateway
+// ---------------------------------------------------------------------------
+
+// Both legs on one Gate CrossEx account: legal, sized with the broker's own
+// rules (OKX at 0.00001 rather than the venue's 0.0001), flagged broker.
+func TestBrokerAccountTradesBothLegsWithItsOwnRules(t *testing.T) {
+	rig := newRig(t)
+	request := openRequest(ModeMarket)
+	request.Legs[0].AccountID, request.Legs[1].AccountID = "acc_cx", "acc_cx"
+	request.Size = d("0.01234")
+	group, err := rig.engine.Open(rig.ctx, rig.market, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	group = rig.waitStatus(t, group.ID, StatusOpen)
+	if !group.Legs[0].Broker || !group.Legs[1].StepSize.Equal(d("0.00001")) || !group.Legs[0].MinNotional.Equal(d("50")) {
+		t.Fatalf("legs = %+v", group.Legs)
+	}
+	books := rig.books(t, group.ID)
+	if !books[0].Held.Equal(d("0.012")) || !books[1].Held.Equal(d("0.012")) {
+		t.Fatalf("books = %+v", books)
+	}
+}
+
+// A native account of another venue, or a broker that does not list the
+// instrument, cannot carry the leg.
+func TestLegAccountMustTradeTheInstrument(t *testing.T) {
+	rig := newRig(t)
+	request := openRequest(ModeMarket)
+	request.Legs[1].AccountID = "acc_a" // Binance account on an OKX leg
+	if _, err := rig.engine.Open(rig.ctx, rig.market, request); err == nil || !IsInvalid(err) {
+		t.Fatalf("foreign venue account: %v", err)
+	}
+}
+
+// The ratio is the backend's: PEPE against 1000PEPE is 0.001, BTC against
+// ETH is matched by notional, 1INCH is a name and not a multiple.
+func TestMatchLegsFromInstruments(t *testing.T) {
+	leg := func(venue, base string) Leg { return Leg{Venue: venue, Base: base} }
+	cases := []struct {
+		a, b  Leg
+		match string
+		ratio string
+	}{
+		{leg("binance", "PEPE"), leg("binance", "1000PEPE"), MatchBase, "0.001"},
+		{leg("hyperliquid", "kPEPE"), leg("bybit", "1000PEPE"), MatchBase, "1"},
+		{leg("bitget", "1MCHEEMS"), leg("binance", "1000CHEEMS"), MatchBase, "1000"},
+		{leg("okx", "BTC"), leg("hyperliquid", "BTC"), MatchBase, "1"},
+		{leg("binance", "1INCH"), leg("okx", "1INCH"), MatchBase, "1"},
+		{leg("binance", "kAITO"), leg("okx", "AITO"), MatchNotional, "0"}, // k is a multiple on Hyperliquid only
+		{leg("okx", "BTC"), leg("okx", "ETH"), MatchNotional, "0"},
+	}
+	for _, c := range cases {
+		match, ratio := MatchLegs([2]Leg{c.a, c.b})
+		if match != c.match || !ratio.Equal(d(c.ratio)) {
+			t.Errorf("%s/%s = %s %s, want %s %s", c.a.Base, c.b.Base, match, ratio, c.match, c.ratio)
+		}
+	}
+}
+
+// A broker accepts the hedge and rejects it later on the stream. The action
+// must stop on that rejection — not send the hedge again — and the group is
+// repaired by the policy.
+func TestAsynchronousHedgeRejectionStopsTheAction(t *testing.T) {
+	rig := newRig(t)
+	request := openRequest(ModeLimit)
+	request.Maker, request.Price, request.TIF = 0, d("64000"), "gtc"
+	rig.venue.script["okx:perp:BTC-USDT-SWAP"] = []string{"pending"}
+	group, err := rig.engine.Open(rig.ctx, rig.market, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return rig.venue.restingCount() == 1 })
+	rig.venue.fillMaker(t, "binance:perp:BTC-USDT", "acc_a", "0.004")
+	// The hedge is accepted (pending); the exchange then rejects it.
+	var hedge gwclient.Order
+	waitFor(t, func() bool {
+		rig.venue.mu.Lock()
+		defer rig.venue.mu.Unlock()
+		for _, order := range rig.venue.orders {
+			if order.Instrument == "okx:perp:BTC-USDT-SWAP" && order.Status == "pending" {
+				order.Status, order.RejectMessage, order.RejectCode = "rejected", "Insufficient availableMargin", "TRADE_INSUFFICIENT_AVAILABLE_MARGIN_ERROR"
+				hedge = *order
+				return true
+			}
+		}
+		return false
+	})
+	rig.engine.OnOrder("acc_b", hedge)
+	group = rig.waitStatus(t, group.ID, StatusClosed, StatusBroken, StatusOpen)
+	hedges := 0
+	rig.venue.mu.Lock()
+	for _, order := range rig.venue.orders {
+		if order.Instrument == "okx:perp:BTC-USDT-SWAP" && order.Side == "sell" {
+			hedges++
+		}
+	}
+	rig.venue.mu.Unlock()
+	if hedges != 1 || rig.venue.restingCount() != 0 {
+		t.Fatalf("hedges sent = %d, resting = %d: the rejection did not stop the action", hedges, rig.venue.restingCount())
+	}
+	orders, _ := rig.store.Orders(rig.ctx, group.ID)
+	for _, order := range orders {
+		if order.Role == RoleHedge && (order.State != OrderRejected || order.Error == "") {
+			t.Fatalf("hedge order = %+v", order)
+		}
+	}
+}
+
+// A venue that forgets closed orders answers "unconfirmed". The order's
+// fills establish it.
+func TestUnconfirmedLookupIsResolvedFromFills(t *testing.T) {
+	rig := newRig(t)
+	rig.venue.forgetful = true
+	rig.venue.script["binance:perp:BTC-USDT"] = []string{"unknown-filled"}
+	group, err := rig.engine.Open(rig.ctx, rig.market, openRequest(ModeMarket))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rig.waitStatus(t, group.ID, StatusOpen)
+	books := rig.books(t, group.ID)
+	if !books[0].Held.Equal(d("0.01")) || rig.venue.maxPlacements() != 1 {
+		t.Fatalf("books = %+v", books)
+	}
+}
+
+// When neither the order nor a fill can be found, the order is unresolved
+// after a bounded wait and the group is left for the operator: no automatic
+// repair on a leg whose size is unknown.
+func TestUnresolvableOrderLeavesTheGroupForTheOperator(t *testing.T) {
+	rig := newRig(t)
+	rig.venue.forgetful = true
+	clock := time.Now()
+	var clockMu sync.Mutex
+	rig.engine.now = func() time.Time { clockMu.Lock(); defer clockMu.Unlock(); return clock }
+	rig.venue.script["okx:perp:BTC-USDT-SWAP"] = []string{"unknown-missing"}
+	group, err := rig.engine.Open(rig.ctx, rig.market, openRequest(ModeMarket))
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	clockMu.Lock()
+	clock = clock.Add(unresolvedAfter + time.Second)
+	clockMu.Unlock()
+	group = rig.waitStatus(t, group.ID, StatusBroken)
+	orders, _ := rig.store.Orders(rig.ctx, group.ID)
+	unresolved := 0
+	for _, order := range orders {
+		if order.State == OrderUnresolved {
+			unresolved++
+		}
+		if order.Leg == 0 && order.Side == "sell" {
+			t.Fatal("an automatic trim was sent although a leg's size is unknown")
+		}
+	}
+	if unresolved != 1 {
+		t.Fatalf("orders = %+v", orders)
+	}
+}
+
+// A leg closed outside the hedge (here: the venue reports no position) marks
+// the group unhedged once the disagreement persists.
+func TestVenuePositionMismatchMarksTheGroupUnhedged(t *testing.T) {
+	rig := newRig(t)
+	group, err := rig.engine.Open(rig.ctx, rig.market, openRequest(ModeMarket))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rig.waitStatus(t, group.ID, StatusOpen)
+	report := func(account string, positions string) {
+		rig.market.Handle(gwclient.Message{Channel: "account.status", Account: account, Data: []byte(`{"connected":true}`)})
+		rig.market.Handle(gwclient.Message{Channel: "account.positions", Account: account, Data: []byte(positions)})
+	}
+	report("acc_a", `[{"inst":"binance:perp:BTC-USDT","side":"long","size":"0.01","entryPrice":"65000","unrealizedPnl":"0"}]`)
+	report("acc_b", `[]`) // the short leg is gone
+	clock := time.Now()
+	rig.engine.now = func() time.Time { return clock }
+	rig.engine.ReconcileVenue(rig.ctx)
+	if got, _ := rig.store.Group(rig.ctx, group.ID); got.Status != StatusOpen {
+		t.Fatalf("marked at first sight: %s", got.Status)
+	}
+	clock = clock.Add(venueMismatchAfter + time.Second)
+	rig.engine.ReconcileVenue(rig.ctx)
+	got, _ := rig.store.Group(rig.ctx, group.ID)
+	if got.Status != StatusBroken || !strings.Contains(got.Problem, "leg 2") {
+		t.Fatalf("group = %s %q", got.Status, got.Problem)
+	}
+	// A venue holding more than the hedge (other trades) is not a mismatch.
+	other, _ := rig.engine.Open(rig.ctx, rig.market, openRequest(ModeMarket))
+	rig.waitStatus(t, other.ID, StatusOpen)
+	report("acc_b", `[{"inst":"okx:perp:BTC-USDT-SWAP","side":"short","size":"5","entryPrice":"65000","unrealizedPnl":"0"}]`)
+	report("acc_a", `[{"inst":"binance:perp:BTC-USDT","side":"long","size":"5","entryPrice":"65000","unrealizedPnl":"0"}]`)
+	clock = clock.Add(time.Hour)
+	rig.engine.ReconcileVenue(rig.ctx)
+	clock = clock.Add(time.Hour)
+	rig.engine.ReconcileVenue(rig.ctx)
+	if got, _ := rig.store.Group(rig.ctx, other.ID); got.Status != StatusOpen {
+		t.Fatalf("larger venue position flagged: %s %q", got.Status, got.Problem)
 	}
 }

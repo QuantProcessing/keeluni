@@ -30,6 +30,7 @@ func NewAPI(service *Service, token string) *API {
 	m.HandleFunc("GET /v1/groups", api.groups)
 	m.HandleFunc("GET /v1/groups/{id}", api.group)
 	m.HandleFunc("POST /v1/preview", api.preview)
+	m.HandleFunc("GET /v1/match", api.match)
 	m.HandleFunc("POST /v1/groups", api.open)
 	m.HandleFunc("PATCH /v1/groups/{id}", api.edit)
 	m.HandleFunc("POST /v1/groups/{id}/close", api.close)
@@ -61,7 +62,7 @@ func (api *API) health(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 	if err := api.service.Ready(ctx); err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "database": err.Error()})
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
@@ -154,11 +155,47 @@ func (api *API) group(w http.ResponseWriter, r *http.Request) {
 // depend on the account's tier).
 type Preview struct {
 	SizePlan
+	// Match is how the legs are sized against each other, derived from the
+	// instruments: base (same underlying, by quantity through the ratio) or
+	// notional (different underlyings).
+	Match         string                    `json:"match"`
 	Price         [2]decimal.Decimal        `json:"price"`
 	Sweep         [2]Sweep                  `json:"sweep"`
 	SpreadBps     decimal.Decimal           `json:"spreadBps"`
 	Funding       [2]*gwclient.FundingQuote `json:"funding"`
 	NetFundingApr decimal.Decimal           `json:"netFundingApr"`
+	// Legs are the resolved legs: the rules each leg follows on its account
+	// (a broker's can differ from the venue's).
+	Legs [2]Leg `json:"legs"`
+	// SharedPool is set when both legs trade from one broker account: one
+	// margin pool backs both, so its available margin is not counted twice.
+	SharedPool bool `json:"sharedPool,omitempty"`
+}
+
+// match answers how two instruments would be sized against each other
+// (?inst=a&inst=b): the pair bar shows it before any size is entered.
+func (api *API) match(w http.ResponseWriter, r *http.Request) {
+	ids := r.URL.Query()["inst"]
+	if len(ids) != 2 {
+		writeError(w, http.StatusBadRequest, "invalid", "two inst parameters are required")
+		return
+	}
+	instruments, _, err := api.service.Engine.catalog(r.Context())
+	if err != nil {
+		api.fail(w, err)
+		return
+	}
+	var legs [2]Leg
+	for i, id := range ids {
+		instrument, ok := instruments[id]
+		if !ok {
+			api.fail(w, invalidf("unknown instrument %q", id))
+			return
+		}
+		legs[i] = Leg{Venue: instrument.Venue, Base: instrument.Base}
+	}
+	match, ratio := MatchLegs(legs)
+	writeJSON(w, http.StatusOK, map[string]any{"match": match, "ratio": ratio})
 }
 
 func (api *API) preview(w http.ResponseWriter, r *http.Request) {
@@ -194,12 +231,15 @@ func (api *API) preview(w http.ResponseWriter, r *http.Request) {
 	if request.Mode == ModeLimit && (request.Maker == 0 || request.Maker == 1) && request.Price.IsPositive() {
 		prices[request.Maker] = request.Price
 	}
-	plan, err := PlanSize(SizeInput{Size: request.Size, Unit: request.Unit, Match: request.Match, Price: prices, Ratio: request.Ratio}, legs)
+	match, ratio := MatchLegs(legs)
+	plan, err := PlanSize(SizeInput{Size: request.Size, Unit: request.Unit, Match: match, Price: prices, Ratio: ratio}, legs)
 	if err != nil {
 		api.fail(w, err)
 		return
 	}
 	preview.SizePlan = plan
+	preview.Legs = legs
+	preview.SharedPool = legs[0].Broker && legs[0].AccountID != "" && legs[0].AccountID == legs[1].AccountID
 	for i, leg := range legs {
 		if request.Mode == ModeLimit && request.Maker == i {
 			continue // the maker leg does not cross the book
@@ -210,7 +250,8 @@ func (api *API) preview(w http.ResponseWriter, r *http.Request) {
 		}
 		preview.Sweep[i] = SweepBook(side, plan.Qty[i], leg.Side == "buy")
 	}
-	group := Group{Match: request.Match, Ratio: plan.Ratio, Legs: legs}
+	preview.Match = match
+	group := Group{Match: match, Ratio: plan.Ratio, Legs: legs}
 	preview.SpreadBps = SpreadBps(group, prices[0], prices[1])
 	earn, notional := decimal.Zero, decimal.Zero
 	for i, leg := range legs {

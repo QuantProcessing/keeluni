@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +20,10 @@ import (
 type Gateway interface {
 	Instruments(context.Context) ([]gwclient.Instrument, error)
 	Accounts(context.Context) ([]gwclient.Account, error)
+	Routes(context.Context, string) ([]gwclient.Route, error)
+	Margin(context.Context, string) (*gwclient.Margin, error)
+	OpenOrders(context.Context, string, string) ([]gwclient.Order, error)
+	Positions(context.Context, string) ([]gwclient.Position, error)
 	Book(context.Context, string, int) (gwclient.Book, error)
 	Place(context.Context, string, gwclient.PlaceRequest) (gwclient.PlaceResult, error)
 	Lookup(context.Context, string, string, string) (gwclient.LookupResult, error)
@@ -43,10 +48,14 @@ type Engine struct {
 	mu      sync.Mutex
 	runners map[string]*runner // by action id
 	byOrder map[string]string  // client order id -> action id
-	changes chan string        // group ids whose state changed (for the UI)
-	ctx     context.Context
-	stop    context.CancelFunc
-	wg      sync.WaitGroup
+	// mismatch: groups whose venue position disagrees, since when.
+	mismatch map[string]time.Time
+	// riskSeen: risk-engine orders already recorded, by order id -> status.
+	riskSeen map[string]string
+	changes  chan string // group ids whose state changed (for the UI)
+	ctx      context.Context
+	stop     context.CancelFunc
+	wg       sync.WaitGroup
 }
 
 func NewEngine(gateway Gateway, store *Store, market *Market) *Engine {
@@ -54,7 +63,7 @@ func NewEngine(gateway Gateway, store *Store, market *Market) *Engine {
 		gateway: gateway, store: store, market: market, now: time.Now,
 		lookupDelays: []time.Duration{500 * time.Millisecond, 1500 * time.Millisecond, 3 * time.Second, 5 * time.Second},
 		pollEvery:    5 * time.Second,
-		runners:      map[string]*runner{}, byOrder: map[string]string{},
+		runners:      map[string]*runner{}, byOrder: map[string]string{}, mismatch: map[string]time.Time{}, riskSeen: map[string]string{},
 		changes: make(chan string, 1024),
 	}
 }
@@ -111,6 +120,9 @@ func (engine *Engine) Start(ctx context.Context) error {
 // OnOrder routes a venue order update to the runner owning it, or stores it
 // when no runner is active (late updates after an action finished).
 func (engine *Engine) OnOrder(accountID string, update gwclient.Order) {
+	if update.Origin != "" {
+		engine.riskOrder(accountID, update)
+	}
 	if update.ClientOrderID == "" {
 		return
 	}
@@ -119,6 +131,43 @@ func (engine *Engine) OnOrder(accountID string, update gwclient.Order) {
 		return
 	}
 	engine.storeLate(accountID, update, nil)
+}
+
+// riskOrder records an order the venue's risk engine placed (liquidation,
+// auto-deleverage, delisting) on every active group with a leg on that
+// account and instrument. The venue-position check then marks the group
+// unhedged if the leg shrank; this explains why.
+func (engine *Engine) riskOrder(accountID string, update gwclient.Order) {
+	key := accountID + "|" + update.OrderID
+	engine.mu.Lock()
+	seen := engine.riskSeen[key] == update.Status
+	if len(engine.riskSeen) > 10_000 {
+		engine.riskSeen = map[string]string{}
+	}
+	engine.riskSeen[key] = update.Status
+	engine.mu.Unlock()
+	if seen {
+		return
+	}
+	ctx := context.Background()
+	groups, err := engine.store.Groups(ctx, engine.now())
+	if err != nil {
+		return
+	}
+	label := map[string]string{"liquidation": "Liquidation", "adl": "Auto-deleverage", "settlement": "Delisting"}[update.Origin]
+	if label == "" {
+		label = update.Origin
+	}
+	for _, group := range groups {
+		if group.Status == StatusClosed || group.Status == StatusFailed {
+			continue
+		}
+		for i, leg := range group.Legs {
+			if leg.AccountID == accountID && leg.Instrument == update.Instrument {
+				engine.event(group.ID, "error", "%s order on leg %d (%s): %s %s, status %s", label, i+1, leg.Instrument, update.Side, update.Quantity, update.Status)
+			}
+		}
+	}
 }
 
 // OnFill routes a venue fill.
@@ -205,6 +254,12 @@ func applyVenueOrder(order *Order, update gwclient.Order) {
 	if update.Status != "" {
 		order.State = update.Status
 	}
+	if update.Status == OrderRejected && update.RejectMessage+update.RejectCode != "" {
+		order.Error = update.RejectMessage
+		if update.RejectCode != "" && !strings.Contains(order.Error, update.RejectCode) {
+			order.Error = strings.TrimSpace(order.Error + " (" + update.RejectCode + ")")
+		}
+	}
 	if filled, err := decimal.NewFromString(update.Filled); err == nil && filled.GreaterThan(order.Filled) {
 		order.Filled = filled
 	}
@@ -232,7 +287,7 @@ func (engine *Engine) spawn(group Group, action Action) {
 		engine.mu.Unlock()
 		return
 	}
-	r := &runner{engine: engine, group: group, action: action, events: make(chan event, 256), control: make(chan string, 4)}
+	r := &runner{engine: engine, group: group, action: action, events: make(chan event, 256), control: make(chan string, 4), done: make(chan struct{})}
 	engine.runners[action.ID] = r
 	ctx := engine.ctx
 	engine.wg.Add(1)

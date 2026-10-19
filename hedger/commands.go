@@ -3,6 +3,7 @@ package hedger
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -21,10 +22,8 @@ type LegInput struct {
 type OpenRequest struct {
 	Legs   [2]LegInput     `json:"legs"`
 	Size   decimal.Decimal `json:"size"`
-	Unit   string          `json:"unit"`  // base | quote
-	Match  string          `json:"match"` // base | notional
-	Ratio  decimal.Decimal `json:"ratio"` // MatchBase only; default 1
-	Mode   string          `json:"mode"`  // market | limit
+	Unit   string          `json:"unit"` // base | quote
+	Mode   string          `json:"mode"` // market | limit
 	Maker  int             `json:"makerLeg"`
 	Price  decimal.Decimal `json:"limitPrice"`
 	TIF    string          `json:"tif"` // gtc | post_only
@@ -43,14 +42,33 @@ type CloseRequest struct {
 	TIF      string          `json:"tif"`
 }
 
-// resolveLeg checks a leg against the gateway catalog and accounts. A
-// preview may leave the account empty: sizing and costs need only the
-// instrument.
+// marketOf names an instrument's market as the gateway does:
+// venue:product[:settlement].
+func marketOf(instrument gwclient.Instrument) string {
+	if instrument.Product == "spot" {
+		return instrument.Venue + ":spot"
+	}
+	settle := instrument.Settle
+	if settle == "" {
+		settle = instrument.Quote
+	}
+	return instrument.Venue + ":perp:" + strings.ToUpper(settle)
+}
+
+// resolveLeg checks a leg against the gateway catalog and accounts. An
+// account trades the leg when it is active, its markets include the
+// instrument's, and its routes list the instrument — a native account on the
+// venue itself, or a broker (Gate CrossEx) that reaches it. The leg takes the
+// rules of that route: a broker can trade finer steps than the venue and set
+// its own minimum value. A preview may leave the account empty and then sizes
+// with the venue's rules.
 func (engine *Engine) resolveLeg(ctx context.Context, index int, input LegInput, instruments map[string]gwclient.Instrument, accounts map[string]gwclient.Account, requireAccount bool) (Leg, error) {
 	instrument, ok := instruments[input.Instrument]
 	if !ok {
 		return Leg{}, invalidf("leg %d: unknown instrument %q", index+1, input.Instrument)
 	}
+	rules := gwclient.Route{Instrument: instrument.ID, TickSize: instrument.TickSize, StepSize: instrument.StepSize, MinQty: instrument.MinQty, MinNotional: instrument.MinNotional}
+	broker := false
 	if requireAccount || input.AccountID != "" {
 		account, ok := accounts[input.AccountID]
 		if !ok {
@@ -59,9 +77,17 @@ func (engine *Engine) resolveLeg(ctx context.Context, index int, input LegInput,
 		if !account.Active {
 			return Leg{}, invalidf("leg %d: account %s is not active", index+1, account.Label)
 		}
-		if account.Venue != instrument.Venue {
-			return Leg{}, invalidf("leg %d: account %s trades on %s, not %s", index+1, account.Label, account.Venue, instrument.Venue)
+		if !slices.Contains(account.Markets, marketOf(instrument)) {
+			return Leg{}, invalidf("leg %d: account %s does not trade %s", index+1, account.Label, marketOf(instrument))
 		}
+		route, err := engine.route(ctx, account.ID, instrument.ID)
+		if err != nil {
+			return Leg{}, err
+		}
+		if route == nil {
+			return Leg{}, invalidf("leg %d: account %s cannot trade %s", index+1, account.Label, instrument.ID)
+		}
+		rules, broker = *route, account.Broker()
 	}
 	if input.Side != "buy" && input.Side != "sell" {
 		return Leg{}, invalidf("leg %d: side must be buy or sell", index+1)
@@ -74,9 +100,9 @@ func (engine *Engine) resolveLeg(ctx context.Context, index int, input LegInput,
 		return value
 	}
 	leg := Leg{
-		Index: index, AccountID: input.AccountID, Instrument: instrument.ID, Venue: instrument.Venue, Product: instrument.Product,
+		Index: index, AccountID: input.AccountID, Broker: broker, Instrument: instrument.ID, Venue: instrument.Venue, Product: instrument.Product,
 		Base: instrument.Base, Quote: instrument.Quote, Side: input.Side,
-		StepSize: parse(instrument.StepSize), TickSize: parse(instrument.TickSize), MinQty: parse(instrument.MinQty), MinNotional: parse(instrument.MinNotional),
+		StepSize: parse(rules.StepSize), TickSize: parse(rules.TickSize), MinQty: parse(rules.MinQty), MinNotional: parse(rules.MinNotional),
 	}
 	if instrument.Settle != "" && instrument.Product == "perp" {
 		leg.Quote = instrument.Settle
@@ -85,6 +111,21 @@ func (engine *Engine) resolveLeg(ctx context.Context, index int, input LegInput,
 		return Leg{}, invalidf("leg %d: instrument rules are incomplete", index+1)
 	}
 	return leg, nil
+}
+
+// route is the account's rules for one instrument, or nil when the account
+// does not trade it.
+func (engine *Engine) route(ctx context.Context, accountID, instrumentID string) (*gwclient.Route, error) {
+	routes, err := engine.gateway.Routes(ctx, accountID)
+	if err != nil {
+		return nil, fmt.Errorf("gateway routes of %s: %w", accountID, err)
+	}
+	for _, route := range routes {
+		if route.Instrument == instrumentID {
+			return &route, nil
+		}
+	}
+	return nil, nil
 }
 
 func (engine *Engine) catalog(ctx context.Context) (map[string]gwclient.Instrument, map[string]gwclient.Account, error) {
@@ -145,7 +186,8 @@ func (engine *Engine) Open(ctx context.Context, market *Market, request OpenRequ
 	if legs[0].Instrument == legs[1].Instrument && legs[0].AccountID == legs[1].AccountID {
 		return Group{}, invalidf("the two legs are the same instrument on the same account")
 	}
-	if legs[0].Side == legs[1].Side && request.Match == MatchBase {
+	match, ratio := MatchLegs(legs)
+	if legs[0].Side == legs[1].Side && match == MatchBase {
 		return Group{}, invalidf("both legs are %s: a same-underlying hedge needs one long and one short leg", legs[0].Side)
 	}
 	tif, err := validateMode(request.Mode, request.Maker, request.Price, request.TIF)
@@ -170,7 +212,7 @@ func (engine *Engine) Open(ctx context.Context, market *Market, request OpenRequ
 	if request.Mode == ModeLimit {
 		prices[request.Maker] = request.Price
 	}
-	plan, err := PlanSize(SizeInput{Size: request.Size, Unit: request.Unit, Match: request.Match, Price: prices, Ratio: request.Ratio}, legs)
+	plan, err := PlanSize(SizeInput{Size: request.Size, Unit: request.Unit, Match: match, Price: prices, Ratio: ratio}, legs)
 	if err != nil {
 		return Group{}, err
 	}
@@ -180,7 +222,7 @@ func (engine *Engine) Open(ctx context.Context, market *Market, request OpenRequ
 	now := engine.now().UTC()
 	group := Group{
 		ID: newID("hg_"), Label: strings.TrimSpace(request.Label), Note: strings.TrimSpace(request.Note),
-		Status: StatusOpening, Policy: policy, Match: request.Match, Ratio: plan.Ratio, Legs: legs, CreatedAt: now, UpdatedAt: now,
+		Status: StatusOpening, Policy: policy, Match: match, Ratio: plan.Ratio, Legs: legs, CreatedAt: now, UpdatedAt: now,
 	}
 	if group.Label == "" {
 		group.Label = defaultLabel(legs)
@@ -427,6 +469,12 @@ func (engine *Engine) settle(ctx context.Context, groupID string, action Action,
 		return
 	}
 	engine.event(groupID, "error", "Hedge broken: %s", problem)
+	// An order whose outcome could not be established leaves the leg's real
+	// size unknown: repairing from our own books could make it worse.
+	if engine.hasUnresolved(ctx, groupID) {
+		engine.event(groupID, "error", "Automatic repair skipped: an order's outcome is unknown; check the venue position, then Rehedge, Trim or Unwind")
+		return
+	}
 	// Policy: when an open or a close leaves the legs unequal, trim the larger
 	// leg to the smaller one — for an open, the hedge shrinks to what filled
 	// (a full unwind if one leg filled nothing); for a close, the close is
@@ -439,6 +487,19 @@ func (engine *Engine) settle(ctx context.Context, groupID string, action Action,
 	}
 }
 
+func (engine *Engine) hasUnresolved(ctx context.Context, groupID string) bool {
+	orders, err := engine.store.Orders(ctx, groupID)
+	if err != nil {
+		return true
+	}
+	for _, order := range orders {
+		if order.State == OrderUnresolved {
+			return true
+		}
+	}
+	return false
+}
+
 // refPrice is the book price a market order of side starts at (for slippage
 // reporting); zero when no book is cached.
 func (engine *Engine) refPrice(instrument, side string) decimal.Decimal {
@@ -446,4 +507,97 @@ func (engine *Engine) refPrice(instrument, side string) decimal.Decimal {
 		return decimal.Zero
 	}
 	return engine.market.TradePrice(instrument, side)
+}
+
+// ---------------------------------------------------------------------------
+// Venue reconciliation
+// ---------------------------------------------------------------------------
+
+// venueMismatchAfter is how long a disagreement between a leg and the venue
+// position must persist before the group is marked unhedged: fills and
+// position snapshots arrive on different streams and can cross briefly.
+const venueMismatchAfter = 20 * time.Second
+
+// ReconcileVenue compares every idle open group's legs with the venues'
+// positions and marks a group broken when a venue holds less of a leg than
+// the hedge accounts for: the leg was closed outside the hedge, liquidated or
+// auto-deleveraged. A venue holding more is only shown (the account may hold
+// other positions in the instrument), and spot legs are not compared
+// (balances, not positions). Venue positions are the account stream's
+// snapshots; accounts whose stream is down are skipped.
+func (engine *Engine) ReconcileVenue(ctx context.Context) {
+	if engine.market == nil {
+		return
+	}
+	groups, err := engine.store.Groups(ctx, engine.now())
+	if err != nil {
+		return
+	}
+	now := engine.now()
+	for _, group := range groups {
+		if group.Status != StatusOpen {
+			engine.clearMismatch(group.ID)
+			continue
+		}
+		if _, working := engine.Working(group.ID); working {
+			continue
+		}
+		_, books, err := engine.snapshot(ctx, group.ID)
+		if err != nil {
+			continue
+		}
+		problem := ""
+		for i, leg := range group.Legs {
+			if leg.Product != "perp" || !books[i].Held.IsPositive() || !engine.market.AccountLive(leg.AccountID) {
+				continue
+			}
+			position, held, known := engine.market.Position(leg.AccountID, leg.Instrument)
+			if !known {
+				continue
+			}
+			venue := decimal.Zero
+			if held {
+				size, _ := decimal.NewFromString(position.Size)
+				if (position.Side == "long") == (leg.Side == "buy") {
+					venue = size
+				} else {
+					venue = size.Neg()
+				}
+			}
+			// Tolerate one step of rounding between venue and hedge.
+			if venue.Add(leg.StepSize).LessThan(books[i].Held) {
+				problem = fmt.Sprintf("leg %d: the venue holds %s %s on %s, the hedge accounts for %s — closed outside the hedge, liquidated or auto-deleveraged",
+					i+1, venue, leg.Base, leg.Instrument, books[i].Held)
+				break
+			}
+		}
+		if problem == "" {
+			engine.clearMismatch(group.ID)
+			continue
+		}
+		since := engine.noteMismatch(group.ID, now)
+		if now.Sub(since) < venueMismatchAfter {
+			continue
+		}
+		engine.clearMismatch(group.ID)
+		if err := engine.store.SetGroupStatus(ctx, group.ID, StatusBroken, problem); err == nil {
+			engine.event(group.ID, "error", "Unhedged: %s. Check the venue, then Rehedge, Trim or Unwind.", problem)
+		}
+	}
+}
+
+func (engine *Engine) noteMismatch(groupID string, now time.Time) time.Time {
+	engine.mu.Lock()
+	defer engine.mu.Unlock()
+	if since, ok := engine.mismatch[groupID]; ok {
+		return since
+	}
+	engine.mismatch[groupID] = now
+	return now
+}
+
+func (engine *Engine) clearMismatch(groupID string) {
+	engine.mu.Lock()
+	delete(engine.mismatch, groupID)
+	engine.mu.Unlock()
 }

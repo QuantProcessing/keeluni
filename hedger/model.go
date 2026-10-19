@@ -68,12 +68,17 @@ const (
 	OrderRejected = "rejected"
 	OrderNotFound = "not_found"
 	OrderPending  = "pending"
+	// OrderUnresolved: the venue can neither show the order nor prove its
+	// absence (it forgets closed orders), and no fill or open order of it
+	// was found. It is final for the action; its group is left for the
+	// operator because the leg's true size is unknown.
+	OrderUnresolved = "unresolved"
 )
 
 // OrderTerminal reports whether an order can no longer fill.
 func OrderTerminal(state string) bool {
 	switch state {
-	case OrderFilled, OrderCanceled, OrderRejected, OrderNotFound:
+	case OrderFilled, OrderCanceled, OrderRejected, OrderNotFound, OrderUnresolved:
 		return true
 	}
 	return false
@@ -88,8 +93,11 @@ const (
 
 // Leg is one side of a hedge.
 type Leg struct {
-	Index       int             `json:"leg"`
-	AccountID   string          `json:"accountId"`
+	Index     int    `json:"leg"`
+	AccountID string `json:"accountId"`
+	// Broker is set when the account is a broker (Gate CrossEx): the leg's
+	// margin is the broker's shared pool, and its rules are the broker's.
+	Broker      bool            `json:"broker,omitempty"`
 	Instrument  string          `json:"inst"`
 	Venue       string          `json:"venue"`
 	Product     string          `json:"product"`

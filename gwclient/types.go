@@ -16,15 +16,66 @@ type Instrument struct {
 	StepSize    string `json:"stepSize"`
 	MinQty      string `json:"minQty"`
 	MinNotional string `json:"minNotional,omitempty"`
+	AssetClass  string `json:"assetClass,omitempty"`
 }
 
-// Account is a connected venue account. It never carries credentials.
+// Account kinds.
+const (
+	AccountNative = "native" // one venue
+	AccountBroker = "broker" // one margin pool trading several venues (Gate CrossEx)
+)
+
+// Account is a connected venue account. It never carries credentials. Markets
+// lists the markets it trades ("binance:perp:USDT"); for a broker these span
+// venues. Whether it trades a given instrument, and with which rules, is
+// answered by its routes (Client.Routes).
 type Account struct {
 	ID      string   `json:"id"`
 	Venue   string   `json:"venue"`
+	Kind    string   `json:"kind"`
 	Label   string   `json:"label"`
 	Markets []string `json:"markets"`
 	Active  bool     `json:"active"`
+}
+
+// Broker reports a broker account.
+func (account Account) Broker() bool { return account.Kind == AccountBroker }
+
+// Route is one instrument an account trades and the rules its orders follow
+// there. A broker's rules can differ from the venue's (finer steps, its own
+// minimum value).
+type Route struct {
+	Instrument  string `json:"inst"`
+	TickSize    string `json:"tickSize"`
+	StepSize    string `json:"stepSize"`
+	MinQty      string `json:"minQty"`
+	MinNotional string `json:"minNotional,omitempty"`
+}
+
+// Margin is a broker account's shared margin pool. Rates are ratios (2.4 is
+// 240%): below 1.1 initial, margin cannot be moved out; below 1.0 initial,
+// open orders are cancelled and only closing is allowed; at 1.0 maintenance,
+// the account is liquidated.
+type Margin struct {
+	Equity                string        `json:"equity,omitempty"`
+	Available             string        `json:"available,omitempty"`
+	InitialMargin         string        `json:"initialMargin,omitempty"`
+	MaintenanceMargin     string        `json:"maintenanceMargin,omitempty"`
+	InitialMarginRate     string        `json:"initialMarginRate,omitempty"`
+	MaintenanceMarginRate string        `json:"maintenanceMarginRate,omitempty"`
+	UnrealizedPnL         string        `json:"unrealizedPnl,omitempty"`
+	ByVenue               []VenueMargin `json:"byVenue,omitempty"`
+	Time                  int64         `json:"ts"`
+}
+
+// VenueMargin is one reached venue's share of a broker pool.
+type VenueMargin struct {
+	Venue         string `json:"venue"`
+	Asset         string `json:"asset"`
+	Equity        string `json:"equity"`
+	Available     string `json:"available"`
+	InitialMargin string `json:"initialMargin,omitempty"`
+	UnrealizedPnL string `json:"unrealizedPnl,omitempty"`
 }
 
 // Book is a top-N order book snapshot: [price, quantity] levels.
@@ -66,6 +117,9 @@ type PlaceResult struct {
 
 // Order is a venue order's latest state. Status is one of
 // open | partially_filled | filled | canceled | rejected | pending.
+// "pending" is an order a broker accepted but has not yet placed on the
+// venue: it can still be rejected, and that rejection arrives later as an
+// order update with RejectCode/RejectMessage.
 type Order struct {
 	Instrument    string `json:"inst"`
 	OrderID       string `json:"orderId"`
@@ -81,6 +135,11 @@ type Order struct {
 	Status        string `json:"status"`
 	CreatedAt     int64  `json:"createdAt,omitempty"`
 	UpdatedAt     int64  `json:"updatedAt,omitempty"`
+	RejectCode    string `json:"rejectCode,omitempty"`
+	RejectMessage string `json:"rejectMessage,omitempty"`
+	// Origin is set for orders the venue's risk engine placed:
+	// liquidation | adl | settlement.
+	Origin string `json:"origin,omitempty"`
 }
 
 // Terminal reports whether the order can no longer fill.
@@ -91,6 +150,14 @@ func (order Order) Terminal() bool {
 	}
 	return false
 }
+
+// Lookup outcomes. Unconfirmed means the venue cannot prove absence (some
+// venues forget closed orders after seconds or minutes): the order may exist.
+const (
+	LookupFound       = "found"
+	LookupNotFound    = "not_found"
+	LookupUnconfirmed = "unconfirmed"
+)
 
 // LookupResult answers "does this order exist?".
 type LookupResult struct {
@@ -135,7 +202,9 @@ type Balance struct {
 	Locked    string `json:"locked"`
 }
 
-// FundingQuote is one perpetual's current funding (see gateway/funding).
+// FundingQuote is one perpetual's current funding (see gateway/funding): Rate
+// is the fraction of notional paid at NextFunding (positive: longs pay),
+// IntervalHours the instrument's own period, Apr Rate annualized.
 type FundingQuote struct {
 	Instrument    string `json:"inst"`
 	Venue         string `json:"venue"`

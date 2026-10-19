@@ -155,9 +155,9 @@ func (store *Store) CreateGroup(ctx context.Context, group Group, action Action)
 			return err
 		}
 		for _, leg := range group.Legs {
-			if _, err := tx.Exec(ctx, `insert into hedge_legs (group_id, leg, account_id, instrument, venue, product, base, quote, side, step_size, tick_size, min_qty, min_notional)
-				values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-				group.ID, leg.Index, leg.AccountID, leg.Instrument, leg.Venue, leg.Product, leg.Base, leg.Quote, leg.Side,
+			if _, err := tx.Exec(ctx, `insert into hedge_legs (group_id, leg, account_id, broker, instrument, venue, product, base, quote, side, step_size, tick_size, min_qty, min_notional)
+				values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+				group.ID, leg.Index, leg.AccountID, leg.Broker, leg.Instrument, leg.Venue, leg.Product, leg.Base, leg.Quote, leg.Side,
 				leg.StepSize.String(), leg.TickSize.String(), leg.MinQty.String(), leg.MinNotional.String()); err != nil {
 				return err
 			}
@@ -276,7 +276,7 @@ func (store *Store) attachLegs(ctx context.Context, groups []Group) error {
 		ids[i] = group.ID
 		index[group.ID] = i
 	}
-	rows, err := store.pool.Query(ctx, `select group_id, leg, account_id, instrument, venue, product, base, quote, side,
+	rows, err := store.pool.Query(ctx, `select group_id, leg, account_id, broker, instrument, venue, product, base, quote, side,
 		step_size::text, tick_size::text, min_qty::text, min_notional::text from hedge_legs where group_id = any($1)`, ids)
 	if err != nil {
 		return err
@@ -286,7 +286,7 @@ func (store *Store) attachLegs(ctx context.Context, groups []Group) error {
 		var groupID string
 		var leg Leg
 		var step, tick, minQty, minNotional string
-		if err := rows.Scan(&groupID, &leg.Index, &leg.AccountID, &leg.Instrument, &leg.Venue, &leg.Product, &leg.Base, &leg.Quote, &leg.Side,
+		if err := rows.Scan(&groupID, &leg.Index, &leg.AccountID, &leg.Broker, &leg.Instrument, &leg.Venue, &leg.Product, &leg.Base, &leg.Quote, &leg.Side,
 			&step, &tick, &minQty, &minNotional); err != nil {
 			return err
 		}

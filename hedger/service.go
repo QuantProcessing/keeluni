@@ -3,6 +3,7 @@ package hedger
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 	"time"
 
@@ -57,6 +58,7 @@ func (service *Service) Run(ctx context.Context) error {
 		case <-ticker.C:
 			service.pin(ctx)
 			service.Market.Sweep()
+			service.Engine.ReconcileVenue(ctx)
 		case <-funding.C:
 			go service.Engine.accrueFunding(ctx, service.client)
 			funding.Reset(5 * time.Minute)
@@ -165,5 +167,11 @@ func (service *Service) broadcast(groupID string) {
 // Ready reports whether the hedger can trade: database reachable and the
 // gateway stream connected.
 func (service *Service) Ready(ctx context.Context) error {
-	return service.store.Ping(ctx)
+	if err := service.store.Ping(ctx); err != nil {
+		return err
+	}
+	if !service.Market.Connected() {
+		return errors.New("gateway stream is not connected")
+	}
+	return nil
 }

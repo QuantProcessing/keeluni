@@ -2,6 +2,7 @@ package hedger
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/shopspring/decimal"
 )
@@ -165,4 +166,48 @@ func SweepBook(levels BookSide, qty decimal.Decimal, buy bool) Sweep {
 		result.SlippageBps = diff.Div(result.Best).Mul(decimal.NewFromInt(10000)).Round(2)
 	}
 	return result
+}
+
+// ---------------------------------------------------------------------------
+// Matching two legs
+// ---------------------------------------------------------------------------
+
+// Venues list contracts of cheap coins in multiples, spelled into the base:
+// Binance 1000PEPE, Bitget 1MCHEEMS, Bybit 1000000MOG and, on Hyperliquid
+// only, kPEPE. Longer prefixes are tried first.
+var contractMultipliers = []struct {
+	prefix     string
+	multiplier int64
+	venue      string // "" for any venue
+}{
+	{"1000000", 1_000_000, ""}, {"1M", 1_000_000, ""}, {"10000", 10_000, ""}, {"1000", 1_000, ""}, {"k", 1_000, "hyperliquid"},
+}
+
+// underlying splits a base into its underlying asset and contract multiplier.
+func underlying(venue, base string) (string, decimal.Decimal) {
+	for _, item := range contractMultipliers {
+		if item.venue != "" && item.venue != venue {
+			continue
+		}
+		rest, found := strings.CutPrefix(base, item.prefix)
+		// The underlying must start with a letter: 1INCH and 10Y are names,
+		// not multiples.
+		if found && rest != "" && rest[0] >= 'A' && rest[0] <= 'Z' {
+			return strings.ToUpper(rest), decimal.NewFromInt(item.multiplier)
+		}
+	}
+	return strings.ToUpper(base), decimal.NewFromInt(1)
+}
+
+// MatchLegs decides how two legs are sized against each other from the
+// instruments alone: the same underlying is matched by quantity through the
+// contract multipliers (ratio = leg-1 base per leg-0 base, e.g. 0.001 for
+// PEPE against 1000PEPE); different underlyings by notional at entry.
+func MatchLegs(legs [2]Leg) (string, decimal.Decimal) {
+	root0, multiplier0 := underlying(legs[0].Venue, legs[0].Base)
+	root1, multiplier1 := underlying(legs[1].Venue, legs[1].Base)
+	if root0 != root1 {
+		return MatchNotional, decimal.Zero
+	}
+	return MatchBase, multiplier0.Div(multiplier1)
 }

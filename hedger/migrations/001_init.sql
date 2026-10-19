@@ -22,6 +22,9 @@ create table hedge_legs (
     group_id     text     not null references hedge_groups (id) on delete cascade,
     leg          smallint not null check (leg in (0, 1)),
     account_id   text     not null,
+    -- broker: the account is a broker (Gate CrossEx) whose rules and margin
+    -- pool the leg uses.
+    broker       boolean  not null default false,
     instrument   text     not null,
     venue        text     not null,
     product      text     not null check (product in ('spot', 'perp')),
@@ -29,6 +32,8 @@ create table hedge_legs (
     quote        text     not null,
     -- side opens the leg; the opposite side reduces it.
     side         text     not null check (side in ('buy', 'sell')),
+    -- Rules are the trading account's route at open (a broker's can differ
+    -- from the venue's).
     step_size    numeric  not null check (step_size > 0),
     tick_size    numeric  not null check (tick_size > 0),
     min_qty      numeric  not null default 0,
