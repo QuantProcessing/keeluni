@@ -1,12 +1,14 @@
 // Package funding is the gateway's resident funding dataset: the current
-// funding of every served perpetual, normalized to one convention (see
-// exchange.FundingQuote), kept in memory by background collection, and
-// published as a table, a per-instrument WebSocket topic and a bounded
+// funding of every served perpetual, kept in memory by background collection
+// and published as a table, a per-instrument WebSocket topic and a bounded
 // history read.
 //
-// Collection: Hyperliquid pushes its whole board (every dex) over one
-// WebSocket; every other market is read whole over REST every 15 s (Gate
-// every 30 s: its reply is ~0.5 MB and uncompressed).
+// Collection uses each market's derivative feed (factory.PublicFundingBoard),
+// whose facts follow one convention on every venue: the rate is the fraction
+// of notional paid at the next settlement (positive: longs pay shorts) and
+// the period is the instrument's own. Hyperliquid pushes its whole board
+// (every dex) over one WebSocket; every other market is read whole over REST
+// every 15 s (Gate every 30 s: its reply is ~0.5 MB and uncompressed).
 package funding
 
 import (
@@ -51,8 +53,6 @@ type Quote struct {
 	// Apr is Rate annualized (simple, 8760 h); absent when the period is unknown.
 	Apr         string `json:"apr,omitempty"`
 	NextFunding int64  `json:"nextFunding,omitempty"`
-	RateCap     string `json:"rateCap,omitempty"`
-	RateFloor   string `json:"rateFloor,omitempty"`
 	ObservedAt  int64  `json:"observedAt"`
 	// Stale: the market's collection has missed three cadences.
 	Stale bool `json:"stale"`
@@ -81,6 +81,9 @@ type board struct {
 	every  time.Duration
 }
 
+// fact is one instrument's latest funding as collected.
+type fact = exchange.DerivativeFact
+
 // Dataset owns the boards, their resident loops and the published state.
 type Dataset struct {
 	catalog  *market.Catalog
@@ -92,19 +95,15 @@ type Dataset struct {
 
 	mu       sync.RWMutex
 	quotes   map[venue.InstrumentID]Quote
+	facts    map[venue.Market]map[string]fact // by native key
 	byMarket map[venue.Market][]venue.InstrumentID
 	watchers map[venue.InstrumentID]map[*watcher]struct{}
 }
 
 type watcher struct{ emit hub.Emit }
 
-// Collection cadences.
-const (
-	defaultPoll = 15 * time.Second
-	gatePoll    = 30 * time.Second
-	// streamCadence is how often Hyperliquid's allDexsAssetCtxs pushes.
-	streamCadence = 15 * time.Second
-)
+// streamCadence is how often Hyperliquid's allDexsAssetCtxs pushes.
+const streamCadence = 15 * time.Second
 
 func New(catalog *market.Catalog, registry *resident.Registry, httpClient *http.Client) (*Dataset, error) {
 	dataset := newDataset(catalog, registry)
@@ -116,12 +115,9 @@ func New(catalog *market.Catalog, registry *resident.Registry, httpClient *http.
 		if err != nil {
 			return nil, fmt.Errorf("funding board %s: %w", served, err)
 		}
-		every := defaultPoll
-		switch {
-		case source.Streams():
+		every := source.Cadence()
+		if source.Streams() {
 			every = streamCadence
-		case served.Venue == exchange.VenueGate:
-			every = gatePoll
 		}
 		dataset.boards = append(dataset.boards, board{market: served, source: source, every: every})
 		mode := resident.ModePoll
@@ -142,6 +138,7 @@ func newDataset(catalog *market.Catalog, registry *resident.Registry) *Dataset {
 		history:  map[venue.Market]*factory.PublicFundingHistoryConnector{},
 		cache:    newHistoryCache(),
 		quotes:   map[venue.InstrumentID]Quote{},
+		facts:    map[venue.Market]map[string]fact{},
 		byMarket: map[venue.Market][]venue.InstrumentID{},
 		watchers: map[venue.InstrumentID]map[*watcher]struct{}{},
 	}
@@ -154,31 +151,60 @@ func (dataset *Dataset) Run(ctx context.Context) {
 		wg.Add(1)
 		go func(item board) {
 			defer wg.Done()
-			spec := resident.Spec[exchange.FundingBoard]{
+			// The board's feed bootstraps a complete snapshot and then streams
+			// or polls; either way the loop is one long-running source.
+			resident.Run(ctx, dataset.registry, resident.Spec[exchange.DerivativePatch]{
 				Dataset: datasetName, Market: item.market.String(), Interval: item.every,
-				Apply: func(result exchange.FundingBoard) { dataset.apply(item.market, result) },
-			}
-			if item.source.Streams() {
-				spec.Stream = item.source.Stream
-			} else {
-				spec.Load = item.source.Load
-			}
-			resident.Run(ctx, dataset.registry, spec)
+				Stream: item.source.Run,
+				Apply:  func(patch exchange.DerivativePatch) { dataset.apply(item.market, patch) },
+			})
 		}(item)
 	}
 	wg.Wait()
 }
 
-// apply replaces one market's quotes with a complete board and notifies the
-// subscribers of every instrument whose quote changed or disappeared.
-func (dataset *Dataset) apply(served venue.Market, result exchange.FundingBoard) {
-	next := make(map[venue.InstrumentID]Quote, len(result.Quotes))
-	for _, quote := range result.Quotes {
-		instrument, ok := dataset.catalog.ResolveNative(served, quote.NativeSymbol, quote.NativeID)
+func nativeKey(identity exchange.InstrumentIdentity) string {
+	return identity.NativeID + "|" + identity.NativeSymbol
+}
+
+// apply merges a patch into one market's facts — a snapshot replaces them, a
+// delta updates the fields it carries — then republishes the market's quotes
+// and notifies subscribers of every quote that changed or disappeared.
+func (dataset *Dataset) apply(served venue.Market, patch exchange.DerivativePatch) {
+	dataset.mu.Lock()
+	current := dataset.facts[served]
+	if patch.Kind == exchange.EventSnapshot || current == nil {
+		current = make(map[string]fact, len(patch.Facts))
+	}
+	for _, incoming := range patch.Facts {
+		key := nativeKey(incoming.Instrument)
+		if patch.Kind == exchange.EventSnapshot {
+			current[key] = incoming
+			continue
+		}
+		existing, known := current[key]
+		if !known {
+			continue // a delta for an instrument the snapshot did not list
+		}
+		current[key] = exchange.ApplyDerivativePatch(existing, incoming, patch.Fields)
+	}
+	dataset.facts[served] = current
+	collected := make([]fact, 0, len(current))
+	for _, item := range current {
+		collected = append(collected, item)
+	}
+	dataset.mu.Unlock()
+
+	next := make(map[venue.InstrumentID]Quote, len(collected))
+	for _, item := range collected {
+		if !item.FundingRate.Valid {
+			continue
+		}
+		instrument, ok := dataset.catalog.ResolveNative(served, item.Instrument.NativeSymbol, item.Instrument.NativeID)
 		if !ok {
 			continue // not tradable through the gateway
 		}
-		next[instrument.ID] = project(served, instrument, quote)
+		next[instrument.ID] = project(served, instrument, item)
 	}
 	ids := make([]venue.InstrumentID, 0, len(next))
 	for id := range next {
@@ -218,25 +244,20 @@ func sameQuote(a, b Quote) bool {
 	return a == b
 }
 
-func project(served venue.Market, instrument market.Instrument, quote exchange.FundingQuote) Quote {
+// project serves one fact. Apr is the rate scaled to a simple-interest year
+// (rate × 8760 / period); it is absent when the period is unknown, because a
+// row that assumes eight hours is worse than one that admits it does not know.
+func project(served venue.Market, instrument market.Instrument, item fact) Quote {
 	result := Quote{
 		Instrument: instrument.ID, Venue: instrument.Venue, Base: instrument.Base,
-		Rate: quote.Rate.String(), ObservedAt: quote.ObservedAt.UnixMilli(), market: served.String(),
+		Rate: item.FundingRate.Value.String(), ObservedAt: item.FundingObservedAt.UnixMilli(), market: served.String(),
 	}
-	if quote.IntervalHours.Valid {
-		result.IntervalHours = quote.IntervalHours.Value
+	if item.FundingIntervalHours.Valid && item.FundingIntervalHours.Value > 0 && item.FundingIntervalHours.Value <= 24 {
+		result.IntervalHours = item.FundingIntervalHours.Value
+		result.Apr = item.FundingRate.Value.Mul(decimal.NewFromInt(exchangeHoursPerYear)).Div(decimal.NewFromInt(result.IntervalHours)).Round(8).String()
 	}
-	if apr := quote.Annualized(); apr.Valid {
-		result.Apr = apr.Value.Round(8).String()
-	}
-	if !quote.NextFundingTime.IsZero() {
-		result.NextFunding = quote.NextFundingTime.UnixMilli()
-	}
-	if quote.RateCap.Valid {
-		result.RateCap = quote.RateCap.Value.String()
-	}
-	if quote.RateFloor.Valid {
-		result.RateFloor = quote.RateFloor.Value.String()
+	if !item.NextFundingTime.IsZero() {
+		result.NextFunding = item.NextFundingTime.UnixMilli()
 	}
 	return result
 }

@@ -211,6 +211,7 @@ func (watcher *hyperliquidDerivativeWatcher) stream(ctx context.Context, bootstr
 				fact := nativeDerivativeFact{
 					Instrument:  identity,
 					FundingRate: fundingOptionalSigned(row.Funding), MarkPrice: fundingOptionalDecimal(row.MarkPx),
+					FundingIntervalHours: exchange.OptionalInt{Value: 1, Valid: true}, NextFundingTime: observedAt.Truncate(time.Hour).Add(time.Hour),
 					IndexPrice: fundingOptionalDecimal(row.OraclePx), OpenInterest: fundingOptionalNonNegative(row.OpenInterest),
 					FundingObservedAt: observedAt, PriceObservedAt: observedAt, OpenInterestObservedAt: observedAt,
 				}
@@ -218,8 +219,8 @@ func (watcher *hyperliquidDerivativeWatcher) stream(ctx context.Context, bootstr
 				if fact.OpenInterestNotional.Valid {
 					fact.OpenInterestNotionalAsset = identity.SettleAsset
 				}
-				fields := nativeDerivativeFieldFunding | nativeDerivativeFieldMarkPrice |
-					nativeDerivativeFieldIndexPrice | nativeDerivativeFieldOpenInterest
+				fields := nativeDerivativeFieldFunding | nativeDerivativeFieldFundingInterval | nativeDerivativeFieldNextFundingTime |
+					nativeDerivativeFieldMarkPrice | nativeDerivativeFieldIndexPrice | nativeDerivativeFieldOpenInterest
 				if fact.OpenInterestNotional.Valid {
 					fields |= nativeDerivativeFieldOpenInterestNotional
 				}

@@ -44,28 +44,34 @@ var (
 	hlPerp  = venue.Market{Venue: exchange.VenueHyperliquid, Product: exchange.ProductPerp, Settlement: "USDC"}
 )
 
-func quote(native, nativeID, rate string, hours int64, next time.Time) exchange.FundingQuote {
-	result := exchange.FundingQuote{NativeSymbol: native, NativeID: nativeID, Rate: decimal.RequireFromString(rate), NextFundingTime: next, ObservedAt: time.Now()}
+func quote(native, nativeID, rate string, hours int64, next time.Time) exchange.DerivativeFact {
+	result := exchange.DerivativeFact{
+		InstrumentID: nativeID + "|" + native, RouteProfileID: "test", Environment: exchange.EnvironmentLive,
+		Instrument:  exchange.InstrumentIdentity{Product: exchange.ProductPerp, NativeSymbol: native, NativeID: nativeID},
+		FundingRate: exchange.OptionalDecimal{Value: decimal.RequireFromString(rate), Valid: true}, NextFundingTime: next, FundingObservedAt: time.Now(),
+	}
 	if hours > 0 {
-		result.IntervalHours = exchange.OptionalInt{Value: hours, Valid: true}
+		result.FundingIntervalHours = exchange.OptionalInt{Value: hours, Valid: true}
 	}
 	return result
 }
 
-func boardOf(served venue.Market, quotes ...exchange.FundingQuote) exchange.FundingBoard {
-	return exchange.FundingBoard{Scope: exchange.CatalogScope{Venue: served.Venue, Product: exchange.ProductPerp, Settlement: served.Settlement}, ObservedAt: time.Now(), Quotes: quotes}
+// boardOf is a complete snapshot of one market's funding.
+func boardOf(served venue.Market, facts ...exchange.DerivativeFact) exchange.DerivativePatch {
+	return exchange.DerivativePatch{Kind: exchange.EventSnapshot, Scope: exchange.CatalogScope{Venue: served.Venue, Product: exchange.ProductPerp, Settlement: served.Settlement},
+		ObservedAt: time.Now(), Fields: exchange.DerivativeFieldAll, Facts: facts}
 }
 
 // feed runs a fake resident loop so registry freshness is real.
-func feed(t *testing.T, dataset *Dataset, registry *resident.Registry, served venue.Market, result exchange.FundingBoard) {
+func feed(t *testing.T, dataset *Dataset, registry *resident.Registry, served venue.Market, result exchange.DerivativePatch) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	applied := make(chan struct{})
 	var once sync.Once
-	go resident.Run(ctx, registry, resident.Spec[exchange.FundingBoard]{
+	go resident.Run(ctx, registry, resident.Spec[exchange.DerivativePatch]{
 		Dataset: datasetName, Market: served.String(), Interval: time.Hour,
-		Load:  func(context.Context) (exchange.FundingBoard, error) { return result, nil },
-		Apply: func(value exchange.FundingBoard) { dataset.apply(served, value); once.Do(func() { close(applied) }) },
+		Load:  func(context.Context) (exchange.DerivativePatch, error) { return result, nil },
+		Apply: func(value exchange.DerivativePatch) { dataset.apply(served, value); once.Do(func() { close(applied) }) },
 	})
 	t.Cleanup(cancel)
 	select {
@@ -120,6 +126,24 @@ func TestUnknownPeriodHasNoAprAndClockRollsPastSettlement(t *testing.T) {
 	got, _ := dataset.Get("hyperliquid:perp:BTC-USDC")
 	if got.NextFunding <= time.Now().UnixMilli() || got.NextFunding > time.Now().Add(time.Hour).UnixMilli() {
 		t.Fatalf("clock not rolled forward: %d", got.NextFunding)
+	}
+}
+
+// A streamed delta updates only the fields it carries and only instruments
+// the snapshot listed.
+func TestDeltaUpdatesTheFieldsItCarries(t *testing.T) {
+	dataset, registry := testDataset(t)
+	next := time.Now().Add(time.Hour).Truncate(time.Hour)
+	feed(t, dataset, registry, hlPerp, boardOf(hlPerp, quote("BTC", "0", "0.00001", 1, next)))
+	delta := quote("BTC", "0", "0.00003", 0, time.Time{})
+	delta.FundingObservedAt = time.Now().Add(time.Second)
+	dataset.apply(hlPerp, exchange.DerivativePatch{Kind: exchange.EventDelta, Fields: exchange.DerivativeFieldFunding, Facts: []exchange.DerivativeFact{delta, quote("ETH", "1", "0.5", 1, next)}})
+	got, err := dataset.Get("hyperliquid:perp:BTC-USDC")
+	if err != nil || got.Rate != "0.00003" || got.IntervalHours != 1 || got.Apr != "0.2628" {
+		t.Fatalf("after delta = %+v, %v", got, err)
+	}
+	if len(dataset.Table(exchange.VenueHyperliquid, "").Quotes) != 1 {
+		t.Fatal("a delta added an instrument the snapshot did not list")
 	}
 }
 

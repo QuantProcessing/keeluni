@@ -269,7 +269,7 @@ func TestDerivativeSnapshotLoaderPerVenueShape(t *testing.T) {
 			// which the universe interleaves with perps.
 			want: []wantEntry{{
 				symbol: "BTC-USDC", nativeSymbol: "BTC", nativeID: "0", base: "BTC", quote: "USDC",
-				rate: "0.0000125", intervalHours: 1,
+				rate: "0.0000125", intervalHours: 1, nextFunding: -1,
 				markPrice: "64000.0", indexPrice: "63999.0", openInterest: "1234.5",
 				openInterestNotional: "79008000",
 			}},
@@ -293,10 +293,11 @@ func TestDerivativeSnapshotLoaderPerVenueShape(t *testing.T) {
 			// Lighter's endpoint is a comparison feed: it returns other venues'
 			// rates alongside its own. Filing a Binance rate in the Lighter
 			// column would show a zero spread against Binance and a real one
-			// against everyone else.
+			// against everyone else. Its quote is an eight-hour equivalent of
+			// hourly settlements: 0.0001 / 8 is paid at the next whole hour.
 			want: []wantEntry{{
 				symbol: "BTC-USDC", nativeSymbol: "BTC", nativeID: "1", base: "BTC", quote: "USDC",
-				rate: "0.0001", intervalHours: 8, markPrice: "64000", indexPrice: "63990",
+				rate: "0.0000125", intervalHours: 1, nextFunding: -1, markPrice: "64000", indexPrice: "63990",
 				openInterest: "12.5", openInterestNotional: "800000",
 			}},
 		},
@@ -455,7 +456,12 @@ func assertFundingEntry(t *testing.T, got DerivativeSnapshotEntry, want wantEntr
 		t.Fatalf("%s: IntervalHours = %+v, want %d", want.symbol, got.IntervalHours, want.intervalHours)
 	}
 
-	if want.nextFunding == 0 {
+	if want.nextFunding == -1 {
+		// Hourly venues settle on the next whole hour.
+		if got.NextFundingTime.IsZero() || got.NextFundingTime.Minute() != 0 || got.NextFundingTime.Second() != 0 || time.Until(got.NextFundingTime) > time.Hour {
+			t.Fatalf("%s: NextFundingTime = %s, want the next whole hour", want.symbol, got.NextFundingTime)
+		}
+	} else if want.nextFunding == 0 {
 		if !got.NextFundingTime.IsZero() {
 			t.Fatalf("%s: NextFundingTime = %s, want absent", want.symbol, got.NextFundingTime)
 		}
