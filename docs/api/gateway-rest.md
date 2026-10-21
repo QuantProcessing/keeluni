@@ -81,10 +81,11 @@
 
 ```json
 {"inst":"okx:perp:BTC-USDT-SWAP","venue":"okx","base":"BTC","rate":"0.0000408","intervalHours":8,
- "apr":"0.0447","nextFunding":1792396800000,"observedAt":1792392071143,"stale":false}
+ "apr":"0.0447","nextFunding":1792396800000,"mark":"82766.1","oiUsd":"2453315740",
+ "observedAt":1792392071143,"stale":false}
 ```
 
-字段含义见[资金费率](/architecture/funding)。
+字段含义见[资金费率](/architecture/funding)。`mark` 是标记价，`oiUsd` 是按标记价折算的持仓量（美元）；交易所的批量接口不提供时省略（Binance 的持仓量只能逐个标的查询，Hyperliquid 的流不带标记价）。对冲页的"套利机会"用它过滤没有深度的市场。
 
 ### GET /v1/options
 

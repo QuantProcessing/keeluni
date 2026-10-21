@@ -231,6 +231,9 @@ func (loader bitgetDerivativeSnapshotLoader) LoadDerivativeSnapshot(ctx context.
 			NextFundingTime: fundingUnixMillis(row.NextFundingTime),
 			MarkPrice:       fundingOptionalDecimal(row.MarkPrice),
 			IndexPrice:      fundingOptionalDecimal(row.IndexPrice),
+			// holdingAmount is the open interest in the base asset.
+			OpenInterest:         fundingOptionalNonNegative(row.HoldingAmount),
+			OpenInterestNotional: fundingOpenInterestNotional(row.HoldingAmount, row.MarkPrice, decimal.NewFromInt(1)),
 		})
 	}
 	return derivativeSnapshot(scope, entries), nil
