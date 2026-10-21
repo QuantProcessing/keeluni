@@ -179,6 +179,8 @@
 [{"inst":"okx:perp:BTC-USDT-SWAP","tickSize":"0.1","stepSize":"0.00001","minQty":"0.00001","minNotional":"5"}]
 ```
 
+支持止盈止损的市场另带 `"triggers":{"priceTypes":["last","mark"]}`，见[止盈止损](#止盈止损触发单)。
+
 经纪账户的规则是经纪商的，可能与交易所原生不同。
 
 ### GET /positions
@@ -236,6 +238,37 @@ HTTP：accepted 200、rejected 422、unknown 202。
 ### DELETE /orders/{orderId}?inst=
 
 撤单。
+
+### 止盈止损（触发单）
+
+止盈 / 止损是挂在交易所的只减仓市价单：价格触及触发价时由交易所发出。只有 `GET /instruments` 中带 `triggers` 的市场支持（`{"triggers":{"priceTypes":["last","mark"]}}`，列出可用的触发价类型，第一个为默认）；不支持的市场（如 Gate CrossEx）只能限价或市价平仓。目前已接入：Binance 永续。
+
+#### POST /triggers
+
+```json
+{"inst":"binance:perp:ETH-USDT","side":"sell","kind":"stop_loss","triggerPrice":"2300",
+ "priceType":"mark","qty":"0.5","clientOrderId":"229736271958529"}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `side` | 平仓方向：多头为 `sell`，空头为 `buy` |
+| `kind` | `take_profit` / `stop_loss` |
+| `priceType` | `last` / `mark`，须在该市场的 `priceTypes` 中 |
+
+返回与下单相同的三种结果（`trigger` 代替 `order`），HTTP 状态码也相同。`unknown` 时必须先用 `clientOrderId` 查询，不得重发。
+
+#### GET /triggers?inst=
+
+挂着的止盈止损单：`[{inst, orderId, clientOrderId, side, kind, triggerPrice, priceType, qty, closePosition, status, createdAt}]`。`closePosition` 表示在交易所界面设置的"全部平仓"单，没有固定数量。省略 `inst` 时列出账户所有支持触发单的市场。
+
+#### GET /triggers/lookup?inst=&clientOrderId=
+
+返回 `{status:"found"|"not_found", trigger?}`。
+
+#### DELETE /triggers/{orderId}?inst=
+
+撤销一个止盈止损单。
 
 ### PUT /leverage
 

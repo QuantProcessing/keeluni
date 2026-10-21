@@ -64,6 +64,9 @@ type Route struct {
 	StepSize    string             `json:"stepSize"`
 	MinQty      string             `json:"minQty"`
 	MinNotional string             `json:"minNotional,omitempty"`
+	// Triggers is set where the account can rest take-profit / stop-loss
+	// orders on this market.
+	Triggers *TriggerSupport `json:"triggers,omitempty"`
 }
 
 // Fill is one execution.

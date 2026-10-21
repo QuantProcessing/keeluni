@@ -87,6 +87,10 @@ func NewServer(token []byte, deps Deps) *Server {
 	m.HandleFunc("POST /v1/accounts/{id}/orders", server.placeOrder)
 	m.HandleFunc("DELETE /v1/accounts/{id}/orders/{orderId}", server.cancelOrder)
 	m.HandleFunc("GET /v1/accounts/{id}/fills", server.fills)
+	m.HandleFunc("GET /v1/accounts/{id}/triggers", server.openTriggers)
+	m.HandleFunc("GET /v1/accounts/{id}/triggers/lookup", server.lookupTrigger)
+	m.HandleFunc("POST /v1/accounts/{id}/triggers", server.placeTrigger)
+	m.HandleFunc("DELETE /v1/accounts/{id}/triggers/{orderId}", server.cancelTrigger)
 	m.HandleFunc("PUT /v1/accounts/{id}/leverage", server.setLeverage)
 
 	m.HandleFunc("GET /v1/ws", server.websocket)
@@ -330,6 +334,48 @@ func (server *Server) lookupOrder(w http.ResponseWriter, r *http.Request) {
 
 func (server *Server) cancelOrder(w http.ResponseWriter, r *http.Request) {
 	err := server.accounts.Cancel(r.Context(), r.PathValue("id"), venue.InstrumentID(r.URL.Query().Get("inst")), r.PathValue("orderId"))
+	if err != nil {
+		server.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// placeTrigger rests a take-profit or stop-loss; statuses as for orders
+// (422 rejected, 202 unknown: look it up by clientOrderId).
+func (server *Server) placeTrigger(w http.ResponseWriter, r *http.Request) {
+	var request account.TriggerRequest
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	result, err := server.accounts.PlaceTrigger(r.Context(), r.PathValue("id"), request)
+	if err != nil {
+		server.fail(w, err)
+		return
+	}
+	status := http.StatusOK
+	switch result.Status {
+	case account.OutcomeRejected:
+		status = http.StatusUnprocessableEntity
+	case account.OutcomeUnknown:
+		status = http.StatusAccepted
+	}
+	writeJSON(w, status, result)
+}
+
+func (server *Server) openTriggers(w http.ResponseWriter, r *http.Request) {
+	triggers, err := server.accounts.OpenTriggers(r.Context(), r.PathValue("id"), venue.InstrumentID(r.URL.Query().Get("inst")))
+	server.respond(w, triggers, err)
+}
+
+func (server *Server) lookupTrigger(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	result, err := server.accounts.LookupTrigger(r.Context(), r.PathValue("id"), venue.InstrumentID(query.Get("inst")), query.Get("clientOrderId"))
+	server.respond(w, result, err)
+}
+
+func (server *Server) cancelTrigger(w http.ResponseWriter, r *http.Request) {
+	err := server.accounts.CancelTrigger(r.Context(), r.PathValue("id"), venue.InstrumentID(r.URL.Query().Get("inst")), r.PathValue("orderId"))
 	if err != nil {
 		server.fail(w, err)
 		return
