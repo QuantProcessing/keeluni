@@ -1857,7 +1857,7 @@
         "TestWebSocketFacetMethodSets",
         "TestBinancePublicWSBackendIsLazyConnectAndUsesSpotDepth20",
         "TestBinancePerpPublicWSBackendNormalizesStreamsAndReference",
-        "TestOKXPublicWSBackendIsLazyConnectsOnceAndUsesBooks5",
+        "TestOKXPublicWSBackendIsLazyConnectsOnceAndUsesFullBooks",
         "TestOKXPublicWSBackendSurfacesRawDecodeErrorsForEveryPublicStream",
         "TestLighterOrderBookDetectsNonceGapAndResynchronizes",
         "TestHyperliquidPublicWebSocketsExerciseEveryExposedMethod",

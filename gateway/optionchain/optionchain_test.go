@@ -199,3 +199,16 @@ func TestTopicReplaysAndPublishesRebuilds(t *testing.T) {
 		t.Fatalf("missing chain err = %v", err)
 	}
 }
+
+// A chain read moments after an expiry, or with a NaN from the venue, must
+// still encode: one bad row once stopped the whole series from publishing.
+func TestRoundNeverReturnsNonFinite(t *testing.T) {
+	for _, value := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		if got := round(value, 4); got != 0 {
+			t.Fatalf("round(%v) = %v", value, got)
+		}
+		if got := sig(value); got != 0 {
+			t.Fatalf("sig(%v) = %v", value, got)
+		}
+	}
+}

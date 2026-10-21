@@ -208,7 +208,8 @@ export interface Preview {
   sweep: [Sweep, Sweep];
   spreadBps: string;
   funding: [FundingQuote | null, FundingQuote | null];
-  netFundingApr: string;
+  /** Absent while a perp leg's funding is not known yet. */
+  netFundingApr?: string;
   /** How the legs are sized against each other; the hedger decides. */
   match: "base" | "notional";
   /** The legs as they would open: the rules of each leg's account. */

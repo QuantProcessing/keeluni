@@ -9,7 +9,7 @@ import { useBook, useInstrument, type AccountLive } from "@/state/hooks";
 import { useWorkspace } from "@/state/workspace";
 import { PrimaryButton, Row, Tabs, cx } from "@/ui/primitives";
 import { useToast } from "@/ui/toast";
-import { AccountLabel, AccountMenu, NoAccount, useAccountChoices } from "../account-picker";
+import { AccountLabel, AccountMenu, useAccountChoices } from "../account-picker";
 import { MarginPool } from "../account-summary";
 import { LeverageDialog } from "../order-ticket";
 import { useHedgerText, useT } from "@/i18n";
@@ -19,15 +19,25 @@ type Mode = "market" | "limit";
 type Unit = "base" | "quote";
 
 /**
- * The open ticket, top to bottom: where each leg trades (account and the
- * leverage its margin is estimated with), how (market both, or rest one leg
- * and hedge every fill at market on the other), how much, what it would do,
- * and the money behind it.
+ * The open ticket, in the order a carry trader decides:
+ *   1. how — market both legs, or rest one and hedge each fill at market
+ *   2. how much — an amount per leg, or a share of what both legs can carry
+ *   3. what it does — entry spread, net funding, days to repay the crossing,
+ *      margin against available
+ *   4. open
+ * Where each leg trades (account, leverage) sits under the button as two
+ * quiet lines; the failure policy, post only and the label are folded into
+ * Advanced. Colour is kept for what decides: the side once in the pair bar,
+ * signs of rates and money, and red only for what blocks the order.
  */
-export function HedgeTicket({ pair, matching, onAccount }: {
+export function HedgeTicket({ pair, matching, onAccount, amount, netApr }: {
   pair: Pair;
   matching: { match: "base" | "notional"; ratio: number } | undefined;
   onAccount: (index: 0 | 1, accountId: string) => void;
+  /** Net funding from the page's live funding, until the preview has its own. */
+  netApr?: number;
+  /** An amount chosen elsewhere (the spread ladder); applied when it changes. */
+  amount?: { value: number; at: number };
 }) {
   const t = useT();
   const text = useHedgerText();
@@ -64,6 +74,14 @@ export function HedgeTicket({ pair, matching, onAccount }: {
   const setPostOnly = (value: boolean) => setPostOnlyByLeg((current) => (maker === 0 ? [value, current[1]] : [current[0], value]));
   const [policy, setPolicy] = useState<"unwind" | "hold">("unwind");
   const [label, setLabel] = useState("");
+  const [advanced, setAdvanced] = useState(false);
+  const [percent, setPercent] = useState(0);
+  useEffect(() => {
+    if (!amount) return;
+    setUnit("quote");
+    setSize(String(amount.value));
+    setPercent(0);
+  }, [amount]);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewError, setPreviewError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -135,7 +153,10 @@ export function HedgeTicket({ pair, matching, onAccount }: {
     const notional = legs.reduce((sum, i) => sum + Number(preview.notional[i]), 0);
     return notional > 0 ? total / notional : undefined;
   }, [preview, mode, maker]);
-  const breakeven = costBps === undefined ? undefined : breakevenDays(costBps, Number(preview?.netFundingApr));
+  // The hedger subscribes to funding on first use: until it has the rate,
+  // the page's live funding stands in.
+  const net = preview?.netFundingApr !== undefined ? Number(preview.netFundingApr) : netApr;
+  const breakeven = costBps === undefined || net === undefined ? undefined : breakevenDays(costBps, net);
 
   const submit = async () => {
     if (!request) return;
@@ -163,6 +184,20 @@ export function HedgeTicket({ pair, matching, onAccount }: {
 
   const units = { base: inst0?.base ?? "Base", quote: inst0?.quote ?? "Quote" };
 
+  // A share of what the legs can carry: the smaller leg's available times
+  // its leverage, as an amount per leg.
+  const capacity = ([0, 1] as const).map((i) => (available[i] ? available[i]!.amount * (leverage[i]?.value ?? 1) : undefined));
+  const maxNotional = sharedPool && capacity[0] !== undefined
+    ? (available[0]!.amount * Math.min(leverage[0]?.value ?? 1, leverage[1]?.value ?? 1)) / 2
+    : capacity.every((value) => value !== undefined) ? Math.min(capacity[0]!, capacity[1]!) : undefined;
+  const applyPercent = (value: number) => {
+    setPercent(value);
+    if (!maxNotional || maxNotional <= 0) return;
+    setUnit("quote");
+    setSize(String(Math.floor((maxNotional * value) / 100)));
+  };
+  const field = "flex h-10 items-center gap-2 rounded-lg border border-line px-3 focus-within:border-line-strong";
+
   return (
     <div className="flex flex-col bg-surface">
       <div className="flex flex-col gap-3 p-3">
@@ -170,52 +205,79 @@ export function HedgeTicket({ pair, matching, onAccount }: {
 
         {mode === "limit" && (
           <>
-            <div>
-              <div className="grid h-8 grid-cols-2 rounded-lg bg-raised p-0.5">
-                {([0, 1] as const).map((leg) => (
-                  <button key={leg} onClick={() => setMaker(leg)} className={cx("truncate rounded-md px-2", maker === leg ? "bg-line-strong/60 text-text" : "text-muted")}>
-                    {t("hticket.restLeg", { n: leg + 1, venue: venueLabel(instruments[leg]?.venue ?? "") })}
-                  </button>
-                ))}
-              </div>
-              <p className="mt-1 text-muted">
-                {t("hticket.restExplain", { maker: venueLabel(instruments[maker]?.venue ?? ""), other: venueLabel(instruments[1 - maker]?.venue ?? "") })}
-              </p>
-            </div>
-            <label className="flex h-10 items-center gap-2 rounded-lg border border-line px-3 focus-within:border-line-strong">
-              <span className="text-muted">{t("common.price")}</span>
-              <input inputMode="decimal" value={limitPrice} onChange={(event) => setLimitPrice(sanitize(event.target.value))} className="min-w-0 flex-1 bg-transparent text-right outline-none" />
-              <span className="text-muted">{makerInst?.quote}</span>
-            </label>
-            <div className="-mt-1 flex gap-1">
-              {(["join", "mid", "touch"] as const).map((kind) => (
-                <button key={kind} onClick={() => setPriceAt(kind)} className="h-6 flex-1 rounded-md bg-raised text-text-2 hover:text-text" title={t(({ join: "hticket.joinHint", mid: "hticket.midHint", touch: "hticket.touchHint" } as const)[kind])}>
-                  {kind === "mid" ? t("ticket.mid") : t((kind === "join") === (pair[maker].side === "buy") ? "hticket.join.buy" : "hticket.join.sell")}
+            <div className="grid h-8 grid-cols-2 rounded-lg bg-raised p-0.5" title={t("hticket.restExplain", { maker: venueLabel(instruments[maker]?.venue ?? ""), other: venueLabel(instruments[1 - maker]?.venue ?? "") })}>
+              {([0, 1] as const).map((leg) => (
+                <button key={leg} onClick={() => setMaker(leg)} className={cx("truncate rounded-md px-2", maker === leg ? "bg-line-strong/60 text-text" : "text-muted")}>
+                  {t("hticket.restOn", { venue: venueLabel(instruments[leg]?.venue ?? "") })}
                 </button>
               ))}
             </div>
-            <label className="flex items-center gap-2" title={t("hticket.postOnlyHint")}>
-              <input type="checkbox" checked={postOnly} onChange={(event) => setPostOnly(event.target.checked)} className="accent-[#50d2c1]" />
-              {t("hticket.postOnly")}
-              <span className="text-muted">{t("hticket.postOnlyScope", { venue: venueLabel(instruments[maker]?.venue ?? "") })}</span>
-            </label>
+            <div>
+              <label className={field}>
+                <span className="text-muted">{t("common.price")}</span>
+                <input inputMode="decimal" value={limitPrice} onChange={(event) => setLimitPrice(sanitize(event.target.value))} className="min-w-0 flex-1 bg-transparent text-right outline-none" />
+                <span className="text-muted">{makerInst?.quote}</span>
+              </label>
+              <div className="mt-1 flex gap-1">
+                {(["join", "mid", "touch"] as const).map((kind) => (
+                  <button key={kind} onClick={() => setPriceAt(kind)} className="h-6 flex-1 rounded-md bg-raised text-text-2 hover:text-text" title={t(({ join: "hticket.joinHint", mid: "hticket.midHint", touch: "hticket.touchHint" } as const)[kind])}>
+                    {kind === "mid" ? t("ticket.mid") : t((kind === "join") === (pair[maker].side === "buy") ? "hticket.join.buy" : "hticket.join.sell")}
+                  </button>
+                ))}
+              </div>
+            </div>
           </>
         )}
 
         <div>
-          <label className="flex h-10 items-center gap-2 rounded-lg border border-line px-3 focus-within:border-line-strong">
-            <span className="text-muted">{t("common.size")}</span>
-            <input inputMode="decimal" value={size} onChange={(event) => setSize(sanitize(event.target.value))} className="min-w-0 flex-1 bg-transparent text-right outline-none" />
-            <select value={unit} onChange={(event) => { setUnit(event.target.value as Unit); setSize(""); }} className="bg-transparent text-text outline-none" aria-label={t("ticket.sizeUnit")}>
+          <label className={field}>
+            <span className="text-muted">{t("hticket.amount")}</span>
+            <input inputMode="decimal" value={size} onChange={(event) => { setSize(sanitize(event.target.value)); setPercent(0); }} className="min-w-0 flex-1 bg-transparent text-right outline-none" />
+            <select value={unit} onChange={(event) => { setUnit(event.target.value as Unit); setSize(""); setPercent(0); }} className="bg-transparent text-text outline-none" aria-label={t("ticket.sizeUnit")}>
               <option value="quote">{units.quote}</option>
               <option value="base">{units.base}</option>
             </select>
           </label>
-          <p className="mt-1 text-muted">{unit === "quote" ? t("hticket.sizeQuote", { quote: units.quote }) : t("hticket.sizeBase", { base: units.base })}{matching?.match === "notional" ? t("hticket.matchedByValue") : ""}</p>
+          <div className="mt-2 flex items-center gap-3">
+            <input type="range" min={0} max={100} step={1} value={percent} onChange={(event) => applyPercent(Number(event.target.value))}
+              disabled={!maxNotional} aria-label={t("ticket.percent")}
+              className="range flex-1" style={{ ["--fill" as string]: `${percent}%` }} />
+            <span className="w-24 text-right text-xs text-muted" title={t("hticket.capacityHint")}>{maxNotional ? `${percent}% · ${compactUsd(maxNotional)}` : t("hticket.perLeg")}</span>
+          </div>
         </div>
 
-        {/* The legs of this order: where each trades, its leverage, and what it would do. One grid so both legs align. */}
-        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1 gap-y-0.5">
+        <div className="flex flex-col">
+          <Row label={t("pair.entrySpread")} hint={t("hticket.entrySpreadHint")}>{preview && matching?.match === "base" ? bpsText(preview.spreadBps) : "—"}</Row>
+          <Row label={t("pair.netFunding")} hint={t("hticket.netFundingHint")}><span className={tone(net)}>{aprText(net)}</span></Row>
+          <Row label={t("hticket.breakeven")} hint={t("hticket.breakevenHint")}>
+            {costBps === undefined || net === undefined ? "—" : breakeven === undefined ? <span className="text-muted">{t("hticket.noPayback")}</span> : breakeven < 1 ? t("hticket.lessThanDay") : t("hticket.days", { n: breakeven.toFixed(1) })}
+            {costBps !== undefined && <span className="text-muted"> · {bpsText(costBps, 1)}</span>}
+          </Row>
+          <Row label={t("hticket.marginRequired")} hint={t("hticket.marginHint")}>
+            {margin ? (
+              <>
+                <span className={margin.short ? "text-down" : ""}>{usd(margin.need[0]! + margin.need[1]!, 0)}</span>
+                <span className="text-muted"> / {sharedPool ? usd(available[0]?.amount, 0) : usd((available[0]?.amount ?? 0) + (available[1]?.amount ?? 0), 0)}</span>
+              </>
+            ) : "—"}
+          </Row>
+        </div>
+
+        <PrimaryButton onClick={submit} disabled={!request || submitting || problems.length > 0 || !!previewError}>
+          {!ready
+            ? t("hticket.chooseAccountFor", { legs: missing.length === 2 ? t("hticket.legsAnd", { a: t("common.leg", { n: 1 }), b: t("common.leg", { n: 2 }) }) : t("common.leg", { n: missing[0]! + 1 }) })
+            : submitting ? t("hticket.opening") : t(mode === "market" ? "hticket.openMarket" : "hticket.placeLimit")}
+        </PrimaryButton>
+        {previewError && <div className="text-down">{previewError}</div>}
+        {problems.map((problem) => <div key={problem} className="text-down">{problem}</div>)}
+        {netted.length > 0 && (
+          <p className="text-muted">
+            {t("hticket.netted", { legs: netted.length === 2 ? t("hticket.legsAnd", { a: t("common.leg", { n: 1 }), b: t("common.leg", { n: 2 }) }) : t("common.leg", { n: netted[0]! + 1 }), count: netted.length })}
+          </p>
+        )}
+
+        {/* Where each leg trades: account and leverage, then what it would do. */}
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1 gap-y-0.5 border-t border-line pt-2">
           {([0, 1] as const).map((i) => {
             const instrument = instruments[i];
             const isMaker = mode === "limit" && i === maker;
@@ -243,48 +305,34 @@ export function HedgeTicket({ pair, matching, onAccount }: {
           })}
         </div>
 
-        {preview && (
-          <div>
-            <div className="border-t border-line pt-1">
-              {matching?.match === "base" && <Row label={t("pair.entrySpread")} hint={t("hticket.entrySpreadHint")}>{bpsText(preview.spreadBps)}</Row>}
-              <Row label={t("hticket.mismatch")} hint={t("hticket.mismatchHint")}>{usd(preview.mismatch)}</Row>
-              <Row label={t("hticket.crossing")} hint={t("hticket.crossingHint")}>{bpsText(costBps)}</Row>
-              <Row label={t("pair.netFunding")} hint={t("hticket.netFundingHint")}><span className={tone(preview.netFundingApr)}>{aprText(preview.netFundingApr)}</span></Row>
-              <Row label={t("hticket.breakeven")} hint={t("hticket.breakevenHint")}>{breakeven === undefined ? "—" : breakeven < 1 ? t("hticket.lessThanDay") : t("hticket.days", { n: breakeven.toFixed(1) })}</Row>
-              {margin && (
-                <Row label={t("hticket.marginRequired")} hint={t("hticket.marginHint")}>
-                  <span className={margin.short ? "text-down" : ""}>{usd(margin.need[0]! + margin.need[1]!)}</span>
-                  <span className="text-muted"> / {sharedPool ? usd(available[0]?.amount) : `${usd(available[0]?.amount)} · ${usd(available[1]?.amount)}`}</span>
-                </Row>
-              )}
+        <button onClick={() => setAdvanced((value) => !value)} className="flex items-center gap-1 self-start text-muted hover:text-text">
+          <span className="w-3">{advanced ? "▾" : "▸"}</span>{t("hticket.advanced")}
+          {!advanced && <span className="text-xs text-faint">· {t(policy === "unwind" ? "hticket.policyUnwind" : "hticket.policyHold")}{mode === "limit" && postOnly ? ` · ${t("hticket.postOnly")}` : ""}</span>}
+        </button>
+        {advanced && (
+          <div className="-mt-1 flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="dotted text-muted" title={t("hticket.ifLegFailsHint")}>{t("hticket.ifLegFails")}</span>
+              <select value={policy} onChange={(event) => setPolicy(event.target.value as "unwind" | "hold")} className="bg-transparent text-right outline-none">
+                <option value="unwind">{t("hticket.policyUnwind")}</option>
+                <option value="hold">{t("hticket.policyHold")}</option>
+              </select>
             </div>
+            {mode === "limit" && (
+              <label className="flex items-center gap-2" title={t("hticket.postOnlyHint")}>
+                <input type="checkbox" checked={postOnly} onChange={(event) => setPostOnly(event.target.checked)} className="accent-[var(--color-accent)]" />
+                {t("hticket.postOnly")}
+                <span className="text-muted">{t("hticket.postOnlyScope", { venue: venueLabel(instruments[maker]?.venue ?? "") })}</span>
+              </label>
+            )}
+            <label className="flex h-9 items-center gap-2 rounded-lg border border-line px-3 focus-within:border-line-strong">
+              <span className="text-muted">{t("common.label")}</span>
+              <input value={label} maxLength={80} onChange={(event) => setLabel(event.target.value)} placeholder={t("common.optional")} className="min-w-0 flex-1 bg-transparent text-right outline-none placeholder:text-faint" />
+            </label>
+            {matching?.match === "notional" && <p className="text-muted">{t("hticket.matchedByValue")}</p>}
+            {preview && Number(preview.mismatch) !== 0 && <Row label={t("hticket.mismatch")} hint={t("hticket.mismatchHint")}>{usd(preview.mismatch)}</Row>}
           </div>
         )}
-
-        <PrimaryButton onClick={submit} disabled={!request || submitting || problems.length > 0 || !!previewError}>
-          {!ready
-            ? t("hticket.chooseAccountFor", { legs: missing.length === 2 ? t("hticket.legsAnd", { a: t("common.leg", { n: 1 }), b: t("common.leg", { n: 2 }) }) : t("common.leg", { n: missing[0]! + 1 }) })
-            : submitting ? t("hticket.opening") : t(mode === "market" ? "hticket.openMarket" : "hticket.placeLimit")}
-        </PrimaryButton>
-        {previewError && <div className="text-down">{previewError}</div>}
-        {problems.map((problem) => <div key={problem} className="text-down">{problem}</div>)}
-        {netted.length > 0 && (
-          <p className="text-text-2">
-            {t("hticket.netted", { legs: netted.length === 2 ? t("hticket.legsAnd", { a: t("common.leg", { n: 1 }), b: t("common.leg", { n: 2 }) }) : t("common.leg", { n: netted[0]! + 1 }), count: netted.length })}
-          </p>
-        )}
-
-        <div className="flex items-center justify-between gap-2">
-          <span className="dotted text-muted" title={t("hticket.ifLegFailsHint")}>{t("hticket.ifLegFails")}</span>
-          <select value={policy} onChange={(event) => setPolicy(event.target.value as "unwind" | "hold")} className="bg-transparent text-right outline-none">
-            <option value="unwind">{t("hticket.policyUnwind")}</option>
-            <option value="hold">{t("hticket.policyHold")}</option>
-          </select>
-        </div>
-        <label className="flex h-9 items-center gap-2 rounded-lg border border-line px-3 focus-within:border-line-strong">
-          <span className="text-muted">{t("common.label")}</span>
-          <input value={label} maxLength={80} onChange={(event) => setLabel(event.target.value)} placeholder={t("common.optional")} className="min-w-0 flex-1 bg-transparent text-right outline-none placeholder:text-faint" />
-        </label>
       </div>
 
       <Funds accounts={legAccounts} lives={lives} available={available} sharedPool={sharedPool} />
@@ -292,8 +340,12 @@ export function HedgeTicket({ pair, matching, onAccount }: {
   );
 }
 
+function compactUsd(value: number): string {
+  return "$" + new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+}
+
 /** The account cell's box: identical for a menu, a fixed account and no account. */
-const cell = "flex h-8 w-full min-w-0 items-center gap-2 rounded-lg px-2";
+const cell = "flex min-h-8 w-full min-w-0 items-center gap-2 rounded-lg px-2";
 
 /**
  * One leg of the order, on the ticket's three-column grid so both legs line
@@ -320,12 +372,13 @@ function LegRow({ index, leg, instrument, account, leverage, onAccount, onLevera
   return (
     <>
       <span className="flex h-8 w-[118px] min-w-0 items-center gap-1.5 whitespace-nowrap">
-        <span className={cx("w-9 shrink-0", long ? "text-up" : "text-down")}>{t(long ? "common.long" : "common.short")}</span>
+        <span className="w-9 shrink-0 text-text-2">{t(long ? "common.long" : "common.short")}</span>
         <span className="truncate text-muted" title={t("common.leg", { n: index + 1 })}>{venueLabel(instrument?.venue ?? leg.inst.split(":")[0] ?? "")}</span>
       </span>
       {/* Every account cell has the same box (padding, chevron slot), menu or not, so both legs line up. */}
       {instrument && candidates.length === 0 ? (
-        <span className={cell}><NoAccount instrument={instrument} unconnectedBrokers={unconnectedBrokers} compact /></span>
+        // The leg row already names the venue: only the ways to connect remain.
+        <span className={cell}><ConnectLinks instrument={instrument} unconnectedBrokers={unconnectedBrokers} /></span>
       ) : account && candidates.length === 1 && unconnectedBrokers.length === 0 ? (
         // The only account that trades this market: nothing to choose.
         <span className={cell} title={t("accounts.soleAccount")}>
@@ -360,18 +413,33 @@ function LegRow({ index, leg, instrument, account, leverage, onAccount, onLevera
       </span>
       {outcome && (
         <>
-          <span className={cx("pl-[42px] whitespace-nowrap", long ? "text-up" : "text-down")}>{num(outcome.qty)} {instrument?.base}</span>
-          <span className="truncate px-2 text-muted">
-            {outcome.thin && <span className="text-down" title={t("hticket.thinHint")}>{t("hticket.thin")} · </span>}
-            {outcome.detail}
+          <span className="pl-[42px] whitespace-nowrap text-muted">{num(outcome.qty)} {instrument?.base}</span>
+          <span className="truncate px-2 text-right text-muted" title={outcome.thin ? t("hticket.thinHint") : undefined}>
+            {outcome.thin ? <span className="text-text">{t("hticket.thin")}</span> : outcome.detail}
           </span>
-          <span className="text-right whitespace-nowrap">{usd(outcome.notional, 0)}</span>
+          <span className="text-right whitespace-nowrap text-muted">{usd(outcome.notional, 0)}</span>
         </>
       )}
       {perp && account && instrument && (
         <LeverageDialog open={open} onOpenChange={setOpen} instrument={instrument} accountId={account.id} current={Math.round(leverage.value)} onApplied={onLeverage} />
       )}
     </>
+  );
+}
+
+/** "Connect Bitget · Gate CrossEx": the ways to trade a leg with no account. */
+function ConnectLinks({ instrument, unconnectedBrokers }: { instrument: Instrument; unconnectedBrokers: string[] }) {
+  const t = useT();
+  const { venues, openConnect } = useWorkspace();
+  const native = venues.some((item) => item.venue === instrument.venue && item.kind === "native");
+  const targets = [...(native ? [instrument.venue] : []), ...unconnectedBrokers];
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-x-1.5">
+      <span className="shrink-0 text-muted">{t("hticket.connect")}</span>
+      {targets.map((venue, index) => (
+        <button key={venue} onClick={() => openConnect(venue)} className="shrink-0 text-accent hover:underline">{index ? "· " : ""}{venueLabel(venue)}</button>
+      ))}
+    </span>
   );
 }
 

@@ -264,6 +264,11 @@ type OrderBook struct {
 	Asks [][]string `json:"asks"` // [price, size, trash, numOrders]
 	Bids [][]string `json:"bids"`
 	Ts   string     `json:"ts"`
+	// SeqId and PrevSeqId chain the incremental books channels: an update's
+	// PrevSeqId is the previous message's SeqId (-1 on a snapshot). SeqId can
+	// reset to a smaller value; only the chain is meaningful.
+	SeqId     int64 `json:"seqId,omitempty"`
+	PrevSeqId int64 `json:"prevSeqId,omitempty"`
 }
 
 type Instrument struct {

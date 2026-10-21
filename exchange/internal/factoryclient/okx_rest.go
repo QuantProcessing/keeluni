@@ -1070,7 +1070,8 @@ func okxBookLevels(rows [][]string, multiplier decimal.Decimal) ([]exchange.Book
 		if err != nil {
 			return nil, err
 		}
-		qty, err := okxPositiveDecimal(row[1])
+		// Zero removes a level in an incremental update.
+		qty, err := okxNonNegativeDecimal(row[1])
 		if err != nil {
 			return nil, err
 		}

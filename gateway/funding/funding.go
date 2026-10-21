@@ -53,7 +53,11 @@ type Quote struct {
 	// Apr is Rate annualized (simple, 8760 h); absent when the period is unknown.
 	Apr         string `json:"apr,omitempty"`
 	NextFunding int64  `json:"nextFunding,omitempty"`
-	ObservedAt  int64  `json:"observedAt"`
+	// Mark is the venue's mark price; OiUsd the open interest valued at it
+	// (when the venue publishes either): how deep the market is.
+	Mark       string `json:"mark,omitempty"`
+	OiUsd      string `json:"oiUsd,omitempty"`
+	ObservedAt int64  `json:"observedAt"`
 	// Stale: the market's collection has missed three cadences.
 	Stale bool `json:"stale"`
 
@@ -259,7 +263,26 @@ func project(served venue.Market, instrument market.Instrument, item fact) Quote
 	if !item.NextFundingTime.IsZero() {
 		result.NextFunding = item.NextFundingTime.UnixMilli()
 	}
+	if item.MarkPrice.Valid && item.MarkPrice.Value.IsPositive() {
+		result.Mark = item.MarkPrice.Value.String()
+	}
+	// Open interest in USD: the venue's notional when it is in a dollar
+	// stablecoin, else contracts × mark.
+	switch {
+	case item.OpenInterestNotional.Valid && usdAsset(item.OpenInterestNotionalAsset):
+		result.OiUsd = item.OpenInterestNotional.Value.Round(0).String()
+	case item.OpenInterest.Valid && item.MarkPrice.Valid:
+		result.OiUsd = item.OpenInterest.Value.Mul(item.MarkPrice.Value).Round(0).String()
+	}
 	return result
+}
+
+func usdAsset(asset string) bool {
+	switch strings.ToUpper(asset) {
+	case "USD", "USDT", "USDC", "USDT0", "USDE":
+		return true
+	}
+	return false
 }
 
 // decorate fills fields derived at read time: staleness from the market's

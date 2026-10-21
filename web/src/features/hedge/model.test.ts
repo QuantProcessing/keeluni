@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Account, Instrument } from "@/api/types";
 import { legVenueHeld } from "./groups";
-import { aprText, averageApr, breakevenDays, bpsText, flipPair, legAccount, legAvailable, legLeverage, marginCheck, netFundingApr, netFundingSeries, normalizePair, seriesStats, spreadBps, spreadSeries, type Pair } from "./model";
+import { aprText, averageApr, breakevenDays, bpsText, flipPair, legAccount, legAvailable, legLeverage, marginCheck, netFundingApr, netFundingSeries, normalizePair, opportunities, seriesStats, spreadBps, spreadLadder, spreadSeries, sweepNotional, type Pair } from "./model";
 
 describe("leg accounts", () => {
   const instrument = { id: "okx:perp:BTC-USDT-SWAP", venue: "okx", product: "perp", base: "BTC", quote: "USDT", settle: "USDT" } as Instrument;
@@ -123,5 +123,60 @@ describe("leverage and margin", () => {
       { accountId: "b", shared: false, notional: 1000, leverage: 1, available: 500 },
     ]);
     expect(separate.short).toContain("Leg 2");
+  });
+});
+
+describe("opportunities", () => {
+  const row = (inst: string, venue: string, base: string, apr: string, oiUsd?: string, mark?: string) => ({ inst, venue, base, apr, oiUsd, mark, stale: false });
+  it("shorts the venue paying most and buys the one paying least", () => {
+    const rows = [
+      row("binance:perp:BTC-USDT", "binance", "BTC", "0.07", "5000000000", "100000"),
+      row("kraken:perp:BTC-USD", "kraken", "BTC", "0.16", "200000000", "100010"),
+      row("okx:perp:BTC-USDT-SWAP", "okx", "BTC", "0.06", "2400000000", "99990"),
+      row("gate:perp:XYZ-USDT", "gate", "XYZ", "4.0", "1000"),
+      row("bybit:perp:XYZ-USDT", "bybit", "XYZ", "-1.0", "2000"),
+      row("lighter:perp:ETH-USDC", "lighter", "ETH", "0.1"),
+    ];
+    const [best, ...rest] = opportunities(rows, { minOi: 1_000_000 });
+    expect(rest).toHaveLength(0); // XYZ too thin, ETH on one venue
+    expect(best!.long.venue).toBe("okx");
+    expect(best!.short.venue).toBe("kraken");
+    expect(best!.net).toBeCloseTo(0.1, 10);
+    expect(best!.depth).toBe(200000000);
+    expect(best!.basisBps).toBeCloseTo(2, 1);
+    expect(opportunities(rows)[0]!.base).toBe("XYZ");
+  });
+  it("needs one leg with known depth when filtering by depth", () => {
+    const rows = [
+      row("binance:perp:ABC-USDT", "binance", "ABC", "-5"),
+      row("hyperliquid:perp:ABC-USDC", "hyperliquid", "ABC", "5"),
+      row("binance:perp:DEF-USDT", "binance", "DEF", "-1"),
+      row("bybit:perp:DEF-USDT", "bybit", "DEF", "1", "50000000"),
+    ];
+    const found = opportunities(rows, { minOi: 10_000_000 });
+    expect(found.map((item) => item.base)).toEqual(["DEF"]);
+    expect(found[0]!.depth).toBe(50000000);
+    expect(opportunities(rows).map((item) => item.base)).toEqual(["ABC", "DEF"]);
+  });
+});
+
+describe("spread ladder", () => {
+  const long = { asks: [["100", "1"], ["101", "1"]] as Array<[string, string]>, bids: [["99.9", "1"], ["99", "1"]] as Array<[string, string]> };
+  const short = { asks: [["100.3", "1"], ["101", "1"]] as Array<[string, string]>, bids: [["100.2", "1"], ["99.5", "1"]] as Array<[string, string]> };
+  it("prices opening and closing the pair at each size", () => {
+    const [small, large, huge] = spreadLadder(long, short, [50, 150, 1000]);
+    // 50: buy long at 100, sell short at 100.2 → +20 bps; close: sell long 99.9, buy short 100.3 → +40.04 bps of 99.9.
+    expect(small!.open).toBeCloseTo(20, 6);
+    expect(small!.close).toBeCloseTo(((100.3 - 99.9) / 99.9) * 10_000, 6);
+    expect(small!.full).toBe(true);
+    // 150 walks a second level on both books.
+    expect(large!.open!).toBeLessThan(small!.open!);
+    expect(huge!.full).toBe(false);
+  });
+  it("is empty without books", () => {
+    expect(spreadLadder(undefined, short, [100])[0]).toEqual({ notional: 100, full: false });
+  });
+  it("averages a sweep by notional", () => {
+    expect(sweepNotional([["100", "1"], ["200", "1"]], 300)).toEqual({ avg: 150, base: 2, full: true });
   });
 });

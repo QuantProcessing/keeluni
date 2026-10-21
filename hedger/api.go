@@ -158,12 +158,14 @@ type Preview struct {
 	// Match is how the legs are sized against each other, derived from the
 	// instruments: base (same underlying, by quantity through the ratio) or
 	// notional (different underlyings).
-	Match         string                    `json:"match"`
-	Price         [2]decimal.Decimal        `json:"price"`
-	Sweep         [2]Sweep                  `json:"sweep"`
-	SpreadBps     decimal.Decimal           `json:"spreadBps"`
-	Funding       [2]*gwclient.FundingQuote `json:"funding"`
-	NetFundingApr decimal.Decimal           `json:"netFundingApr"`
+	Match     string                    `json:"match"`
+	Price     [2]decimal.Decimal        `json:"price"`
+	Sweep     [2]Sweep                  `json:"sweep"`
+	SpreadBps decimal.Decimal           `json:"spreadBps"`
+	Funding   [2]*gwclient.FundingQuote `json:"funding"`
+	// NetFundingApr is absent while a perp leg's funding is not known yet
+	// (the funding topic is subscribed on first use): unknown, not zero.
+	NetFundingApr *decimal.Decimal `json:"netFundingApr,omitempty"`
 	// Legs are the resolved legs: the rules each leg follows on its account
 	// (a broker's can differ from the venue's).
 	Legs [2]Leg `json:"legs"`
@@ -253,21 +255,25 @@ func (api *API) preview(w http.ResponseWriter, r *http.Request) {
 	preview.Match = match
 	group := Group{Match: match, Ratio: plan.Ratio, Legs: legs}
 	preview.SpreadBps = SpreadBps(group, prices[0], prices[1])
-	earn, notional := decimal.Zero, decimal.Zero
+	earn, notional, known := decimal.Zero, decimal.Zero, true
 	for i, leg := range legs {
 		if leg.Product != "perp" {
 			continue
 		}
-		if quote, ok := api.service.Market.Funding(leg.Instrument); ok {
-			copied := quote
-			preview.Funding[i] = &copied
-			apr, _ := decimal.NewFromString(quote.Apr)
-			earn = earn.Add(apr.Mul(plan.Notional[i]).Mul(fundingSign(leg)))
+		quote, ok := api.service.Market.Funding(leg.Instrument)
+		apr, err := decimal.NewFromString(quote.Apr)
+		if !ok || err != nil {
+			known = false
+			continue
 		}
+		copied := quote
+		preview.Funding[i] = &copied
+		earn = earn.Add(apr.Mul(plan.Notional[i]).Mul(fundingSign(leg)))
 	}
 	notional = plan.Notional[0].Add(plan.Notional[1])
-	if notional.IsPositive() {
-		preview.NetFundingApr = earn.Div(notional.Div(decimal.NewFromInt(2))).Round(6)
+	if known && notional.IsPositive() {
+		net := earn.Div(notional.Div(decimal.NewFromInt(2))).Round(6)
+		preview.NetFundingApr = &net
 	}
 	writeJSON(w, http.StatusOK, preview)
 }

@@ -36,9 +36,20 @@ const HEADS: Array<[Parameters<T>[0] | "", Parameters<T>[0]?]> = [
 const active = (group: GroupView) => group.status !== "closed" && group.status !== "failed";
 
 /** Every hedge as one row: the pair, its exposure, spread, funding and PnL. */
-export function GroupsPanel({ groups, state }: { groups: GroupView[] | undefined; state: HedgeConnection }) {
+/** A tab the page puts before the hedges (the opportunity list). */
+export interface LeadTab {
+  value: string;
+  label: string;
+  render: () => ReactNode;
+}
+
+export function GroupsPanel({ groups, state, lead }: { groups: GroupView[] | undefined; state: HedgeConnection; lead?: LeadTab }) {
   const t = useT();
-  const [filter, setFilter] = useState<Filter>("active");
+  // Opens on the hedges when there are any, else on the lead tab.
+  const [chosen, setChosen] = useState<Filter | string | null>(null);
+  const anyActive = (groups ?? []).some(active);
+  const tab = chosen ?? (lead && groups !== undefined && !anyActive ? lead.value : "active");
+  const filter: Filter = tab === "history" ? "history" : "active";
   const [expanded, setExpanded] = useState<string | null>(null);
   const [closing, setClosing] = useState<GroupView | null>(null);
   const list = (groups ?? []).filter((group) => (filter === "active" ? active(group) : !active(group)));
@@ -53,9 +64,10 @@ export function GroupsPanel({ groups, state }: { groups: GroupView[] | undefined
     <div className="flex min-h-0 flex-1 flex-col bg-surface">
       <div className="flex items-center border-b border-line pr-3">
         <Tabs
-          value={filter}
-          onChange={setFilter}
+          value={tab}
+          onChange={setChosen}
           options={[
+            ...(lead ? [{ value: lead.value, label: lead.label }] : []),
             { value: "active", label: `${t("groups.hedges")}${activeCount ? ` (${activeCount})` : ""}` },
             { value: "history", label: t("groups.history") },
           ]}
@@ -69,7 +81,7 @@ export function GroupsPanel({ groups, state }: { groups: GroupView[] | undefined
           </span>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto">
+      {lead && tab === lead.value ? lead.render() : <div className="min-h-0 flex-1 overflow-auto">
         {groups === undefined ? (
           <div className="px-3 py-2.5 text-muted">{t("groups.loading")}</div>
         ) : list.length === 0 ? (
@@ -119,7 +131,7 @@ export function GroupsPanel({ groups, state }: { groups: GroupView[] | undefined
             )}
           </table>
         )}
-      </div>
+      </div>}
       {closing && <CloseDialog group={closing} onDone={() => setClosing(null)} />}
     </div>
   );

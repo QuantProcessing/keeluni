@@ -68,6 +68,8 @@ export const api = {
   candles: (inst: string, interval: string, end?: number, signal?: AbortSignal) =>
     request<Candle[]>("GET", gw("/candles" + query({ inst, interval, end, limit: 500 })), undefined, signal),
   stats: (inst: string, signal?: AbortSignal) => request<Stats>("GET", gw("/ticker" + query({ inst })), undefined, signal),
+  /** Current funding of every perp on every venue (the resident table). */
+  fundingTable: (signal?: AbortSignal) => request<{ quotes: FundingQuote[] }>("GET", gw("/funding"), undefined, signal),
   /** Current funding of every perp with this base asset, across venues. */
   fundingByBase: (base: string, signal?: AbortSignal) =>
     request<{ quotes: FundingQuote[] }>("GET", gw("/funding" + query({ base })), undefined, signal),

@@ -12,16 +12,19 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func TestOKXPublicWSBackendIsLazyConnectsOnceAndUsesBooks5(t *testing.T) {
+func TestOKXPublicWSBackendIsLazyConnectsOnceAndUsesFullBooks(t *testing.T) {
 	ws := newFakeOKXPublicWSClient()
 	backend := newOKXSpotWSBackendWithClient(ws)
 	instrument := okxCatalogTestInstrument(exchange.ProductSpot, "ETH", "USDT", "1001", decimal.RequireFromString("0.0001"))
 	if ws.connectCalls != 0 {
 		t.Fatal("constructor connected websocket")
 	}
-	var got exchange.BookEvent
+	var mu sync.Mutex
+	var events []exchange.BookEvent
+	var statuses []backendStatus
 	stop, err := backend.StartOrderBook(context.Background(), instrument, streamCallbacks[exchange.BookEvent]{
-		Event: func(event exchange.BookEvent) { got = event },
+		Event:  func(event exchange.BookEvent) { mu.Lock(); events = append(events, event); mu.Unlock() },
+		Status: func(status backendStatus) { mu.Lock(); statuses = append(statuses, status); mu.Unlock() },
 	})
 	if err != nil {
 		t.Fatalf("StartOrderBook: %v", err)
@@ -29,25 +32,58 @@ func TestOKXPublicWSBackendIsLazyConnectsOnceAndUsesBooks5(t *testing.T) {
 	if ws.connectCalls != 1 {
 		t.Fatalf("Connect calls = %d, want 1", ws.connectCalls)
 	}
-	if len(ws.bookDepths) != 1 || ws.bookDepths[0] != 5 {
-		t.Fatalf("book depths = %v, want native books5 depth", ws.bookDepths)
+	// "books": up to 400 levels, open to every user (books5 capped OKX at five).
+	if len(ws.bookDepths) != 1 || ws.bookDepths[0] != okxBookDepth {
+		t.Fatalf("book depths = %v, want the books channel", ws.bookDepths)
 	}
 	ws.emitBook(&okx.OrderBook{
-		Bids: [][]string{{"100.1", "2", "0", "1"}},
+		Bids: [][]string{{"100.1", "2", "0", "1"}, {"100.0", "5", "0", "2"}},
 		Asks: [][]string{{"101.2", "3", "0", "1"}},
-		Ts:   "1700000000000",
+		Ts:   "1700000000000", PrevSeqId: -1, SeqId: 10,
 	}, "snapshot")
-	if got.Kind != exchange.EventSnapshot ||
-		got.Instrument.Identity.NativeSymbol != "ETH-USDT" ||
-		!got.Bids[0].Quantity.Equal(decimal.NewFromInt(2)) ||
-		!got.Asks[0].Price.Equal(decimal.RequireFromString("101.2")) {
-		t.Fatalf("book event = %+v", got)
+	// A chained update: a level removed (size 0) and one changed.
+	ws.emitBook(&okx.OrderBook{Bids: [][]string{{"100.0", "0", "0", "0"}}, Asks: [][]string{{"101.2", "4", "0", "1"}}, Ts: "1700000000100", PrevSeqId: 10, SeqId: 11}, "update")
+	// A heartbeat update: no change, same seqId.
+	ws.emitBook(&okx.OrderBook{Ts: "1700000000200", PrevSeqId: 11, SeqId: 11}, "update")
+	mu.Lock()
+	if len(events) != 3 || events[0].Kind != exchange.EventSnapshot || events[1].Kind != exchange.EventDelta ||
+		!events[1].Bids[0].Quantity.IsZero() || !events[1].Asks[0].Quantity.Equal(decimal.NewFromInt(4)) {
+		mu.Unlock()
+		t.Fatalf("events = %+v", events)
+	}
+	mu.Unlock()
+
+	// A lost message: the update does not chain. It is dropped and the book
+	// is rebuilt from a fresh snapshot.
+	ws.emitBook(&okx.OrderBook{Bids: [][]string{{"99", "1", "0", "1"}}, Ts: "1700000000300", PrevSeqId: 15, SeqId: 16}, "update")
+	deadline := time.Now().Add(time.Second)
+	for ws.bookSubscriptions() < 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if ws.bookSubscriptions() != 2 {
+		t.Fatal("a sequence gap did not resubscribe")
+	}
+	ws.emitBook(&okx.OrderBook{Bids: [][]string{{"99", "1", "0", "1"}}, Ts: "1700000000400", PrevSeqId: 16, SeqId: 17}, "update")
+	ws.emitBook(&okx.OrderBook{Bids: [][]string{{"98", "1", "0", "1"}}, Asks: [][]string{{"102", "1", "0", "1"}}, Ts: "1700000000500", PrevSeqId: -1, SeqId: 3}, "snapshot")
+	mu.Lock()
+	if len(events) != 4 || events[3].Kind != exchange.EventSnapshot || !events[3].Bids[0].Price.Equal(decimal.NewFromInt(98)) {
+		mu.Unlock()
+		t.Fatalf("after the gap: %+v", events)
+	}
+	resyncing := false
+	for _, status := range statuses {
+		resyncing = resyncing || status.State == exchange.SubscriptionResyncing
+	}
+	mu.Unlock()
+	if !resyncing {
+		t.Fatal("the gap was not reported")
 	}
 	if err := stop(); err != nil {
 		t.Fatalf("stop: %v", err)
 	}
-	if len(ws.unsubscribed) != 1 || ws.unsubscribed[0].Channel != "books5" {
-		t.Fatalf("unsubscribed = %+v, want books5", ws.unsubscribed)
+	last := ws.unsubscribed[len(ws.unsubscribed)-1]
+	if last.Channel != "books" || last.InstId != "ETH-USDT" {
+		t.Fatalf("unsubscribed = %+v, want books", ws.unsubscribed)
 	}
 }
 
@@ -575,6 +611,7 @@ func TestOKXPublicWSBackendConcurrentTopicsSharePendingConnect(t *testing.T) {
 }
 
 type fakeOKXPublicWSClient struct {
+	mu           sync.Mutex
 	connectCalls int
 	closeCalls   int
 
@@ -635,6 +672,8 @@ func (client *fakeOKXPublicWSClient) SubscribeOrderBookDepthWithError(
 	handler func(*okx.OrderBook, string),
 	errorHandler func(error),
 ) error {
+	client.mu.Lock()
+	defer client.mu.Unlock()
 	client.bookDepths = append(client.bookDepths, depth)
 	client.bookHandler = handler
 	client.bookError = errorHandler
@@ -712,8 +751,17 @@ func (client *fakeOKXPublicWSClient) SubscribeOptionSummaryWithError(family stri
 }
 
 func (client *fakeOKXPublicWSClient) Unsubscribe(args okx.WsSubscribeArgs) error {
+	client.mu.Lock()
+	defer client.mu.Unlock()
 	client.unsubscribed = append(client.unsubscribed, args)
 	return nil
+}
+
+// bookSubscriptions counts books subscriptions so far.
+func (client *fakeOKXPublicWSClient) bookSubscriptions() int {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	return len(client.bookDepths)
 }
 
 func (client *fakeOKXPublicWSClient) subscribeCount() int {
@@ -740,7 +788,10 @@ func (client *fakeOKXPublicWSClient) subscribeCount() int {
 }
 
 func (client *fakeOKXPublicWSClient) emitBook(book *okx.OrderBook, action string) {
-	client.bookHandler(book, action)
+	client.mu.Lock()
+	handler := client.bookHandler
+	client.mu.Unlock()
+	handler(book, action)
 }
 
 func (client *fakeOKXPublicWSClient) emitTicker(ticker *okx.Ticker) {

@@ -258,54 +258,69 @@ account lives in the Accounts popover with a confirm.
 
 ## Hedge page (`/hedge`)
 
-A hedge is two legs traded as one position, so the page is organised around
-the pair, laid out like the trade page:
+Built for **funding carry**: long one venue's perpetual, short another's,
+earn the difference in funding. A carry trader works in one order — *find a
+pair, judge it, open it, manage it* — and the page follows it. (Spread
+trading, which bets on the spread itself, is a separate app to come.)
 
 ```
-┌ pair bar 56px: Long [market ▾] ⇄ Short [market ▾] ··· entry spread · ratio · net funding · 7d ┬ ticket 340px ┐
-├ spread chart (tabs: Spread · Net funding)  ┬ leg 1 book    ┬ leg 2 book    ┤ leg accounts  │
-│ Now · Avg · Low · High overlay              │ side · funding│ (same)        │ mode · size   │
-│                                             │ 8–20 levels   │               │ preview       │
-├ hedges table (full width, one row per hedge, expandable) ──────────────────┤ primary       │
-│                                                                            │ the money     │
-└ status bar ─────────────────────────────────────────────────────────────────────────────────┘
+┌ pair bar 56px: [Long] market ▾ ⇄ [Short] market ▾ ··· entry spread · net funding · 7d ┬ ticket 340px ┐
+├ chart (tabs: Spread · Net funding)       ┬ spread depth (or the two books)          ┤ mode         │
+│ Now · Avg · Low · High overlay            │ per leg · open · close · round trip · days │ amount + %   │
+├ Opportunities · Hedges · History (full width) ─────────────────────────────────────┤ 4 numbers    │
+│                                                                                     │ Open         │
+└ status bar ─────────────────────────────────────────────────────────────────────────┴ legs · adv.  ┘
 ```
 
 - **One long, one short, always.** Each leg's market is picked in the pair
-  bar with the trade page's instrument selector; the sides are not chosen per
-  leg. ⇄ swaps which leg is long (disabled when a spot leg would become
-  short). The bar then shows only the numbers that decide whether to trade:
-  entry spread at executable prices (bps, same underlying), the size ratio
-  when contracts differ (from the hedger), net funding APR now and over 7 days.
-- **Spread chart** — the pair over time on one lightweight chart. Spread:
-  leg 2 over leg 1 per bar from both legs' candles (bps through the ratio;
-  a plain price ratio for different underlyings), drawn as a baseline series
-  (teal above zero, pink below), intervals 1m–1d, live with the candle
-  streams. Net funding: the net APR at each settlement (each leg's last
-  settled APR carried to the next), with both legs' APR as thin grey lines;
-  7d / 30d. Now · Avg · Low · High sit over the plot's top-left corner.
-- **Leg books** — one compact column per leg: side and funding on one line
-  (rate /period, APR, countdown; "continuous" for Deribit), then the book.
-  Blank rows pad venues that stream fewer levels so both spread rows line up.
-- **Ticket** — Market both / Limit + hedge, then size (quote or base),
-  then **the legs** as one three-column grid so both align: side and venue
-  (Long OKX / Short Hyperliquid, a fixed-width column) · the account that
-  trades it, left-aligned · the leverage chip. Every account cell has the
-  same box (padding and a chevron slot) so the names line up whether or not
-  the cell is a menu. The menu lists the accounts that can trade the market
-  (no default: "Choose account" in accent; a choice that can no longer
-  trade the market is cleared, never swapped); a sole possible account
-  shows with an empty chevron slot. The chip shows the leverage margin is
-  estimated with: one set here (applied on the venue via the Adjust
-  Leverage dialog), else the account's position in the market, else 1x in
-  muted text. Once there is a size each leg gets a second line on the same
-  grid: quantity in side colour, expected price and slippage, value. Then
-  entry spread, size mismatch, crossing cost, net funding, breakeven and
-  **Margin required / available**; margin beyond what the account (or the
-  shared pool, both legs together) has blocks the button and says why in
-  pink. Failure policy and label come last. In Limit + hedge, Post only is
-  labelled with the resting venue ("· OKX resting order only") and kept per
-  resting leg: the hedge leg always trades at market.
+  bar with the trade page's selector; ⇄ swaps which leg is long (disabled
+  when a spot leg would become short). The side chips here are **the only
+  place on the page the direction is coloured.** The bar shows entry spread
+  at executable prices, net funding APR now and over 7 days (a one-period
+  spike is not a carry), and the size ratio when contracts differ.
+- **Opportunities** (first tab at the bottom; the default when no hedge is
+  open): the funding table read as pairs — for every underlying on two
+  venues or more, the venue paying the most is shorted and the one paying
+  the least bought, ranked by net APR. Columns: coin (and how many venues
+  list it), long venue and its APR, short venue and its APR, net APR (teal),
+  basis (short mark over long mark, bps), depth (the thinner leg's open
+  interest in USD), next settlement. Filters: coin search, **Depth**
+  (All / ≥1M / ≥10M / ≥100M, default 10M — a 400% APR on a market nobody
+  trades is not an opportunity; venues that publish no bulk open interest
+  pass on the other leg) and **My venues** (both venues connected). A row
+  loads the pair into the page, keeping leg accounts already chosen.
+- **Spread depth** (beside the chart): the pair as one market. For each
+  amount per leg (1K, 10K, 50K, 100K, 500K) the spread a market entry would
+  trade at (buy the long leg's asks, sell the short leg's bids) and a market
+  exit (the reverse), in bps of the long leg, walking both books; the round
+  trip (close − open, what crossing both books twice costs) and the days of
+  current net funding to earn it back, or "Book too thin". A row fills the
+  ticket's amount. Fees are excluded and the note says so. "Order books"
+  swaps in both legs' books (eight levels a side, padded so the spreads line
+  up). Different underlyings have no common price: the panel says so.
+- **Spread chart** — Spread: leg 2 over leg 1 per bar from both legs'
+  candles, a baseline series (teal above zero, pink below), 1m–1d, live. Net
+  funding: the net APR at each settlement, both legs' APR as thin grey lines;
+  7d / 30d. Now · Avg · Low · High over the top-left corner.
+- **Ticket** — four steps, neutral text except signs of rates and money:
+  1. Market both / Limit + hedge (Limit adds "Rest on OKX | Hyperliquid",
+     the price, and Join / Mid / Touch).
+  2. **Amount** per leg (quote or base) with a % slider of what both legs
+     can carry (the smaller leg's available × its leverage; the pool once
+     for a shared broker account).
+  3. Four numbers: entry spread, net funding (the preview's, else the page's
+     live rate), payback (days and the crossing cost in bps; "Funding does
+     not pay" when it does not), margin required / available (pink only
+     when it blocks).
+  4. Open.
+  Then the legs as two quiet lines on one grid: side and venue · the account
+  (a menu of the accounts that can trade it — no default; "Connect Bitget ·
+  Gate CrossEx" when none) · leverage chip; with an amount, a second line:
+  quantity · expected price and slippage (or "Book too thin") · value.
+  **Advanced** (folded; its summary shows the failure policy) holds the
+  failure policy, Post only for the resting leg, the label, the size
+  mismatch and the by-value note. Problems that block the order sit under
+  the button in pink.
 - **The money** — under the ticket: when both legs trade from one broker
   account, the pool (margin balance, available, margin rates with their
   warnings, equity per venue); else each leg account's available.
@@ -321,8 +336,8 @@ the pair, laid out like the trade page:
   fees, funding, liquidation distance, venue position, account stream dot),
   then tabs Orders (with slippage per market order) · Activity · Funding ·
   Note.
-- The Hedge menu appears only when the trader serves a hedger. Below 1000px
-  everything stacks: pair bar, chart, books, ticket, hedges.
+- The Hedge menu appears only when the trader serves a hedger. Below 1100px
+  everything stacks: pair bar, chart, spread depth, ticket, bottom tabs.
 
 ## Options page (`/options`)
 

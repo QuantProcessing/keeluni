@@ -54,6 +54,9 @@ func (c *WSClient) SubscribeOrderBookDepthWithError(
 	}, errorHandler))
 }
 
+// OrderBookChannel names the books channel of a depth. 0 is "books": up to
+// 400 levels, a snapshot then 100 ms increments chained by seqId, open to
+// every user (the tick-by-tick 50 and 400 channels need VIP4).
 func OrderBookChannel(depth int) (string, error) {
 	switch depth {
 	case 0:
