@@ -346,6 +346,7 @@ type Ticker struct {
 	Timestamp           string `json:"ts"`
 	LastPrice           string `json:"lastPrice"`
 	OpenPrice24h        string `json:"openPrice24h"`
+	Price24hPcnt        string `json:"price24hPcnt"`
 	HighPrice24h        string `json:"highPrice24h"`
 	LowPrice24h         string `json:"lowPrice24h"`
 	Ask1Price           string `json:"ask1Price"`

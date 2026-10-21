@@ -112,6 +112,8 @@ type BookSummary struct {
 	Low            json.Number `json:"low"`
 	Last           json.Number `json:"last"`
 	PriceChange    json.Number `json:"price_change"`
+	// VolumeUSD is the 24h volume in USD (futures and perpetuals).
+	VolumeUSD json.Number `json:"volume_usd"`
 	// Options and spot.
 	BidPrice          json.Number `json:"bid_price"`
 	AskPrice          json.Number `json:"ask_price"`

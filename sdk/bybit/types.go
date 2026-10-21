@@ -71,6 +71,7 @@ type Ticker struct {
 	Ask1IV              string `json:"ask1Iv"`
 	Volume24h           string `json:"volume24h"`
 	Turnover24h         string `json:"turnover24h"`
+	PrevPrice24h        string `json:"prevPrice24h"`
 	HighPrice24h        string `json:"highPrice24h"`
 	LowPrice24h         string `json:"lowPrice24h"`
 	IndexPrice          string `json:"indexPrice"`
