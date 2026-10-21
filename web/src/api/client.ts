@@ -1,5 +1,5 @@
 import type {
-  Account, Balance, Book, Candle, Fill, FundingPoint, FundingQuote, Instrument, LookupResult, Margin, Order, PlaceRequest, PlaceResult, Position, Route, Stats, VenueInfo,
+  Account, Balance, Book, Candle, Fill, FundingPoint, FundingQuote, Instrument, LookupResult, Margin, MarketRow, Order, PlaceRequest, PlaceResult, Position, Route, Stats, VenueInfo,
 } from "./types";
 
 /** Same for every venue; see gateway account.Category. */
@@ -68,6 +68,8 @@ export const api = {
   candles: (inst: string, interval: string, end?: number, signal?: AbortSignal) =>
     request<Candle[]>("GET", gw("/candles" + query({ inst, interval, end, limit: 500 })), undefined, signal),
   stats: (inst: string, signal?: AbortSignal) => request<Stats>("GET", gw("/ticker" + query({ inst })), undefined, signal),
+  /** Every spot and perp instrument's price, 24h change and value, funding and open interest. */
+  markets: (signal?: AbortSignal) => request<MarketRow[]>("GET", gw("/markets"), undefined, signal),
   /** Current funding of every perp on every venue (the resident table). */
   fundingTable: (signal?: AbortSignal) => request<{ quotes: FundingQuote[] }>("GET", gw("/funding"), undefined, signal),
   /** Current funding of every perp with this base asset, across venues. */

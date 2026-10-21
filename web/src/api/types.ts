@@ -258,3 +258,17 @@ export interface VenueMargin {
   initialMargin?: string;
   unrealizedPnl?: string;
 }
+
+/** One instrument of the market list (gateway /v1/markets), by 24h value. */
+export interface MarketRow {
+  inst: string;
+  last?: string;
+  open24h?: string;
+  /** Fraction: 0.025 is +2.5%. */
+  change24h?: number;
+  /** 24h traded value in USD (absent when the quote asset has no dollar price). */
+  volume24h?: number;
+  fundingRate?: string;
+  fundingApr?: string;
+  oiUsd?: number;
+}
