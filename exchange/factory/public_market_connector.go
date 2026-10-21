@@ -17,6 +17,7 @@ type PublicMarketConnector struct {
 	market  exchange.MarketREST
 	perp    exchange.PerpMarketREST
 	mark    exchange.PerpMarkPriceREST
+	chain   exchange.OptionMarketREST
 	socket  exchange.MarketWebSocket
 	close   func() error
 	scope   exchange.CatalogScope
@@ -66,11 +67,24 @@ func NewPublicMarketConnector(
 	}
 	settings.catalog = instrumentCatalog
 	market, perp, mark, socket, closeClient := publicMarketClientForConfig(configName, settings)
+	var chain exchange.OptionMarketREST
+	if market == nil {
+		var client exchange.OptionClient
+		switch configName {
+		case "deribit-option":
+			client = factoryclient.NewDeribitOption("", "", factorySettingsForConfig(configName, settings))
+		case "okx-option":
+			client = factoryclient.NewOKXOption("", "", "", factorySettingsForConfig(configName, settings))
+		}
+		if client != nil {
+			market, chain, socket, closeClient = client, client, publicOptionSocket(client.WebSocket()), client.Close
+		}
+	}
 	if market == nil || closeClient == nil {
 		return nil, invalidConfig("public market connector client is unavailable")
 	}
 	return &PublicMarketConnector{
-		catalog: instrumentCatalog, market: market, perp: perp, mark: mark, socket: socket, close: closeClient,
+		catalog: instrumentCatalog, market: market, perp: perp, mark: mark, chain: chain, socket: socket, close: closeClient,
 		scope: scope, funding: derivativeSnapshotLoaderForConfig(configName, settings) != nil,
 	}, nil
 }
@@ -124,6 +138,16 @@ func (connector *PublicMarketConnector) MarkPrice(ctx context.Context, instrumen
 	return mark, true, err
 }
 
+// OptionChain reads the whole chain of an underlying; false when the market
+// is not an options market.
+func (connector *PublicMarketConnector) OptionChain(ctx context.Context, request exchange.OptionChainRequest) ([]exchange.OptionQuote, bool, error) {
+	if connector == nil || connector.chain == nil {
+		return nil, false, nil
+	}
+	quotes, err := connector.chain.OptionChain(ctx, request)
+	return quotes, true, err
+}
+
 // WebSocket exposes public streams only. Its concrete value has no account or
 // order methods; type assertions may reveal only additional public facets.
 func (connector *PublicMarketConnector) WebSocket() exchange.MarketWebSocket {
@@ -166,6 +190,10 @@ func publicMarketClientForConfig(configName string, settings settings) (exchange
 		setPerp(factoryclient.NewKrakenPerp("", "", configured))
 	case "deribit-usdc-perp":
 		setPerp(factoryclient.NewDeribitPerp("", "", configured))
+	case "deribit-spot":
+		setSpot(factoryclient.NewDeribitSpot("", "", configured))
+	case "kraken-spot":
+		setSpot(factoryclient.NewKrakenSpot("", "", configured))
 	case "okx-spot":
 		setSpot(factoryclient.NewOKXSpot("", "", "", configured))
 	case "okx-usdt-perp":

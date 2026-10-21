@@ -29,6 +29,8 @@
 | `candle` | `{t, o, h, l, c, v}` | 当前 K 线 |
 | `ticker` | `{mark, index, funding, fundingIntervalHours, fundingApr, nextFunding, oi, ts}` | 资金费率字段来自常驻数据集 |
 | `funding` | 资金费率记录（同 `GET /v1/funding?inst=`） | 订阅时先推当前值，之后有变化才推；不开新的交易所连接 |
+| `options` | 一个期权系列的完整期权链（同 `GET /v1/options/chain`），订阅 `{"ch":"options","inst":"deribit:BTC:BTC"}` | 每次重建推送一次（约 10 秒）；保留型 |
+| `option` | 单个期权的实时报价 `{bid, ask, bidSize, askSize, mark, markIv, bidIv, askIv, underlying, index, delta, gamma, vega, theta, oi, ts}` | 交易所 ticker 流；保留型 |
 | `account.orders` | 单个订单的最新完整状态（可含 `rejectCode`、`rejectMessage`、`origin`） | 按 orderId 更新 |
 | `account.fills` | 单笔成交 | |
 | `account.positions` | 该账户**全部持仓的完整列表** | 直接替换，不需要合并 |

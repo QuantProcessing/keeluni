@@ -19,7 +19,7 @@ export default defineConfig({
     nav: [
       { text: "指南", link: "/guide/", activeMatch: "/guide/" },
       { text: "架构", link: "/architecture/", activeMatch: "/architecture/" },
-      { text: "模块", link: "/exchange/", activeMatch: "/(exchange|gateway|hedger|web)/" },
+      { text: "模块", link: "/exchange/", activeMatch: "/(exchange|gateway|hedger|optioner|web)/" },
       { text: "API", link: "/api/", activeMatch: "/api/" },
       { text: "开发", link: "/dev/", activeMatch: "/dev/" },
     ],
@@ -40,6 +40,7 @@ export default defineConfig({
           { text: "总览与分层", link: "/architecture/" },
           { text: "设计决策", link: "/architecture/decisions" },
           { text: "标识与路由", link: "/architecture/identity" },
+          { text: "产品类别与期权", link: "/architecture/products" },
           { text: "订单生命周期", link: "/architecture/orders" },
           { text: "资金费率", link: "/architecture/funding" },
           { text: "限流与连接", link: "/architecture/rate-limits" },
@@ -57,6 +58,7 @@ export default defineConfig({
           { text: "trader", link: "/gateway/trader" },
           { text: "hedger 对冲", link: "/hedger/" },
           { text: "hedger 执行细节", link: "/hedger/execution" },
+          { text: "optioner 期权", link: "/optioner/" },
           { text: "前端", link: "/web/" },
           { text: "设计规范", link: "/web/design" },
         ],
@@ -69,6 +71,7 @@ export default defineConfig({
           { text: "gateway WebSocket", link: "/api/gateway-ws" },
           { text: "trader", link: "/api/trader" },
           { text: "hedger", link: "/api/hedger" },
+          { text: "optioner", link: "/api/optioner" },
         ],
       },
       {

@@ -24,11 +24,14 @@ type Config struct {
 	GatewayURL   *url.URL // e.g. http://127.0.0.1:8081
 	GatewayToken string
 	// HedgerURL is the hedge app (optional); its API is served at /api/hedge.
-	HedgerURL    *url.URL
-	HedgerToken  string
-	Password     PasswordHash
-	WebDir       string // built SPA; empty disables static serving
-	SecureCookie bool   // set when served over HTTPS
+	HedgerURL   *url.URL
+	HedgerToken string
+	// OptionerURL is the options app (optional); served at /api/options.
+	OptionerURL   *url.URL
+	OptionerToken string
+	Password      PasswordHash
+	WebDir        string // built SPA; empty disables static serving
+	SecureCookie  bool   // set when served over HTTPS
 }
 
 type Server struct {
@@ -37,6 +40,7 @@ type Server struct {
 	throttle *Throttle
 	proxy    *httputil.ReverseProxy
 	hedger   *httputil.ReverseProxy
+	optioner *httputil.ReverseProxy
 	mux      *http.ServeMux
 }
 
@@ -75,6 +79,18 @@ func NewServer(config Config) *Server {
 			server.relay(w, r, config.HedgerURL, config.HedgerToken, "/v1/ws")
 		}))
 		server.mux.HandleFunc("/api/hedge/v1/", server.authenticated(server.hedger.ServeHTTP))
+	}
+	if config.OptionerURL != nil {
+		server.optioner = backendProxy(config.OptionerURL, config.OptionerToken, "/api/options", "optioner")
+		server.mux.HandleFunc("GET /api/options/ws", server.authenticated(func(w http.ResponseWriter, r *http.Request) {
+			// The risk options travel in the query string.
+			path := "/v1/ws"
+			if r.URL.RawQuery != "" {
+				path += "?" + r.URL.RawQuery
+			}
+			server.relay(w, r, config.OptionerURL, config.OptionerToken, path)
+		}))
+		server.mux.HandleFunc("/api/options/v1/", server.authenticated(server.optioner.ServeHTTP))
 	}
 	server.mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "unknown endpoint")
@@ -194,7 +210,7 @@ func (server *Server) forward(w http.ResponseWriter, r *http.Request) {
 // apps lists the optional apps this trader serves, so the web app shows
 // only the menus it can use.
 func (server *Server) apps(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]bool{"hedge": server.hedger != nil})
+	writeJSON(w, http.StatusOK, map[string]bool{"hedge": server.hedger != nil, "options": server.optioner != nil})
 }
 
 // relay bridges one browser socket to one backend socket. Messages are
@@ -218,7 +234,7 @@ func (server *Server) relay(w http.ResponseWriter, r *http.Request, backend *url
 	if upstreamURL.Scheme == "" {
 		upstreamURL.Scheme = "ws"
 	}
-	upstreamURL.Path = path
+	upstreamURL.Path, upstreamURL.RawQuery, _ = strings.Cut(path, "?")
 	dialCtx, stopDial := context.WithTimeout(ctx, 10*time.Second)
 	upstream, _, err := websocket.Dial(dialCtx, upstreamURL.String(), &websocket.DialOptions{
 		HTTPHeader:      http.Header{"Authorization": {"Bearer " + token}},

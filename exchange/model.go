@@ -34,10 +34,28 @@ const (
 
 type Product string
 
+// Products are the economic shapes an instrument can have. The set is open:
+// every layer switches on Product and treats an unknown one as unsupported,
+// so adding a product (commodities next) is additive.
 const (
-	ProductSpot Product = "spot"
-	ProductPerp Product = "perp"
+	ProductSpot   Product = "spot"
+	ProductPerp   Product = "perp"
+	ProductOption Product = "option"
 )
+
+// KnownProduct reports whether product is one this package models.
+func KnownProduct(product Product) bool {
+	switch product {
+	case ProductSpot, ProductPerp, ProductOption:
+		return true
+	}
+	return false
+}
+
+// IsDerivative reports products that hold positions rather than balances.
+func IsDerivative(product Product) bool {
+	return product == ProductPerp || product == ProductOption
+}
 
 type Side string
 
@@ -114,6 +132,7 @@ const (
 	MarketFamilySpot             MarketFamily = "spot"
 	MarketFamilyVenuePerpetual   MarketFamily = "venue_perpetual"
 	MarketFamilyBuilderPerpetual MarketFamily = "builder_perpetual"
+	MarketFamilyOption           MarketFamily = "option"
 )
 
 // InstrumentMetadata carries only venue-originated classification facts.
@@ -182,7 +201,9 @@ type Instrument struct {
 	Rules    InstrumentRules    `json:"rules"`
 	Encoding InstrumentEncoding `json:"encoding"`
 	Metadata InstrumentMetadata `json:"metadata"`
-	Revision string             `json:"revision,omitempty"`
+	// Option carries the contract terms of an option; zero for other products.
+	Option   OptionTerms `json:"option,omitzero"`
+	Revision string      `json:"revision,omitempty"`
 }
 
 type InstrumentIdentity struct {
@@ -201,6 +222,18 @@ type InstrumentRules struct {
 	QuantityIncrement decimal.Decimal `json:"quantity_increment"`
 	MinQuantity       decimal.Decimal `json:"min_quantity"`
 	MinNotional       OptionalDecimal `json:"min_notional"`
+	// CoarseTick applies from CoarseTickFrom upward: some venues (Deribit
+	// options) quote cheap contracts finely and expensive ones coarsely.
+	CoarseTickFrom OptionalDecimal `json:"coarse_tick_from"`
+	CoarseTick     OptionalDecimal `json:"coarse_tick"`
+}
+
+// TickAt returns the price increment that applies at price.
+func (rules InstrumentRules) TickAt(price decimal.Decimal) decimal.Decimal {
+	if rules.CoarseTick.Valid && rules.CoarseTickFrom.Valid && price.GreaterThanOrEqual(rules.CoarseTickFrom.Value) {
+		return rules.CoarseTick.Value
+	}
+	return rules.PriceIncrement
 }
 
 type InstrumentEncoding struct {
@@ -228,10 +261,21 @@ func (instrument Instrument) Validate() error {
 		strings.TrimSpace(identity.SettleAsset) != identity.SettleAsset {
 		return invalidRequest("instrument identity must be trimmed")
 	}
-	if identity.Product != ProductSpot && identity.Product != ProductPerp {
+	if !KnownProduct(identity.Product) {
 		return invalidRequest("instrument product is unknown")
 	}
+	if identity.Product == ProductOption {
+		if err := instrument.Option.Validate(); err != nil {
+			return err
+		}
+	} else if !instrument.Option.IsZero() {
+		return invalidRequest("only options carry option terms")
+	}
 	rules := instrument.Rules
+	if rules.CoarseTick.Valid != rules.CoarseTickFrom.Valid ||
+		(rules.CoarseTick.Valid && (!rules.CoarseTick.Value.IsPositive() || !rules.CoarseTickFrom.Value.IsPositive())) {
+		return invalidRequest("instrument coarse tick is incomplete")
+	}
 	if !rules.PriceIncrement.IsPositive() {
 		return invalidRequest("instrument price increment must be positive")
 	}
@@ -264,8 +308,11 @@ func (instrument Instrument) Validate() error {
 		if identity.Product == ProductSpot && metadata.MarketFamily != MarketFamilySpot {
 			return invalidRequest("spot instrument market family is inconsistent")
 		}
-		if identity.Product == ProductPerp && metadata.MarketFamily == MarketFamilySpot {
+		if identity.Product == ProductPerp && (metadata.MarketFamily == MarketFamilySpot || metadata.MarketFamily == MarketFamilyOption) {
 			return invalidRequest("perp instrument market family is inconsistent")
+		}
+		if identity.Product == ProductOption && metadata.MarketFamily != MarketFamilyOption {
+			return invalidRequest("option instrument market family is inconsistent")
 		}
 	}
 	if metadata.AssetClass != "" && !knownAssetClass(metadata.AssetClass) {
@@ -304,6 +351,8 @@ func (instrument Instrument) EffectiveMetadata() InstrumentMetadata {
 			metadata.MarketFamily = MarketFamilySpot
 		case ProductPerp:
 			metadata.MarketFamily = MarketFamilyVenuePerpetual
+		case ProductOption:
+			metadata.MarketFamily = MarketFamilyOption
 		}
 	}
 	if metadata.AssetClass == "" {
@@ -314,7 +363,7 @@ func (instrument Instrument) EffectiveMetadata() InstrumentMetadata {
 
 func knownMarketFamily(family MarketFamily) bool {
 	switch family {
-	case MarketFamilySpot, MarketFamilyVenuePerpetual, MarketFamilyBuilderPerpetual:
+	case MarketFamilySpot, MarketFamilyVenuePerpetual, MarketFamilyBuilderPerpetual, MarketFamilyOption:
 		return true
 	default:
 		return false
@@ -437,7 +486,7 @@ type PlaceOrderRequest struct {
 }
 
 func (request PlaceOrderRequest) Validate(product Product) error {
-	if product != ProductSpot && product != ProductPerp {
+	if !KnownProduct(product) {
 		return invalidRequest("unknown product")
 	}
 	if err := request.Instrument.Validate(); err != nil {
@@ -467,8 +516,8 @@ func (request PlaceOrderRequest) Validate(product Product) error {
 	if !isPortableClientOrderID(request.ClientOrderID) {
 		return invalidRequest("client order id must be a positive decimal uint48")
 	}
-	if product == ProductSpot && request.ReduceOnly {
-		return invalidRequest("reduce-only is available only for perpetual products")
+	if !IsDerivative(product) && request.ReduceOnly {
+		return invalidRequest("reduce-only is available only for derivatives")
 	}
 	switch request.Type {
 	case OrderTypeMarket:
@@ -482,7 +531,7 @@ func (request PlaceOrderRequest) Validate(product Product) error {
 		if !request.LimitPrice.IsPositive() {
 			return invalidRequest("limit order price must be positive")
 		}
-		if !decimalAligned(request.LimitPrice, request.Instrument.Rules.PriceIncrement) {
+		if !decimalAligned(request.LimitPrice, request.Instrument.Rules.TickAt(request.LimitPrice)) {
 			return invalidRequest("limit order price is not aligned to instrument price increment")
 		}
 		switch request.LimitPolicy {

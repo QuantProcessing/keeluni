@@ -7,7 +7,7 @@ package gwclient
 type Instrument struct {
 	ID          string `json:"id"`
 	Venue       string `json:"venue"`
-	Product     string `json:"product"` // spot | perp
+	Product     string `json:"product"` // spot | perp | option
 	Symbol      string `json:"symbol"`
 	Base        string `json:"base"`
 	Quote       string `json:"quote"`
@@ -17,6 +17,87 @@ type Instrument struct {
 	MinQty      string `json:"minQty"`
 	MinNotional string `json:"minNotional,omitempty"`
 	AssetClass  string `json:"assetClass,omitempty"`
+	// CoarseTick applies at prices from CoarseTickFrom up (Deribit options).
+	CoarseTickFrom string       `json:"coarseTickFrom,omitempty"`
+	CoarseTick     string       `json:"coarseTick,omitempty"`
+	Option         *OptionTerms `json:"option,omitempty"`
+}
+
+// OptionTerms are an option's contract. Quantities are in the underlying;
+// prices in PremiumAsset per unit (inverse options: the coin itself).
+type OptionTerms struct {
+	Underlying   string `json:"underlying"`
+	Kind         string `json:"kind"` // call | put
+	Strike       string `json:"strike"`
+	Expiry       int64  `json:"expiry"`
+	PremiumAsset string `json:"premiumAsset"`
+	Inverse      bool   `json:"inverse,omitempty"`
+	European     bool   `json:"european"`
+}
+
+// OptionSeries is one chain's header (see gateway/optionchain).
+type OptionSeries struct {
+	Series       string  `json:"series"`
+	Venue        string  `json:"venue"`
+	Market       string  `json:"market"`
+	Underlying   string  `json:"underlying"`
+	PremiumAsset string  `json:"premiumAsset"`
+	StrikeAsset  string  `json:"strikeAsset"`
+	Inverse      bool    `json:"inverse,omitempty"`
+	Index        float64 `json:"index,omitempty"`
+	Expiries     int     `json:"expiries"`
+	Contracts    int     `json:"contracts"`
+	FrontATMIV   float64 `json:"frontAtmIv,omitempty"`
+	Stale        bool    `json:"stale"`
+}
+
+// OptionRow is one option of a chain: prices in the premium asset, IVs as
+// fractions, greeks per unit of the underlying in the strike currency.
+type OptionRow struct {
+	Instrument   string  `json:"inst"`
+	Kind         string  `json:"kind"`
+	Strike       string  `json:"strike"`
+	Expiry       int64   `json:"expiry"`
+	Bid          string  `json:"bid,omitempty"`
+	Ask          string  `json:"ask,omitempty"`
+	Mark         string  `json:"mark,omitempty"`
+	Last         string  `json:"last,omitempty"`
+	MarkIV       float64 `json:"markIv,omitempty"`
+	BidIV        float64 `json:"bidIv,omitempty"`
+	AskIV        float64 `json:"askIv,omitempty"`
+	Delta        float64 `json:"delta"`
+	Gamma        float64 `json:"gamma"`
+	Vega         float64 `json:"vega"`
+	Theta        float64 `json:"theta"`
+	OpenInterest string  `json:"oi,omitempty"`
+	Volume       string  `json:"volume,omitempty"`
+}
+
+// OptionExpiry summarizes one expiry: the venue's forward, the ATM IV and
+// the 25-delta risk reversal and butterfly.
+type OptionExpiry struct {
+	Expiry   int64   `json:"expiry"`
+	Forward  float64 `json:"forward,omitempty"`
+	Discount float64 `json:"discount,omitempty"`
+	ATMIV    float64 `json:"atmIv,omitempty"`
+	RR25     float64 `json:"rr25,omitempty"`
+	BF25     float64 `json:"bf25,omitempty"`
+	Strikes  int     `json:"strikes"`
+}
+
+// OptionChain is one series.
+type OptionChain struct {
+	Series       string         `json:"series"`
+	Venue        string         `json:"venue"`
+	Underlying   string         `json:"underlying"`
+	PremiumAsset string         `json:"premiumAsset"`
+	StrikeAsset  string         `json:"strikeAsset"`
+	Inverse      bool           `json:"inverse,omitempty"`
+	Index        float64        `json:"index,omitempty"`
+	UpdatedAt    int64          `json:"updatedAt"`
+	Stale        bool           `json:"stale"`
+	Expiries     []OptionExpiry `json:"expiries"`
+	Rows         []OptionRow    `json:"rows"`
 }
 
 // Account kinds.

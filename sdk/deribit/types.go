@@ -36,6 +36,29 @@ type Instrument struct {
 		AbovePrice json.Number `json:"above_price"`
 		TickSize   json.Number `json:"tick_size"`
 	} `json:"tick_size_steps"`
+	// Options only.
+	Strike              json.Number `json:"strike"`
+	OptionType          string      `json:"option_type"` // call, put
+	ExpirationTimestamp int64       `json:"expiration_timestamp"`
+	PriceIndex          string      `json:"price_index"`
+	// Spot only: orders routed to an external venue cannot be listed by
+	// public trades (Coinbase-routed spot).
+	IsCBERouted bool `json:"is_cbe_routed"`
+}
+
+// Option reports an active listed option.
+func (i Instrument) Option() bool { return i.Kind == "option" && i.IsActive }
+
+// Spot reports an open spot pair.
+func (i Instrument) Spot() bool { return i.Kind == "spot" && i.IsActive && i.State == "open" }
+
+// Greeks are a venue's per-contract (ticker) or per-position greeks.
+type Greeks struct {
+	Delta json.Number `json:"delta"`
+	Gamma json.Number `json:"gamma"`
+	Vega  json.Number `json:"vega"`
+	Theta json.Number `json:"theta"`
+	Rho   json.Number `json:"rho"`
 }
 
 // LinearPerpetual reports a USDC-settled linear perpetual.
@@ -67,6 +90,13 @@ type Ticker struct {
 	Funding8h      json.Number `json:"funding_8h"`
 	InterestValue  json.Number `json:"interest_value"`
 	Stats          Stats       `json:"stats"`
+	// Options only. IVs are percent (40.39 is 40.39%).
+	Greeks          *Greeks     `json:"greeks"`
+	MarkIV          json.Number `json:"mark_iv"`
+	BidIV           json.Number `json:"bid_iv"`
+	AskIV           json.Number `json:"ask_iv"`
+	UnderlyingPrice json.Number `json:"underlying_price"`
+	UnderlyingIndex string      `json:"underlying_index"`
 }
 
 // BookSummary is one row of get_book_summary_by_currency.
@@ -82,6 +112,14 @@ type BookSummary struct {
 	Low            json.Number `json:"low"`
 	Last           json.Number `json:"last"`
 	PriceChange    json.Number `json:"price_change"`
+	// Options and spot.
+	BidPrice          json.Number `json:"bid_price"`
+	AskPrice          json.Number `json:"ask_price"`
+	MarkIV            json.Number `json:"mark_iv"`
+	UnderlyingPrice   json.Number `json:"underlying_price"`
+	UnderlyingIndex   string      `json:"underlying_index"`
+	EstimatedDelivery json.Number `json:"estimated_delivery_price"`
+	CreationTimestamp int64       `json:"creation_timestamp"`
 }
 
 // OrderBook levels are [price, amount] for REST snapshots.
@@ -101,6 +139,8 @@ type OrderBook struct {
 // Trade is a public or user trade. Liquidity (M, T) and Fee are set on user
 // trades only.
 type Trade struct {
+	IV             json.Number     `json:"iv"`
+	IndexPrice     json.Number     `json:"index_price"`
 	TradeID        string          `json:"trade_id"`
 	TradeSeq       int64           `json:"trade_seq"`
 	InstrumentName string          `json:"instrument_name"`
@@ -145,6 +185,15 @@ type AccountSummary struct {
 	FuturesPL         json.Number `json:"futures_pl"`
 	SessionUPL        json.Number `json:"session_upl"`
 	TotalPL           json.Number `json:"total_pl"`
+	// Options figures, in the summary's currency.
+	OptionsValue json.Number `json:"options_value"`
+	OptionsPL    json.Number `json:"options_pl"`
+	OptionsDelta json.Number `json:"options_delta"`
+	OptionsGamma json.Number `json:"options_gamma"`
+	OptionsVega  json.Number `json:"options_vega"`
+	OptionsTheta json.Number `json:"options_theta"`
+	DeltaTotal   json.Number `json:"delta_total"`
+	MarginModel  string      `json:"margin_model"`
 }
 
 // Position.Size is signed in base units for linear instruments (negative is
@@ -161,6 +210,15 @@ type Position struct {
 	Leverage                  json.Number `json:"leverage"`
 	InitialMargin             json.Number `json:"initial_margin"`
 	MaintenanceMargin         json.Number `json:"maintenance_margin"`
+	// Options: position greeks, in the settlement currency of the option
+	// for inverse options (BTC, ETH) and in USDC for linear ones.
+	Delta                 json.Number `json:"delta"`
+	Gamma                 json.Number `json:"gamma"`
+	Vega                  json.Number `json:"vega"`
+	Theta                 json.Number `json:"theta"`
+	IndexPrice            json.Number `json:"index_price"`
+	AveragePriceUSD       json.Number `json:"average_price_usd"`
+	FloatingProfitLossUSD json.Number `json:"floating_profit_loss_usd"`
 }
 
 // Order.Price is a number, or "market_price" for market orders.

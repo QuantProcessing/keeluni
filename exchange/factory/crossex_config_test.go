@@ -28,7 +28,9 @@ func TestCrossExPerpConfigConstructsABrokeredClientWithoutIO(t *testing.T) {
 		t.Fatal("crossex client is not brokered")
 	}
 	for _, route := range brokered.Reaches() {
-		if exchange.IsBroker(route.Venue) || route.Product != exchange.ProductPerp || route.Settlement == "" {
+		perpRoute := route.Product == exchange.ProductPerp && route.Settlement != ""
+		spotRoute := route.Product == exchange.ProductSpot && route.Settlement == ""
+		if exchange.IsBroker(route.Venue) || !(perpRoute || spotRoute) {
 			t.Fatalf("reachable route %+v", route)
 		}
 	}

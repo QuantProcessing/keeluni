@@ -48,7 +48,7 @@ func (socket *crossExWebSocket) SetAccountInstruments(instruments []exchange.Acc
 	seen := make(map[string]struct{}, len(instruments))
 	for _, item := range instruments {
 		identity := item.Instrument.Identity
-		if item.InstrumentID == "" || item.Instrument.Validate() != nil || !reachable[identity.Venue] || identity.Product != exchange.ProductPerp {
+		if item.InstrumentID == "" || item.Instrument.Validate() != nil || !reachable[identity.Venue] || (identity.Product != exchange.ProductPerp && identity.Product != exchange.ProductSpot) {
 			return fmt.Errorf("account instrument index is invalid")
 		}
 		if _, duplicate := seen[item.InstrumentID]; duplicate {
@@ -132,7 +132,7 @@ func crossExAccountEvent(push crossex.Push) ([]accountBackendEvent, error) {
 		if err != nil {
 			return nil, fmt.Errorf("crossex order push is malformed")
 		}
-		if row.BusinessType != "" && row.BusinessType != crossex.BusinessFuture {
+		if !crossExServedBusiness(row.BusinessType) {
 			return nil, nil
 		}
 		order := crossExOrder(row)
@@ -142,7 +142,7 @@ func crossExAccountEvent(push crossex.Push) ([]accountBackendEvent, error) {
 		if err != nil {
 			return nil, fmt.Errorf("crossex trade push is malformed")
 		}
-		if row.BusinessType != "" && row.BusinessType != crossex.BusinessFuture {
+		if !crossExServedBusiness(row.BusinessType) {
 			return nil, nil
 		}
 		fill := crossExFill(row)

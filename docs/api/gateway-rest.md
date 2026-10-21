@@ -43,6 +43,16 @@
 
 `assetClass`：`crypto` / `equity` / `commodity` / `fx` / `index` / `pre_ipo` / `rwa_other`，未知时省略。
 
+`product`：`spot` / `perp` / `option`。**期权只在 `product=option` 时列出**（数千个合约属于期权链，不属于交易页的市场选择器）。期权另有：
+
+```json
+{"id":"deribit:option:BTC-USD-20261127-73000-P","product":"option","base":"BTC","quote":"USD","settle":"BTC",
+ "tickSize":"0.0001","stepSize":"0.1","minQty":"0.1","coarseTickFrom":"0.005","coarseTick":"0.0005",
+ "option":{"underlying":"BTC","kind":"put","strike":"73000","expiry":1795766400000,"premiumAsset":"BTC","inverse":true,"european":true}}
+```
+
+价格不低于 `coarseTickFrom` 时最小变动价位为 `coarseTick`。
+
 ### GET /v1/orderbook?inst=&depth=20
 
 ```json
@@ -75,6 +85,30 @@
 ```
 
 字段含义见[资金费率](/architecture/funding)。
+
+### GET /v1/options
+
+每个期权系列（交易所 × 标的 × 权利金资产）的概要：
+
+```json
+[{"series":"deribit:BTC:BTC","venue":"deribit","market":"deribit:option","underlying":"BTC","premiumAsset":"BTC","strikeAsset":"USD",
+  "inverse":true,"index":81432.74,"expiries":11,"contracts":880,"frontAtmIv":0.313,"stale":false}]
+```
+
+### GET /v1/options/chain?series=&expiry=
+
+一个系列的完整期权链；`expiry`（毫秒）只返回一个到期日的行。
+
+```json
+{"series":"deribit:BTC:BTC", "underlying":"BTC", "premiumAsset":"BTC", "strikeAsset":"USD", "inverse":true, "index":81432.74,
+ "updatedAt":1792495100337, "stale":false,
+ "expiries":[{"expiry":1792828800000,"forward":81465.31,"discount":1,"atmIv":0.3163,"rr25":-0.037,"bf25":0.0104,"strikes":27}],
+ "rows":[{"inst":"deribit:option:BTC-USD-20261024-81000-C","kind":"call","strike":"81000","expiry":1792828800000,
+          "bid":"0.0155","ask":"0.0165","mark":"0.0161","markIv":0.3206,"bidIv":0.3039,"askIv":0.3411,
+          "delta":0.5744,"gamma":0.0000731,"vega":32.84,"theta":-136.33,"oi":"7.3","volume":"12.4"}]}
+```
+
+价格为权利金资产；IV 为小数；希腊值为每单位标的、行权价币种。每个到期日的 `forward` 与 `discount` 就是该到期日的定价模型：期权价值 = `discount × Black-76(forward)`；交易所发布远期时（Deribit、OKX）`discount = 1`，按现货加利率定价时（Binance）为 e^{-rT}。`stale` 为真表示该市场的采集错过了三个周期。未知系列 404 `UNKNOWN_SERIES`，尚未加载 503 `NO_CHAIN`。
 
 ### GET /v1/funding/history?inst=&since=&until=
 

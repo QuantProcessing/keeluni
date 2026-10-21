@@ -102,7 +102,7 @@ func (scope ExactOrderScope) Validate() error {
 	if !knownVenue(scope.Venue) {
 		return invalidRequest("exact order evidence venue is unknown")
 	}
-	if scope.Product != ProductSpot && scope.Product != ProductPerp {
+	if !KnownProduct(scope.Product) {
 		return invalidRequest("exact order evidence product is unknown")
 	}
 	if scope.Instrument != nil {

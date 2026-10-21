@@ -16,6 +16,7 @@ import (
 	"github.com/QuantProcessing/keeluni/gateway/funding"
 	"github.com/QuantProcessing/keeluni/gateway/hub"
 	"github.com/QuantProcessing/keeluni/gateway/market"
+	"github.com/QuantProcessing/keeluni/gateway/optionchain"
 	"github.com/QuantProcessing/keeluni/gateway/resident"
 	"github.com/QuantProcessing/keeluni/gateway/venue"
 )
@@ -28,9 +29,11 @@ type Deps struct {
 	Accounts *account.Manager
 	Feeds    *market.Feeds
 	Funding  *funding.Dataset
+	Options  *optionchain.Dataset
 	Resident *resident.Registry
-	// Hubs: public market streams, private account streams, resident datasets.
-	Public, Private, Datasets *hub.Hub
+	// Hubs: public market streams, private account streams, resident datasets
+	// (funding), option chains.
+	Public, Private, Datasets, OptionChains *hub.Hub
 }
 
 type Server struct {
@@ -39,18 +42,21 @@ type Server struct {
 	accounts *account.Manager
 	feeds    *market.Feeds
 	funding  *funding.Dataset
+	options  *optionchain.Dataset
 	resident *resident.Registry
 	public   *hub.Hub
 	private  *hub.Hub
 	datasets *hub.Hub
-	mux      *http.ServeMux
+	// optionHub serves the per-series option chain topics.
+	optionHub *hub.Hub
+	mux       *http.ServeMux
 }
 
 func NewServer(token []byte, deps Deps) *Server {
 	server := &Server{
 		token: token, catalog: deps.Catalog, accounts: deps.Accounts, feeds: deps.Feeds,
-		funding: deps.Funding, resident: deps.Resident,
-		public: deps.Public, private: deps.Private, datasets: deps.Datasets, mux: http.NewServeMux(),
+		funding: deps.Funding, options: deps.Options, resident: deps.Resident,
+		public: deps.Public, private: deps.Private, datasets: deps.Datasets, optionHub: deps.OptionChains, mux: http.NewServeMux(),
 	}
 	m := server.mux
 	m.HandleFunc("GET /v1/health", server.health)
@@ -61,6 +67,8 @@ func NewServer(token []byte, deps Deps) *Server {
 	m.HandleFunc("GET /v1/ticker", server.ticker)
 	m.HandleFunc("GET /v1/funding", server.fundingTable)
 	m.HandleFunc("GET /v1/funding/history", server.fundingHistory)
+	m.HandleFunc("GET /v1/options", server.optionSeries)
+	m.HandleFunc("GET /v1/options/chain", server.optionChain)
 
 	m.HandleFunc("GET /v1/accounts", server.listAccounts)
 	m.HandleFunc("POST /v1/accounts", server.createAccount)
@@ -132,6 +140,9 @@ func (server *Server) health(w http.ResponseWriter, _ *http.Request) {
 	if server.datasets != nil {
 		topics += server.datasets.Topics()
 	}
+	if server.optionHub != nil {
+		topics += server.optionHub.Topics()
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "markets": server.catalog.Status(), "datasets": datasets, "topics": topics})
 }
 
@@ -179,6 +190,28 @@ func (server *Server) fundingHistory(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	points, err := server.funding.History(r.Context(), venue.InstrumentID(query.Get("inst")), parseMillis(query.Get("since")), parseMillis(query.Get("until")))
 	server.respond(w, nonNil(points), err)
+}
+
+// optionSeries lists every loaded option series (an underlying in one
+// premium asset) with its front ATM IV.
+func (server *Server) optionSeries(w http.ResponseWriter, _ *http.Request) {
+	if server.options == nil {
+		writeJSON(w, http.StatusOK, []optionchain.Series{})
+		return
+	}
+	writeJSON(w, http.StatusOK, nonNil(server.options.List()))
+}
+
+// optionChain serves one series: ?series=deribit:BTC:BTC[&expiry=ms].
+func (server *Server) optionChain(w http.ResponseWriter, r *http.Request) {
+	if server.options == nil {
+		writeError(w, http.StatusNotFound, "NO_OPTIONS", "options are not served")
+		return
+	}
+	query := r.URL.Query()
+	expiry, _ := strconv.ParseInt(query.Get("expiry"), 10, 64)
+	chain, err := server.options.Get(query.Get("series"), expiry)
+	server.respond(w, chain, err)
 }
 
 // ---------------------------------------------------------------------------
@@ -328,6 +361,12 @@ func (server *Server) fail(w http.ResponseWriter, err error) {
 		return
 	case errors.Is(err, funding.ErrNoHistory):
 		writeError(w, http.StatusNotImplemented, "UNSUPPORTED", err.Error())
+		return
+	case errors.Is(err, optionchain.ErrUnknownSeries):
+		writeError(w, http.StatusNotFound, "UNKNOWN_SERIES", err.Error())
+		return
+	case errors.Is(err, optionchain.ErrNoChain):
+		writeError(w, http.StatusServiceUnavailable, "NO_CHAIN", err.Error())
 		return
 	}
 	failure := account.Classify(err)

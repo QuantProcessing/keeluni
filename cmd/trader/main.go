@@ -14,6 +14,8 @@
 //	GATEWAY_TOKEN_FILE       gateway bearer token     (default ./data/gateway/token)
 //	HEDGER_URL               hedge app base URL       (optional; enables /api/hedge)
 //	HEDGER_TOKEN_FILE        hedge app bearer token   (default ./data/hedger/token)
+//	OPTIONER_URL             options app base URL     (optional; enables /api/options)
+//	OPTIONER_TOKEN_FILE      options app bearer token (default ./data/optioner/token)
 package main
 
 import (
@@ -107,6 +109,16 @@ func run() error {
 			return err
 		}
 	}
+	var optionerURL *url.URL
+	var optionerToken string
+	if raw := env("OPTIONER_URL", ""); raw != "" {
+		if optionerURL, err = url.Parse(raw); err != nil || optionerURL.Host == "" {
+			return fmt.Errorf("OPTIONER_URL is invalid")
+		}
+		if optionerToken, err = waitForToken(env("OPTIONER_TOKEN_FILE", "data/optioner/token"), 60*time.Second); err != nil {
+			return err
+		}
+	}
 	webDir := env("TRADER_WEB_DIR", "web/dist")
 	if _, err := os.Stat(filepath.Join(webDir, "index.html")); err != nil {
 		slog.Warn("web app not found; serving API only", "dir", webDir)
@@ -115,7 +127,8 @@ func run() error {
 	server := &http.Server{
 		Addr: env("TRADER_ADDR", "127.0.0.1:8080"),
 		Handler: trader.NewServer(trader.Config{
-			GatewayURL: gatewayURL, GatewayToken: token, HedgerURL: hedgerURL, HedgerToken: hedgerToken, Password: hash, WebDir: webDir,
+			GatewayURL: gatewayURL, GatewayToken: token, HedgerURL: hedgerURL, HedgerToken: hedgerToken,
+			OptionerURL: optionerURL, OptionerToken: optionerToken, Password: hash, WebDir: webDir,
 			SecureCookie: env("TRADER_SECURE_COOKIE", "") == "1",
 		}),
 		ReadHeaderTimeout: 10 * time.Second,

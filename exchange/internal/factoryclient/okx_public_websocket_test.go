@@ -582,6 +582,10 @@ type fakeOKXPublicWSClient struct {
 	candleChannels []string
 	unsubscribed   []okx.WsSubscribeArgs
 
+	bboHandler      func(*okx.OrderBook)
+	summaryHandler  func(*okx.OptionSummary)
+	summaryFamilies []string
+
 	bookHandler         func(*okx.OrderBook, string)
 	bookError           func(error)
 	tickerHandler       func(*okx.Ticker)
@@ -693,6 +697,17 @@ func (client *fakeOKXPublicWSClient) SubscribeIndexTickerWithError(_ string, han
 func (client *fakeOKXPublicWSClient) SubscribeOpenInterestWithError(_ string, handler func(*okx.OpenInterest), errorHandler func(error)) error {
 	client.openInterestHandler = handler
 	client.openInterestError = errorHandler
+	return nil
+}
+
+func (client *fakeOKXPublicWSClient) SubscribeBestBidOfferWithError(_ string, handler func(*okx.OrderBook), _ func(error)) error {
+	client.bboHandler = handler
+	return nil
+}
+
+func (client *fakeOKXPublicWSClient) SubscribeOptionSummaryWithError(family string, handler func(*okx.OptionSummary), _ func(error)) error {
+	client.summaryFamilies = append(client.summaryFamilies, family)
+	client.summaryHandler = handler
 	return nil
 }
 

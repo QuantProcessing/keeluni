@@ -24,7 +24,8 @@ function marketsSummary(t: T, item: VenueInfo): string {
     const venues = [...new Set(item.markets.map((market) => market.split(":")[0] ?? ""))];
     return venues.map(venueLabel).join(" · ");
   }
-  return item.markets.map((m) => t(m.includes(":perp") ? "common.perp" : "common.spot") + (m.split(":")[2] ? " " + m.split(":")[2] : "")).join(" · ");
+  const name = (m: string) => t(m.includes(":perp") ? "common.perp" : m.includes(":option") ? "common.option" : "common.spot");
+  return item.markets.map((m) => name(m) + (m.split(":")[2] ? " " + m.split(":")[2] : "")).join(" · ");
 }
 
 /** The only place credentials are entered. Secrets live only in this form's state until submit. */

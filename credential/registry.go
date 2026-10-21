@@ -28,7 +28,7 @@ var defaultAuthKinds = map[string]AuthKind{
 	"aster":       AuthAsterAPIWallet,
 	"nado":        AuthNadoSigner,
 	"crossex":     AuthAPIKeySecret,
-	"kraken":      AuthAPIKeySecret,
+	"kraken":      AuthKrakenKeys,
 	"deribit":     AuthAPIKeySecret,
 }
 
@@ -57,6 +57,10 @@ func (registry *Registry) Decode(venue string, payload []byte) (*Decoded, error)
 	}
 	normalizedVenue := strings.ToLower(strings.TrimSpace(venue))
 	kind, ok := registry.authKinds[normalizedVenue]
+	if kind == AuthKrakenKeys && bundle.AuthKind == AuthAPIKeySecret {
+		// Kraken accounts stored before spot existed.
+		kind = AuthAPIKeySecret
+	}
 	if !ok || venue != normalizedVenue || bundle.Venue != normalizedVenue || bundle.SchemaVersion != 1 || bundle.AuthKind != kind {
 		return nil, invalidBundle("identity")
 	}
@@ -80,6 +84,21 @@ func decodeCredentials(decoded *Decoded, metadata, secrets json.RawMessage) erro
 		}
 		decoded.Credentials = &secret
 		decoded.clear = func() { secret.APIKey, secret.APISecret = "", "" }
+	case AuthKrakenKeys:
+		var meta struct{}
+		var secret APIKeySecret
+		if err := decodeNested(metadata, &meta); err != nil || decodeNested(secrets, &secret) != nil {
+			return ErrInvalidBundle
+		}
+		futures := secret.APIKey != "" && secret.APISecret != ""
+		spot := secret.SpotAPIKey != "" && secret.SpotAPISecret != ""
+		halfFutures := (secret.APIKey == "") != (secret.APISecret == "")
+		halfSpot := (secret.SpotAPIKey == "") != (secret.SpotAPISecret == "")
+		if (!futures && !spot) || halfFutures || halfSpot {
+			return ErrInvalidBundle
+		}
+		decoded.Credentials = &secret
+		decoded.clear = func() { secret.APIKey, secret.APISecret, secret.SpotAPIKey, secret.SpotAPISecret = "", "", "", "" }
 	case AuthAPIKeySecretPassphrase:
 		var meta struct{}
 		var secret APIKeySecretPassphrase

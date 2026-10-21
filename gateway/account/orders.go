@@ -104,8 +104,8 @@ func (request PlaceRequest) native(instrument market.Instrument) (exchange.Place
 	default:
 		return invalid("type must be market or limit")
 	}
-	if request.ReduceOnly && instrument.Product != exchange.ProductPerp {
-		return invalid("reduceOnly applies to perpetuals only")
+	if request.ReduceOnly && !exchange.IsDerivative(instrument.Product) {
+		return invalid("reduceOnly applies to derivatives only")
 	}
 	if err := native.Validate(instrument.Product); err != nil {
 		return invalid("%s", safeMessage(err))
@@ -141,7 +141,8 @@ func (rt *runtime) Place(ctx context.Context, instrument market.Instrument, requ
 	slog.Info("order placed", "account", rt.id, "inst", instrument.ID, "side", request.Side, "type", request.Type,
 		"qty", request.Quantity, "clientOrderId", request.ClientOrderID, "status", result.Status,
 		"venueCode", result.VenueCode, "elapsed", time.Since(started).Round(time.Millisecond), "error", placeErr)
-	if result.Status == OutcomeAccepted && instrument.Product == exchange.ProductPerp {
+	if result.Status == OutcomeAccepted {
+		// Positions (derivatives) and balances (spot) both move.
 		rt.scheduleRefresh(client.key)
 	}
 	return result, nil

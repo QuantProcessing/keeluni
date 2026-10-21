@@ -12,6 +12,7 @@ build:
 	go build -o bin/gateway ./cmd/gateway
 	go build -o bin/trader ./cmd/trader
 	go build -o bin/hedger ./cmd/hedger
+	go build -o bin/optioner ./cmd/optioner
 
 up:
 	docker compose up -d --build --force-recreate

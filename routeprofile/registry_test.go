@@ -37,6 +37,10 @@ func TestRegistryCoversEveryLegacyGatewayProfile(t *testing.T) {
 		{"binance", "perp", "USDC"},
 		{"kraken", "perp", "USD"},
 		{"deribit", "perp", "USDC"},
+		{"kraken", "spot", ""},
+		{"deribit", "spot", ""},
+		{"deribit", "option", ""},
+		{"okx", "option", ""},
 	}
 	registry := routeprofile.DefaultRegistry()
 	for _, test := range tests {
@@ -72,7 +76,8 @@ func TestRegistryRejectsUnknownProfiles(t *testing.T) {
 	registry := routeprofile.DefaultRegistry()
 	for name, key := range map[string]routeprofile.Key{
 		"unknown venue":        {Venue: "unknown", RouteProfileID: "unknown.spot.v1"},
-		"unknown product":      {Venue: "binance", RouteProfileID: "binance.option.v1"},
+		"unknown product":      {Venue: "binance", RouteProfileID: "binance.future.v1"},
+		"unserved option":      {Venue: "binance", RouteProfileID: "binance.option.usdt.v1"},
 		"wrong settlement":     {Venue: "okx", RouteProfileID: "okx.perp.usdc.v1"},
 		"retired environment":  {Venue: "binance", RouteProfileID: "binance.spot.demo.v1"},
 		"uppercased venue":     {Venue: "Binance", RouteProfileID: "binance.spot.v1"},

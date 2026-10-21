@@ -24,6 +24,8 @@ type okxPublicWebSocketClient interface {
 	SubscribeFundingRateWithError(string, func(*okx.FundingRate), func(error)) error
 	SubscribeIndexTickerWithError(string, func(*okx.IndexTicker), func(error)) error
 	SubscribeOpenInterestWithError(string, func(*okx.OpenInterest), func(error)) error
+	SubscribeBestBidOfferWithError(string, func(*okx.OrderBook), func(error)) error
+	SubscribeOptionSummaryWithError(string, func(*okx.OptionSummary), func(error)) error
 	Unsubscribe(okx.WsSubscribeArgs) error
 }
 
@@ -45,6 +47,8 @@ type okxPublicWSBackend struct {
 	generation     uint64
 	statusHandlers map[*okxWSStatusRegistration]struct{}
 	resyncNextBook bool
+	// families are the opt-summary subscriptions shared by option quotes.
+	families map[string]*okxOptionFamilyStream
 
 	candleMu          sync.Mutex
 	candleConnected   bool
@@ -418,7 +422,7 @@ func (backend *okxPublicWSBackend) validateInstrument(operation string, instrume
 	if backend.meta.product == exchange.ProductSpot {
 		err = okxValidateSpotInstrument(instrument)
 	} else {
-		err = okxValidateSwapInstrument(instrument)
+		err = okxValidateDerivativeInstrument(instrument)
 	}
 	if err != nil {
 		return okxWSError(backend.meta, operation, exchange.KindInvalidRequest, err.Error())
@@ -706,7 +710,7 @@ func (backend *okxPublicWSBackend) quantityMultiplier(ctx context.Context, opera
 		}
 		return decimal.NewFromInt(1), nil
 	}
-	if err := okxValidateSwapInstrument(instrument); err != nil {
+	if err := okxValidateDerivativeInstrument(instrument); err != nil {
 		return decimal.Zero, okxWSError(backend.meta, operation, exchange.KindInvalidRequest, err.Error())
 	}
 	if backend.perpMeta == nil {

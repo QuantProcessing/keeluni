@@ -118,7 +118,7 @@ func (rt *runtime) resolve(client routeClient, nativeSymbol, nativeID string) (m
 func (rt *runtime) Positions(ctx context.Context) ([]Position, error) {
 	var errs []error
 	for _, client := range rt.clients {
-		if client.perp == nil {
+		if !client.holdsPositions() {
 			continue
 		}
 		rt.mu.Lock()
@@ -162,17 +162,27 @@ func (rt *runtime) Balances(ctx context.Context) ([]Balance, error) {
 	if len(result) == 0 && len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
-	return result, nil
+	return uniqueBalances(result), nil
+}
+
+// uniqueBalances keeps one row per (market, asset): clients that share a
+// wallet report the same balance.
+func uniqueBalances(balances []Balance) []Balance {
+	seen := map[[2]string]bool{}
+	out := balances[:0:0]
+	for _, balance := range balances {
+		key := [2]string{balance.Market, balance.Asset}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, balance)
+	}
+	return out
 }
 
 func (rt *runtime) fetchBalances(ctx context.Context, client routeClient) ([]Balance, error) {
-	var natives []exchange.Balance
-	var err error
-	if client.perp != nil {
-		natives, err = client.perp.Balances(ctx)
-	} else {
-		natives, err = client.spot.Balances(ctx)
-	}
+	natives, err := client.balances(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +246,7 @@ func (rt *runtime) publishMargin() {
 }
 
 func (rt *runtime) fetchPositions(ctx context.Context, client routeClient) ([]Position, error) {
-	natives, err := client.perp.Positions(ctx, exchange.PositionsRequest{})
+	natives, err := client.positions(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +276,7 @@ func sortPositions(positions []Position) {
 
 // loadMarket replaces the market's positions with a REST read and publishes.
 func (rt *runtime) loadMarket(ctx context.Context, client routeClient) error {
-	if client.perp == nil {
+	if !client.holdsPositions() {
 		return nil
 	}
 	positions, err := rt.fetchPositions(ctx, client)
@@ -306,6 +316,7 @@ func (rt *runtime) publishBalances() {
 	if emit == nil {
 		return
 	}
+	balances = uniqueBalances(balances)
 	if balances == nil {
 		balances = []Balance{}
 	}
@@ -612,11 +623,20 @@ func (rt *runtime) brokerInstrument(ctx context.Context, client routeClient, ins
 		return exchange.Instrument{}, false
 	}
 	identity := instrument.Native().Identity
-	brokered, err := client.perp.ResolveInstrument(ctx, string(identity.Venue)+":"+identity.Symbol)
+	brokered, err := client.perp.ResolveInstrument(ctx, brokerKey(identity))
 	if err != nil {
 		return exchange.Instrument{}, false
 	}
 	return brokered, true
+}
+
+// brokerKey names an instrument the way a broker client resolves it:
+// "venue:SYMBOL" for perps, "venue:spot:SYMBOL" for spot.
+func brokerKey(identity exchange.InstrumentIdentity) string {
+	if identity.Product == exchange.ProductSpot {
+		return string(identity.Venue) + ":spot:" + identity.Symbol
+	}
+	return string(identity.Venue) + ":" + identity.Symbol
 }
 
 func kindOf(venueName exchange.Venue) string {
@@ -653,7 +673,7 @@ func (rt *runtime) Routes(ctx context.Context) ([]Route, error) {
 			}
 			brokered = make(map[string]exchange.Instrument, len(instruments))
 			for _, instrument := range instruments {
-				brokered[string(instrument.Identity.Venue)+":"+instrument.Identity.Symbol] = instrument
+				brokered[brokerKey(instrument.Identity)] = instrument
 			}
 		}
 		for _, reached := range client.markets {
@@ -661,7 +681,7 @@ func (rt *runtime) Routes(ctx context.Context) ([]Route, error) {
 				native := instrument.Native()
 				if client.broker {
 					var ok bool
-					if native, ok = brokered[string(native.Identity.Venue)+":"+native.Identity.Symbol]; !ok {
+					if native, ok = brokered[brokerKey(native.Identity)]; !ok {
 						continue
 					}
 				}

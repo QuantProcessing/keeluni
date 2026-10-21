@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/QuantProcessing/keeluni/exchange"
 	"github.com/QuantProcessing/keeluni/gateway/hub"
 	"github.com/QuantProcessing/keeluni/gateway/venue"
 )
@@ -29,6 +30,10 @@ func Warm(ctx context.Context, catalog *Catalog, public *hub.Hub) {
 	var wg sync.WaitGroup
 	started := time.Now()
 	for _, market := range venue.Markets {
+		if market.Product == exchange.ProductOption {
+			// Thousands of short-lived contracts: no one book is worth warming.
+			continue
+		}
 		instrument, ok := warmInstrument(catalog, market)
 		if !ok {
 			continue

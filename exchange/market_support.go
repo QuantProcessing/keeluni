@@ -16,6 +16,7 @@ const (
 	NativeFamilySwap           = "swap"
 	NativeFamilyPerpetual      = "perpetual"
 	NativeFamilyUSDT0Perpetual = "usdt0-perpetual"
+	NativeFamilyOption         = "option"
 )
 
 // MarketCapabilities returns a copy of the implemented native market support.
@@ -86,6 +87,22 @@ func MarketCapabilities() []MarketCapability {
 	}
 	addHot(VenueKraken, NativeFamilyPerpetual, 100)
 	addHot(VenueDeribit, NativeFamilyPerpetual, 100)
+
+	// Deribit options: a book and trades per contract, the whole chain (marks,
+	// IVs, the forward) in one REST call per currency.
+	addHot(VenueDeribit, NativeFamilyOption, 100)
+	for _, dataset := range []MarketDataset{DatasetMark, DatasetIndex, DatasetOpenInterest} {
+		add(VenueDeribit, NativeFamilyOption, dataset, TransportREST, GranularityAllMarket, 15*time.Second, 0, true, false, "book_summary")
+		add(VenueDeribit, NativeFamilyOption, dataset, TransportWebSocket, GranularitySingleInstrument, 0, 100, false, false, "")
+	}
+
+	// OKX options: a book and trades per contract; the chain (IVs, forward,
+	// greeks, marks) per instrument family in a few REST calls.
+	addHot(VenueOKX, NativeFamilyOption, 100)
+	for _, dataset := range []MarketDataset{DatasetMark, DatasetIndex, DatasetOpenInterest} {
+		add(VenueOKX, NativeFamilyOption, dataset, TransportREST, GranularityAllMarket, 15*time.Second, 0, true, false, "opt_summary")
+		add(VenueOKX, NativeFamilyOption, dataset, TransportWebSocket, GranularitySingleInstrument, 0, 100, false, false, "")
+	}
 
 	add(VenueNado, NativeFamilyUSDT0Perpetual, DatasetFunding, TransportWebSocket, GranularityAllMarket, 0, 0, true, false, "")
 	for _, dataset := range []MarketDataset{DatasetMark, DatasetIndex, DatasetOpenInterest} {
@@ -158,6 +175,9 @@ func NativeMarketFamily(venue Venue, product Product, settlement string) string 
 	}
 	if product == ProductSpot {
 		return NativeFamilySpot
+	}
+	if product == ProductOption {
+		return NativeFamilyOption
 	}
 	switch venue {
 	case VenueBybit:

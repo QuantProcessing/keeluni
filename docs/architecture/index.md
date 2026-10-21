@@ -3,11 +3,12 @@
 KeelUni 由六层组成，依赖只能自上而下：
 
 ```
-web        React 终端（交易 + 对冲）
+web        React 终端（交易 + 期权 + 对冲）
   │  同源 cookie 会话
 trader     登录、会话、反向代理、提供前端                — 无数据库
   │  bearer token，仅内网
-hedger     对冲应用（以及将来的其他应用）                — 各自拥有存储
+hedger     对冲应用                                      — 自己的 PostgreSQL
+optioner   期权应用                                      — 无数据库（交易所即事实）
   │  bearer token
 gateway    与交易所无关的 REST + WebSocket API          — 只有一个加密文件
   │
@@ -23,6 +24,8 @@ sdk        各交易所原生 API，忠实实现
 | `gateway/` | 把契约暴露为 HTTP / WebSocket；持有凭证、连接、限流；维护标的目录、持仓快照与常驻数据集 | 不做业务、不保存订单账本、不需要数据库 |
 | `trader/` | 单人登录、会话、把浏览器请求转发到 gateway / hedger、提供前端静态文件 | 无数据库、不直接访问交易所 |
 | `hedger/` | 对冲业务：两条腿作为一个仓位的开、管、平；PostgreSQL 存储 | 不直接访问交易所 |
+| `optioner/` | 期权业务：组合风险（含币本位权利金 Delta、情景网格）、多腿执行、Delta 对冲 | 不直接访问交易所、不存储 |
+| `optionmath/` | Black-76 定价、希腊值、隐含波动率；gateway 与 optioner 共用 | 纯计算 |
 | `web/` | 终端界面 | 不持有任何凭证 |
 
 ## gateway 是什么
@@ -67,7 +70,7 @@ exchange     交易所原生增量 → 规范化事件；序列号断档时重�
 1. 读取主密钥与 token（首次启动生成）。
 2. 加载标的目录：所有市场并发加载；之后每 15 分钟刷新，尚未加载成功的市场每 30 秒重试；某个市场刷新失败时保留上一份快照。
 3. 启动账户管理器：解密 `accounts.enc`，为每个账户建立客户端与私有流。
-4. 启动常驻数据集（资金费率）。
+4. 启动常驻数据集（资金费率、期权链）。
 5. 建立公共、私有、数据集三个 hub，并为每个市场预热一次盘口订阅，避免首个用户承担 TLS 握手。
 6. 开始监听 `/v1`。
 
@@ -88,12 +91,15 @@ gateway/
   hub/          一个上游 → 多个 WebSocket 客户端的扇出
   resident/     常驻数据集的后台循环
   funding/      资金费率数据集
+  optionchain/  期权链数据集（按系列：标的 × 权利金资产）
   ratelimit/    按交易所的请求预算
   store/        accounts.enc 的读写
   api/          /v1 HTTP 与 WebSocket
 gwclient/       gateway API 的 Go 客户端（给应用用）
 trader/         登录、会话、反向代理、静态文件
 hedger/         对冲应用
+optioner/       期权应用
+optionmath/     期权定价
 web/            前端
-cmd/            gateway、trader、hedger、smoke 四个可执行程序
+cmd/            gateway、trader、hedger、optioner、smoke 五个可执行程序
 ```

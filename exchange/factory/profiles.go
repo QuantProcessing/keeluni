@@ -33,6 +33,10 @@ var configProfiles = map[string]string{
 	"nado-usdt0-perp":   "nado.perp.usdt0.v1",
 	"kraken-usd-perp":   "kraken.perp.usd.v1",
 	"deribit-usdc-perp": "deribit.perp.usdc.v1",
+	"kraken-spot":       "kraken.spot.v1",
+	"deribit-spot":      "deribit.spot.v1",
+	"deribit-option":    "deribit.option.v1",
+	"okx-option":        "okx.option.v1",
 }
 
 func catalogIdentityForConfig(name string) (exchange.Venue, exchange.Product, string, bool) {

@@ -263,9 +263,26 @@ func (c *Client) dropToken() {
 // Public
 // ---------------------------------------------------------------------------
 
+// Instrument kinds.
+const (
+	KindFuture = "future"
+	KindOption = "option"
+	KindSpot   = "spot"
+	KindAny    = "any"
+)
+
+// CurrencyAny selects every currency where a method accepts it.
+const CurrencyAny = "any"
+
 func (c *Client) Instruments(ctx context.Context, currency string) ([]Instrument, error) {
+	return c.InstrumentsOf(ctx, currency, KindFuture)
+}
+
+// InstrumentsOf lists active instruments of one kind. Spot instruments are
+// listed only with currency "any".
+func (c *Client) InstrumentsOf(ctx context.Context, currency, kind string) ([]Instrument, error) {
 	var out []Instrument
-	err := c.call(ctx, "public/get_instruments", params{"currency": currency, "kind": "future"}, false, &out)
+	err := c.call(ctx, "public/get_instruments", params{"currency": currency, "kind": kind}, false, &out)
 	return out, err
 }
 
@@ -311,8 +328,14 @@ func (c *Client) Chart(ctx context.Context, instrument, resolution string, start
 // BookSummaries returns every future of currency with its mark, funding and
 // open interest in one call.
 func (c *Client) BookSummaries(ctx context.Context, currency string) ([]BookSummary, error) {
+	return c.BookSummariesOf(ctx, currency, KindFuture)
+}
+
+// BookSummariesOf returns every instrument of one kind in currency with its
+// market: for options also mark IV and the underlying (forward) price.
+func (c *Client) BookSummariesOf(ctx context.Context, currency, kind string) ([]BookSummary, error) {
 	var out []BookSummary
-	err := c.call(ctx, "public/get_book_summary_by_currency", params{"currency": currency, "kind": "future"}, false, &out)
+	err := c.call(ctx, "public/get_book_summary_by_currency", params{"currency": currency, "kind": kind}, false, &out)
 	return out, err
 }
 
@@ -334,20 +357,49 @@ func (c *Client) AccountSummary(ctx context.Context, currency string) (AccountSu
 	return out, err
 }
 
+// AccountSummaries reads every currency's summary in one call.
+func (c *Client) AccountSummaries(ctx context.Context) ([]AccountSummary, error) {
+	var out struct {
+		Summaries []AccountSummary `json:"summaries"`
+	}
+	err := c.call(ctx, "private/get_account_summaries", nil, true, &out)
+	return out.Summaries, err
+}
+
 func (c *Client) Positions(ctx context.Context, currency string) ([]Position, error) {
+	return c.PositionsOf(ctx, currency, KindFuture)
+}
+
+// PositionsOf lists open positions of one kind; currency may be "any".
+func (c *Client) PositionsOf(ctx context.Context, currency, kind string) ([]Position, error) {
 	var out []Position
-	err := c.call(ctx, "private/get_positions", params{"currency": currency, "kind": "future"}, true, &out)
+	err := c.call(ctx, "private/get_positions", params{"currency": currency, "kind": kind}, true, &out)
 	return out, err
 }
 
 func (c *Client) OpenOrders(ctx context.Context, currency string) ([]Order, error) {
+	return c.OpenOrdersOf(ctx, currency, KindFuture)
+}
+
+func (c *Client) OpenOrdersOf(ctx context.Context, currency, kind string) ([]Order, error) {
 	var out []Order
-	err := c.call(ctx, "private/get_open_orders_by_currency", params{"currency": currency, "kind": "future"}, true, &out)
+	err := c.call(ctx, "private/get_open_orders_by_currency", params{"currency": currency, "kind": kind}, true, &out)
+	return out, err
+}
+
+// AllOpenOrders lists open orders of one kind in every currency.
+func (c *Client) AllOpenOrders(ctx context.Context, kind string) ([]Order, error) {
+	var out []Order
+	err := c.call(ctx, "private/get_open_orders", params{"kind": kind}, true, &out)
 	return out, err
 }
 
 func (c *Client) OrderHistory(ctx context.Context, currency string, count, offset int) ([]Order, error) {
-	p := params{"currency": currency, "kind": "future", "include_unfilled": "true"}
+	return c.OrderHistoryOf(ctx, currency, KindFuture, count, offset)
+}
+
+func (c *Client) OrderHistoryOf(ctx context.Context, currency, kind string, count, offset int) ([]Order, error) {
+	p := params{"currency": currency, "kind": kind, "include_unfilled": "true"}
 	if count > 0 {
 		p["count"] = strconv.Itoa(count)
 	}
@@ -360,7 +412,11 @@ func (c *Client) OrderHistory(ctx context.Context, currency string, count, offse
 }
 
 func (c *Client) UserTrades(ctx context.Context, currency string, start, end int64, count int) ([]Trade, error) {
-	p := params{"currency": currency, "kind": "future", "sorting": "desc"}
+	return c.UserTradesOf(ctx, currency, KindFuture, start, end, count)
+}
+
+func (c *Client) UserTradesOf(ctx context.Context, currency, kind string, start, end int64, count int) ([]Trade, error) {
+	p := params{"currency": currency, "kind": kind, "sorting": "desc"}
 	if start > 0 {
 		p["start_timestamp"] = strconv.FormatInt(start, 10)
 	}

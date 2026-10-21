@@ -27,3 +27,17 @@ func publicMarketSocket(socket exchange.MarketWebSocket) exchange.MarketWebSocke
 	}
 	return marketSocket{socket}
 }
+
+// optionMarketSocket exposes the public facets of an options socket: market
+// streams and option quotes, nothing that reaches the account.
+type optionMarketSocket struct {
+	exchange.MarketWebSocket
+	exchange.OptionQuoteWebSocket
+}
+
+func publicOptionSocket(socket exchange.OptionWebSocket) exchange.MarketWebSocket {
+	if socket == nil {
+		return nil
+	}
+	return optionMarketSocket{socket, socket}
+}

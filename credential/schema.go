@@ -34,5 +34,8 @@ var schemaFields = map[AuthKind][]Field{
 	AuthLighterSigner:          {{Key: "accountIndex", Label: "Account index", Metadata: true, Required: true, ValueType: "integer"}, {Key: "keyIndex", Label: "Key index", Metadata: true, Required: true, ValueType: "integer"}, {Key: "privateKey", Label: "Private key", Required: true, ValueType: "string"}},
 	AuthEVMPrivateKey:          {{Key: "accountAddress", Label: "Account address", Metadata: true, ValueType: "string"}, {Key: "privateKey", Label: "Private key", Required: true, ValueType: "string"}},
 	AuthAsterAPIWallet:         {{Key: "userAddress", Label: "User address", Metadata: true, Required: true, ValueType: "string"}, {Key: "expectedSigner", Label: "Expected signer", Metadata: true, ValueType: "string"}, {Key: "apiWalletPrivateKey", Label: "API wallet private key", Required: true, ValueType: "string"}},
-	AuthNadoSigner:             {{Key: "subaccount", Label: "Subaccount", Metadata: true, Required: true, ValueType: "string"}, {Key: "privateKey", Label: "Private key", Required: true, ValueType: "string"}},
+	// Kraken: either pair, or both. Futures keys trade perps, Spot keys spot.
+	AuthKrakenKeys: {{Key: "apiKey", Label: "Futures API key", ValueType: "string"}, {Key: "apiSecret", Label: "Futures API secret", ValueType: "string"},
+		{Key: "spotApiKey", Label: "Spot API key", ValueType: "string"}, {Key: "spotApiSecret", Label: "Spot private key", ValueType: "string"}},
+	AuthNadoSigner: {{Key: "subaccount", Label: "Subaccount", Metadata: true, Required: true, ValueType: "string"}, {Key: "privateKey", Label: "Private key", Required: true, ValueType: "string"}},
 }

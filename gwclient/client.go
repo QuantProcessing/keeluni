@@ -138,6 +138,25 @@ func (client *Client) Instruments(ctx context.Context) ([]Instrument, error) {
 	return out, client.get(ctx, "/v1/instruments", nil, &out)
 }
 
+// InstrumentsOf lists one product's instruments; options are listed only
+// this way.
+func (client *Client) InstrumentsOf(ctx context.Context, product string) ([]Instrument, error) {
+	var out []Instrument
+	return out, client.get(ctx, "/v1/instruments", url.Values{"product": {product}}, &out)
+}
+
+// OptionSeries lists every option series the gateway serves.
+func (client *Client) OptionSeries(ctx context.Context) ([]OptionSeries, error) {
+	var out []OptionSeries
+	return out, client.get(ctx, "/v1/options", nil, &out)
+}
+
+// OptionChain reads one series' chain.
+func (client *Client) OptionChain(ctx context.Context, series string) (OptionChain, error) {
+	var out OptionChain
+	return out, client.get(ctx, "/v1/options/chain", url.Values{"series": {series}}, &out)
+}
+
 func (client *Client) Accounts(ctx context.Context) ([]Account, error) {
 	var out []Account
 	return out, client.get(ctx, "/v1/accounts", nil, &out)

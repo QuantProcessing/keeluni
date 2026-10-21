@@ -12,13 +12,13 @@ import (
 
 func TestInstrumentContractIsCompleteExecutionDescriptor(t *testing.T) {
 	typ := reflect.TypeOf(Instrument{})
-	assertStructFields(t, typ, []string{"Identity", "Rules", "Encoding", "Metadata", "Revision"})
+	assertStructFields(t, typ, []string{"Identity", "Rules", "Encoding", "Metadata", "Option", "Revision"})
 
 	assertStructFields(t, reflect.TypeOf(InstrumentIdentity{}), []string{
 		"Venue", "Product", "Symbol", "BaseAsset", "QuoteAsset", "SettleAsset", "NativeSymbol", "NativeID",
 	})
 	assertStructFields(t, reflect.TypeOf(InstrumentRules{}), []string{
-		"PriceIncrement", "QuantityIncrement", "MinQuantity", "MinNotional",
+		"PriceIncrement", "QuantityIncrement", "MinQuantity", "MinNotional", "CoarseTickFrom", "CoarseTick",
 	})
 	assertStructFields(t, reflect.TypeOf(InstrumentEncoding{}), []string{
 		"ContractMultiplier", "PriceScale", "QuantityScale", "QuoteScale",

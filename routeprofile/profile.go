@@ -3,8 +3,9 @@ package routeprofile
 type Product string
 
 const (
-	ProductSpot Product = "spot"
-	ProductPerp Product = "perp"
+	ProductSpot   Product = "spot"
+	ProductPerp   Product = "perp"
+	ProductOption Product = "option"
 )
 
 // Key identifies a route profile the way callers hold it: the venue they are

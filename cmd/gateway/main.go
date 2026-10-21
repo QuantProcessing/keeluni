@@ -32,6 +32,7 @@ import (
 	"github.com/QuantProcessing/keeluni/gateway/funding"
 	"github.com/QuantProcessing/keeluni/gateway/hub"
 	"github.com/QuantProcessing/keeluni/gateway/market"
+	"github.com/QuantProcessing/keeluni/gateway/optionchain"
 	"github.com/QuantProcessing/keeluni/gateway/ratelimit"
 	"github.com/QuantProcessing/keeluni/gateway/resident"
 	"github.com/QuantProcessing/keeluni/gateway/store"
@@ -135,6 +136,8 @@ func run() error {
 		return err
 	}
 	go fundingData.Run(ctx)
+	optionChains := optionchain.New(catalog, residents)
+	go optionChains.Run(ctx)
 
 	feeds := market.NewFeeds(catalog, fundingData)
 	publicHub := hub.New(feeds.Source, 30*time.Second)
@@ -143,13 +146,15 @@ func run() error {
 	defer privateHub.Close()
 	datasetHub := hub.New(fundingData.Source, 30*time.Second)
 	defer datasetHub.Close()
+	optionHub := hub.New(optionChains.Source, 30*time.Second)
+	defer optionHub.Close()
 	go market.Warm(ctx, catalog, publicHub)
 
 	server := &http.Server{
 		Addr: env("GATEWAY_ADDR", "127.0.0.1:8081"),
 		Handler: api.NewServer(token, api.Deps{
-			Catalog: catalog, Accounts: manager, Feeds: feeds, Funding: fundingData, Resident: residents,
-			Public: publicHub, Private: privateHub, Datasets: datasetHub,
+			Catalog: catalog, Accounts: manager, Feeds: feeds, Funding: fundingData, Options: optionChains, Resident: residents,
+			Public: publicHub, Private: privateHub, Datasets: datasetHub, OptionChains: optionHub,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,

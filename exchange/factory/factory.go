@@ -11,6 +11,7 @@ import (
 	"github.com/QuantProcessing/keeluni/exchange/internal/factoryclient"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/shopspring/decimal"
 )
 
 // Config is a typed construction ticket returned by the known venue/product
@@ -241,6 +242,68 @@ func DeribitPerpConfig(clientID, clientSecret string, options ...Option) Config[
 	})
 }
 
+// KrakenSpotConfig returns a typed ticket for a Kraken Spot client. Kraken
+// Spot keys are separate from Kraken Futures keys; secret is the base64
+// private key.
+func KrakenSpotConfig(apiKey, secret string, options ...Option) Config[exchange.SpotClient] {
+	return spotConfig("kraken-spot", options, func(settings settings) error {
+		if err := rejectUnsupportedAccountAddress(settings); err != nil {
+			return err
+		}
+		return requireNonEmptyCredentials("kraken spot", apiKey, secret)
+	}, func(settings settings) exchange.SpotClient {
+		return factoryclient.NewKrakenSpot(apiKey, secret, factorySettingsForConfig("kraken-spot", settings))
+	})
+}
+
+// DeribitSpotConfig returns a typed ticket for a Deribit Spot client.
+func DeribitSpotConfig(clientID, clientSecret string, options ...Option) Config[exchange.SpotClient] {
+	return spotConfig("deribit-spot", options, func(settings settings) error {
+		if err := rejectUnsupportedAccountAddress(settings); err != nil {
+			return err
+		}
+		return requireNonEmptyCredentials("deribit spot", clientID, clientSecret)
+	}, func(settings settings) exchange.SpotClient {
+		return factoryclient.NewDeribitSpot(clientID, clientSecret, factorySettingsForConfig("deribit-spot", settings))
+	})
+}
+
+// DeribitOptionConfig returns a typed ticket for a Deribit options client:
+// BTC and ETH inverse options and the USDC linear options of one account.
+func DeribitOptionConfig(clientID, clientSecret string, options ...Option) Config[exchange.OptionClient] {
+	return Config[exchange.OptionClient]{
+		name: "deribit-option",
+		validate: func(settings settings) error {
+			if err := rejectUnsupportedAccountAddress(settings); err != nil {
+				return err
+			}
+			return requireNonEmptyCredentials("deribit option", clientID, clientSecret)
+		},
+		build: func(settings settings) exchange.OptionClient {
+			return factoryclient.NewDeribitOption(clientID, clientSecret, factorySettingsForConfig("deribit-option", settings))
+		},
+		options: newSettings(options),
+	}
+}
+
+// OKXOptionConfig returns a typed ticket for an OKX options client: the
+// coin-margined and USD-margined options of one trading account.
+func OKXOptionConfig(apiKey, secretKey, passphrase string, options ...Option) Config[exchange.OptionClient] {
+	return Config[exchange.OptionClient]{
+		name: "okx-option",
+		validate: func(settings settings) error {
+			if err := rejectUnsupportedAccountAddress(settings); err != nil {
+				return err
+			}
+			return requireNonEmptyCredentials("okx option", apiKey, secretKey, passphrase)
+		},
+		build: func(settings settings) exchange.OptionClient {
+			return factoryclient.NewOKXOption(apiKey, secretKey, passphrase, factorySettingsForConfig("okx-option", settings))
+		},
+		options: newSettings(options),
+	}
+}
+
 // OKXSpotConfig returns a typed ticket for an OKX Spot client.
 func OKXSpotConfig(apiKey, secretKey, passphrase string, options ...Option) Config[exchange.SpotClient] {
 	return spotConfig("okx-spot", options, func(settings settings) error {
@@ -420,7 +483,17 @@ type NativeInstrumentSource func(context.Context) ([]exchange.Instrument, error)
 // symbols and rules. natives supplies those native instruments; matching is
 // by native symbol. Only cross-exchange, single-position-mode accounts are
 // supported. Market data methods return exchange.ErrUnsupported.
+// BestAskSource reads an instrument's best ask from its own venue; brokered
+// spot market buys are sized in quote from it.
+type BestAskSource func(context.Context, exchange.Instrument) (decimal.Decimal, error)
+
 func CrossExPerpConfig(apiKey, secretKey string, natives NativeInstrumentSource, options ...Option) Config[exchange.PerpClient] {
+	return CrossExConfig(apiKey, secretKey, natives, nil, options...)
+}
+
+// CrossExConfig is CrossExPerpConfig with a best-ask source: the client then
+// also trades the spot books CrossEx reaches.
+func CrossExConfig(apiKey, secretKey string, natives NativeInstrumentSource, asks BestAskSource, options ...Option) Config[exchange.PerpClient] {
 	return perpConfig("crossex-perp", options, func(settings settings) error {
 		if err := rejectUnsupportedAccountAddress(settings); err != nil {
 			return err
@@ -430,7 +503,11 @@ func CrossExPerpConfig(apiKey, secretKey string, natives NativeInstrumentSource,
 		}
 		return requireNonEmptyCredentials("crossex perp", apiKey, secretKey)
 	}, func(settings settings) exchange.PerpClient {
-		return factoryclient.NewCrossExPerp(apiKey, secretKey, factoryclient.CrossExNativeSource(natives), factorySettings(settings))
+		var books []factoryclient.CrossExBestAsk
+		if asks != nil {
+			books = append(books, factoryclient.CrossExBestAsk(asks))
+		}
+		return factoryclient.NewCrossExPerp(apiKey, secretKey, factoryclient.CrossExNativeSource(natives), factorySettings(settings), books...)
 	})
 }
 
@@ -681,6 +758,14 @@ func instrumentLoaderForConfig(configName string, settings settings) exchange.In
 		return factoryclient.NewKrakenInstrumentLoader(factorySettingsForConfig(configName, settings))
 	case "deribit-usdc-perp":
 		return factoryclient.NewDeribitInstrumentLoader(factorySettingsForConfig(configName, settings))
+	case "kraken-spot":
+		return factoryclient.NewKrakenSpotInstrumentLoader(factorySettingsForConfig(configName, settings))
+	case "deribit-spot":
+		return factoryclient.NewDeribitSpotInstrumentLoader(factorySettingsForConfig(configName, settings))
+	case "deribit-option":
+		return factoryclient.NewDeribitOptionInstrumentLoader(factorySettingsForConfig(configName, settings))
+	case "okx-option":
+		return factoryclient.NewOKXOptionInstrumentLoader(factorySettingsForConfig(configName, settings))
 	case "lighter-spot":
 		return factoryclient.NewLighterInstrumentLoader(exchange.ProductSpot, factorySettingsForConfig(configName, settings))
 	case "lighter-perp":

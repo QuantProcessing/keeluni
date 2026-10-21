@@ -159,7 +159,8 @@ func binanceBTC(t *testing.T, client *crossExPerpClient) exchange.Instrument {
 func TestCrossExClientIsBrokeredAndKeepsNativeIdentity(t *testing.T) {
 	client := newTestCrossExClient(t, newCrossExStub(t))
 	var brokered exchange.BrokeredClient = client
-	if brokered.Broker() != exchange.VenueCrossEx || len(brokered.Reaches()) != 10 {
+	// Ten perp markets and five spot markets.
+	if brokered.Broker() != exchange.VenueCrossEx || len(brokered.Reaches()) != 15 {
 		t.Fatalf("broker = %s reaches = %v", brokered.Broker(), brokered.Reaches())
 	}
 	instruments, err := client.RefreshInstruments(context.Background())
@@ -339,7 +340,7 @@ func TestCrossExPositionsOrdersAndLeverage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sent, _ := stub.last("GET", "/api/v4/crossex/open_orders"); sent.query != "business_type=FUTURE&symbol=BINANCE_FUTURE_BTC_USDT" {
+	if sent, _ := stub.last("GET", "/api/v4/crossex/open_orders"); sent.query != "symbol=BINANCE_FUTURE_BTC_USDT" {
 		t.Fatalf("open orders query = %q", sent.query)
 	}
 	if len(page.Orders) != 1 || page.Orders[0].Status != "pending" || page.Orders[0].ClientOrderID != "17" {

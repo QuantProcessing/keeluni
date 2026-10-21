@@ -46,7 +46,16 @@ var defaultRows = []profileRow{
 	{"nado", ProductSpot, "USDT0"},
 	{"nado", ProductPerp, "USDT0"},
 	{"kraken", ProductPerp, "USD"},
+	{"kraken", ProductSpot, ""},
 	{"deribit", ProductPerp, "USDC"},
+	{"deribit", ProductSpot, ""},
+	// Deribit options are one market: BTC and ETH options are inverse
+	// (premium and settlement in the coin), USDC options linear; one account
+	// margins them together and streams them on one channel.
+	{"deribit", ProductOption, ""},
+	// OKX options are one market: coin-margined (BTC-USD) and USD-margined
+	// (BTC-USD_UM) families of one trading account.
+	{"okx", ProductOption, ""},
 }
 
 // DefaultProfiles returns the supported products in catalog order. Callers own

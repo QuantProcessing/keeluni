@@ -33,7 +33,7 @@ services:
       GATEWAY_DATA_DIR: /data/gateway
       HTTPS_PROXY: ${KEELUNI_PROXY:-}
       HTTP_PROXY: ${KEELUNI_PROXY:-}
-      NO_PROXY: localhost,127.0.0.1,gateway,trader,hedger,postgres
+      NO_PROXY: localhost,127.0.0.1,gateway,trader,hedger,optioner,postgres
     volumes:
       - keeluni-data:/data
     networks: [internal]
@@ -50,6 +50,9 @@ services:
       # Remove these two lines to run the trader without the hedge app.
       HEDGER_URL: http://hedger:8082
       HEDGER_TOKEN_FILE: /data/hedger/token
+      # Remove these two lines to run the trader without the options app.
+      OPTIONER_URL: http://optioner:8083
+      OPTIONER_TOKEN_FILE: /data/optioner/token
     volumes:
       - keeluni-data:/data
     ports:
@@ -117,6 +120,21 @@ services:
     environment:
       HEDGER_ADDR: 0.0.0.0:8082
       HEDGER_DATA_DIR: /data/hedger
+      GATEWAY_URL: http://gateway:8081
+      GATEWAY_TOKEN_FILE: /data/gateway/token
+    volumes:
+      - keeluni-data:/data
+    networks: [internal]
+
+  # The options app: risk across options accounts and multi-leg execution.
+  # No database: positions are read live from the venues through the gateway.
+  optioner:
+    <<: *common
+    entrypoint: ["/usr/local/bin/optioner"]
+    depends_on: [gateway]
+    environment:
+      OPTIONER_ADDR: 0.0.0.0:8083
+      OPTIONER_DATA_DIR: /data/optioner
       GATEWAY_URL: http://gateway:8081
       GATEWAY_TOKEN_FILE: /data/gateway/token
     volumes:

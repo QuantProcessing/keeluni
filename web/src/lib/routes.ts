@@ -11,7 +11,7 @@ import { venueLabel } from "./format";
 
 /** The market of an instrument as the gateway names it: venue:product[:settle]. */
 export function marketOf(instrument: Pick<Instrument, "venue" | "product" | "settle" | "quote">): string {
-  if (instrument.product === "spot") return `${instrument.venue}:spot`;
+  if (instrument.product === "spot" || instrument.product === "option") return `${instrument.venue}:${instrument.product}`;
   return `${instrument.venue}:perp:${(instrument.settle || instrument.quote).toUpperCase()}`;
 }
 

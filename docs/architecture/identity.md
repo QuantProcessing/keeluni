@@ -25,7 +25,14 @@ hyperliquid:spot:HYPE-USDC     Hyperliquid 现货
 hyperliquid:perp:xyz:TSLA-USDC Hyperliquid HIP-3 builder 永续（带 dex 前缀）
 kraken:perp:BTC-USD            Kraken Futures（原生 PF_XBTUSD）
 deribit:perp:BTC-USDC          Deribit（原生 BTC_USDC-PERPETUAL）
+kraken:spot:BTC-USD            Kraken 现货（原生 BTC/USD，即 WebSocket v2 名称）
+deribit:spot:BTC-USDC          Deribit 现货（原生 BTC_USDC）
+deribit:option:BTC-USD-20261127-73000-P   Deribit 币本位期权（原生 BTC-27NOV26-73000-P）
+deribit:option:SOL-USDC-20261023-75-C     Deribit U 本位期权（原生 SOL_USDC-23OCT26-75-C）
+okx:option:BTC-USDM-20261106-82000-P      OKX U 本位期权（原生 BTC-USD_UM-261106-82000-P）
 ```
+
+期权的规范 symbol 见[产品类别](./products#标的身份)。
 
 - `symbol` 是 exchange 层的规范 symbol；交易所原生名称（`PF_XBTUSD`、`BTC_USDC-PERPETUAL`）保存在标的的 `NativeSymbol` 中，不出现在 id 里。
 - 解析时只把前两个冒号当作分隔符，所以 HIP-3 的 `xyz:TSLA-USDC` 能完整保留。
@@ -44,8 +51,9 @@ deribit:perp:BTC-USDC          Deribit（原生 BTC_USDC-PERPETUAL）
 | `gate:perp:USDT` / `gate:spot` | |
 | `hyperliquid:perp:USDC` / `hyperliquid:spot` | |
 | `lighter:perp:USDC` / `lighter:spot` | |
-| `kraken:perp:USD` | |
-| `deribit:perp:USDC` | |
+| `kraken:perp:USD` / `kraken:spot` | 期货与现货是 Kraken 的两个平台、两套 Key；一个账户可填任一组或两组 |
+| `deribit:perp:USDC` / `deribit:spot` / `deribit:option` | 一个 Key、一组币种钱包；BTC、ETH 币本位与 USDC 本位期权是**一个**期权市场 |
+| `okx:spot` / `okx:perp:USDT` / `okx:option` | 一个交易账户；币本位（BTC-USD）与 U 本位（BTC-USD_UM）期权是**一个**期权市场；余额按交易所列一次（「OKX 统一账户」） |
 
 `gateway/venue/venue.go` 中的 `Markets` 列表就是 gateway 服务的全部范围。每个市场都有自己的公共连接器，负责标的目录与行情。
 
@@ -56,7 +64,7 @@ deribit:perp:BTC-USDC          Deribit（原生 BTC_USDC-PERPETUAL）
 | kind | 含义 | markets |
 |---|---|---|
 | `native` | 一个交易所 + 一套凭证；现货与各永续结算路由由 gateway 按交易所自动派生 | 该交易所的市场 |
-| `broker` | 经纪账户（Gate CrossEx）：一套凭证、一个保证金池，交易多个交易所的标的 | 它能到达的全部永续市场 |
+| `broker` | 经纪账户（Gate CrossEx）：一套凭证、一个保证金池，交易多个交易所的标的 | 它能到达的全部永续与现货市场 |
 
 ### 账户内部：link
 
@@ -66,7 +74,7 @@ gateway 内部把一个账户表示为一组 **link**：
 account
   links []link
 link
-  client   exchange.PerpClient 或 SpotClient
+  client   exchange.PerpClient、SpotClient 或 OptionClient
   markets  这个 client 交易的市场（原生：通常 1 个；Binance U 本位：USDT+USDC；CrossEx：全部可达市场）
   routes   本账户可交易的标的 → 下单规则
   resolve  交易所原生 symbol → instrument id

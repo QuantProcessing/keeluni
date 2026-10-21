@@ -1,6 +1,6 @@
 // Wire types of the gateway /v1 API (see docs/api/gateway-rest.md).
 
-export type Product = "spot" | "perp";
+export type Product = "spot" | "perp" | "option";
 export type Side = "buy" | "sell";
 
 export interface Instrument {
@@ -18,6 +18,23 @@ export interface Instrument {
   marketFamily?: string;
   /** The venue's classification when it is not plain crypto: equity, commodity, fx, ... */
   assetClass?: string;
+  /** A coarser tick applies at prices from coarseTickFrom up (Deribit options). */
+  coarseTickFrom?: string;
+  coarseTick?: string;
+  option?: OptionTerms;
+}
+
+/** An option's contract. Sizes are in the underlying; prices in premiumAsset per unit. */
+export interface OptionTerms {
+  underlying: string;
+  kind: "call" | "put";
+  strike: string;
+  /** Unix ms. */
+  expiry: number;
+  premiumAsset: string;
+  /** Premium and settlement in the coin itself (Deribit BTC, ETH). */
+  inverse?: boolean;
+  european: boolean;
 }
 
 /** An instrument an account can trade, with the rules its orders follow there. */
