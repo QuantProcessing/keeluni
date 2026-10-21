@@ -1,4 +1,4 @@
-package hedger
+package pairexec
 
 import (
 	"context"
@@ -32,6 +32,17 @@ type Gateway interface {
 	Funding(context.Context, string) (gwclient.FundingQuote, error)
 }
 
+// Observer is told when an action finishes and its group's status has been
+// settled. An app that drives groups by rules (the spreader) uses it to close
+// the loop; the hedger needs none. It is called from the action's runner and
+// must not block.
+type Observer interface {
+	ActionSettled(group Group, action Action, status string)
+}
+
+// SetObserver installs the observer; call before Start.
+func (engine *Engine) SetObserver(observer Observer) { engine.observer = observer }
+
 // Engine runs every hedge action. Each action is driven by one goroutine
 // (its runner) that is the only writer of that action's orders; venue
 // updates reach it through a channel. On restart, every working action gets
@@ -53,6 +64,7 @@ type Engine struct {
 	// riskSeen: risk-engine orders already recorded, by order id -> status.
 	riskSeen map[string]string
 	changes  chan string // group ids whose state changed (for the UI)
+	observer Observer
 	ctx      context.Context
 	stop     context.CancelFunc
 	wg       sync.WaitGroup
@@ -333,7 +345,7 @@ func (engine *Engine) Cancel(groupID string) error {
 			return nil
 		}
 	}
-	return invalid("invalid.noWorking")
+	return Invalid("invalid.noWorking")
 }
 
 // Working reports the working action of a group, if any.

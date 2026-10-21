@@ -23,7 +23,8 @@ sdk        各交易所原生 API，忠实实现
 | `exchange/` | 把各交易所规范化为一套带类型的客户端契约：标识、单位、规则、订单确认、错误分类 | 不做网络服务、不保存状态 |
 | `gateway/` | 把契约暴露为 HTTP / WebSocket；持有凭证、连接、限流；维护标的目录、持仓快照与常驻数据集 | 不做业务、不保存订单账本、不需要数据库 |
 | `trader/` | 单人登录、会话、把浏览器请求转发到 gateway / hedger、提供前端静态文件 | 无数据库、不直接访问交易所 |
-| `hedger/` | 对冲业务：两条腿作为一个仓位的开、管、平；PostgreSQL 存储 | 不直接访问交易所 |
+| `pairexec/` | 两腿执行内核：组、动作、订单、成交；双边市价 / 一腿挂单一腿对冲、单腿失败回退、结果未知查询不重发、与交易所对账；PostgreSQL 存储（每个应用一个表前缀） | 不做业务决策 |
+| `hedger/` | 对冲业务（资金费率套利）：在 `pairexec` 上提供开仓预览与 API | 不直接访问交易所 |
 | `optioner/` | 期权业务：组合风险（含币本位权利金 Delta、情景网格）、多腿执行、Delta 对冲 | 不直接访问交易所、不存储 |
 | `optionmath/` | Black-76 定价、希腊值、隐含波动率；gateway 与 optioner 共用 | 纯计算 |
 | `web/` | 终端界面 | 不持有任何凭证 |
@@ -97,6 +98,7 @@ gateway/
   api/          /v1 HTTP 与 WebSocket
 gwclient/       gateway API 的 Go 客户端（给应用用）
 trader/         登录、会话、反向代理、静态文件
+pairexec/       两腿执行内核（hedger、spreader 共用）
 hedger/         对冲应用
 optioner/       期权应用
 optionmath/     期权定价

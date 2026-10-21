@@ -41,7 +41,7 @@ docker compose logs trader | grep password       # 首次启动的初始密码�
 ```sh
 make test
 HEDGER_TEST_DATABASE_URL=postgres://postgres:pw@127.0.0.1:5432/postgres?sslmode=disable \
-  go test ./hedger/                              # hedger 对真实 PostgreSQL 的场景测试
+  go test ./pairexec/                            # 两腿执行内核对真实 PostgreSQL 的场景测试
 ```
 
 界面规范见 [DESIGN.md](DESIGN.md)。

@@ -1,4 +1,4 @@
-package hedger
+package pairexec
 
 import (
 	"context"
@@ -54,7 +54,7 @@ func (service *Service) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case groupID := <-service.Engine.Changes():
-			service.broadcast(groupID)
+			service.Broadcast(groupID)
 		case <-ticker.C:
 			service.pin(ctx)
 			service.Market.Sweep()
@@ -132,7 +132,7 @@ func (service *Service) consume(ctx context.Context) {
 				}
 			default:
 				if service.Market.Handle(message) && message.Channel == "account.positions" {
-					service.broadcast("")
+					service.Broadcast("")
 				}
 			}
 		}
@@ -153,7 +153,7 @@ func (service *Service) Listen() (<-chan string, func()) {
 	}
 }
 
-func (service *Service) broadcast(groupID string) {
+func (service *Service) Broadcast(groupID string) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	for listener := range service.listeners {
@@ -163,6 +163,12 @@ func (service *Service) broadcast(groupID string) {
 		}
 	}
 }
+
+// Store is the app's execution store.
+func (service *Service) Store() *Store { return service.store }
+
+// Client is the gateway client the service trades through.
+func (service *Service) Client() *gwclient.Client { return service.client }
 
 // Ready reports whether the hedger can trade: database reachable and the
 // gateway stream connected.

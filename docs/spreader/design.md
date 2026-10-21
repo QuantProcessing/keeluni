@@ -121,12 +121,14 @@ hedger 的执行部分是 spreader 需要的全部执行能力：两腿下单（
 | Store 中 group/action/order/fill/event/funding 的读写 | | 回测 |
 | sizing（PlanSize、SweepBook、MatchLegs）、文本码 | | |
 
-**做法**：
+**做法**（P1 已完成）：
 
-1. `pairexec` 的 Store 接受一个**表名前缀**（`hedge_` / `spread_`），同一套 SQL 在两个库里各用各的表；迁移文件按前缀生成。hedger 的现有表名与数据不变。
-2. Engine 增加一个可选的回调接口 `Observer`：`ActionFinished(group, action)` 与 `GroupChanged(group)`。spreader 用它把执行结果回填到周期上；hedger 不需要时传 nil。
-3. 文本码（`hedger/text.go`）拆成通用部分（执行相关，进 `pairexec`）与 hedger 自有部分；前端的 `i18n/hedger.ts` 改为按码查表，不感知来源包。
-4. **完成标准**：hedger 的全部现有测试原样通过（只改 import），对冲页行为不变。
+1. hedger 除 HTTP API（`hedger/api.go`）外的全部代码移入 `pairexec`：模型、Engine、runner、Market、Store、sizing、position、文本码、Service、视图与资金费估算。
+2. Store 由 `Schema{Prefix, Migrations, Lock}` 决定表名：SQL 与迁移文件中的 `{{groups}}`、`{{prefix}}` 等占位符在运行时替换。`pairexec.HedgeSchema` 就是 hedger 一直使用的表名（`hedge_*`、`hedger_migrations`、原 advisory lock），已部署的库无需任何迁移；已用旧库验证。
+3. `Engine.SetObserver(Observer)`：动作结束、组状态确定后回调 `ActionSettled(group, action, status)`。spreader 用它回填周期；hedger 不设置。
+4. `Store.Migrate(fs, dir)` 让应用把自己的迁移文件（含 `{{...}}` 占位符）应用到同一 schema；`NewStoreWithPool` 让应用复用连接池。
+5. 文本码保留在 `pairexec/text.go`（全部是执行相关的），前端字典与测试改为读这个文件。
+6. 结果：hedger 行为不变（同一 API、同一表）；执行内核测试在真实 PostgreSQL 上全部通过，并新增「两个前缀在同一库中互不干扰」的测试。
 
 ### 4.2 spreader 的组件
 

@@ -1,4 +1,4 @@
-// Texts the hedger sends as codes and parameters (hedger/text.go). The English
+// Texts the hedger sends as codes and parameters (pairexec/text.go). The English
 // formats mirror the hedger's; the hedger also sends its English rendering,
 // which is shown when a code is unknown here (a newer hedger).
 //

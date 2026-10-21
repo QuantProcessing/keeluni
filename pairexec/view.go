@@ -1,4 +1,4 @@
-package hedger
+package pairexec
 
 import (
 	"context"
@@ -68,7 +68,7 @@ type LegView struct {
 }
 
 // fundingSign is the cash sign for a held leg: a long pays a positive rate.
-func fundingSign(leg Leg) decimal.Decimal {
+func FundingSign(leg Leg) decimal.Decimal {
 	return decimal.NewFromInt(-leg.Direction())
 }
 
@@ -118,7 +118,7 @@ func (engine *Engine) View(ctx context.Context, group Group, funding [2]decimal.
 			legView.LiquidationPct = legView.LiquidationPrice.Sub(legView.Mark).Div(legView.Mark).Mul(decimal.NewFromInt(100)).Abs().Round(2)
 		}
 		if leg.Product == "perp" && books[i].Held.IsPositive() {
-			legView.NextFundingCash = legView.FundingRate.Mul(legView.Notional).Mul(fundingSign(leg)).Round(6)
+			legView.NextFundingCash = legView.FundingRate.Mul(legView.Notional).Mul(FundingSign(leg)).Round(6)
 		}
 		view.Legs[i] = legView
 		view.Estimated = view.Estimated || books[i].Estimated
@@ -151,7 +151,7 @@ func (engine *Engine) View(ctx context.Context, group Group, funding [2]decimal.
 			if leg.Product != "perp" {
 				continue
 			}
-			earn = earn.Add(view.Legs[i].FundingApr.Mul(view.Legs[i].Notional).Mul(fundingSign(leg)))
+			earn = earn.Add(view.Legs[i].FundingApr.Mul(view.Legs[i].Notional).Mul(FundingSign(leg)))
 		}
 		view.NetFundingApr = earn.Div(view.Notional.Div(decimal.NewFromInt(2))).Round(6)
 	}
@@ -236,7 +236,7 @@ func (engine *Engine) accrueFunding(ctx context.Context, source FundingSource) {
 				if !price.IsPositive() {
 					continue
 				}
-				amount := rate.Mul(held).Mul(price).Mul(fundingSign(leg)).Round(8)
+				amount := rate.Mul(held).Mul(price).Mul(FundingSign(leg)).Round(8)
 				accrual := FundingAccrual{GroupID: group.ID, Leg: i, SettledAt: at, Rate: rate, Qty: held, Price: price.Round(8), Amount: amount}
 				if added, err := engine.store.AddFunding(ctx, accrual); err == nil && added {
 					engine.changed(group.ID)

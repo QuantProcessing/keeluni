@@ -1,4 +1,4 @@
-package hedger
+package pairexec
 
 import (
 	"context"
@@ -62,38 +62,38 @@ func marketOf(instrument gwclient.Instrument) string {
 // rules of that route: a broker can trade finer steps than the venue and set
 // its own minimum value. A preview may leave the account empty and then sizes
 // with the venue's rules.
-func (engine *Engine) resolveLeg(ctx context.Context, index int, input LegInput, instruments map[string]gwclient.Instrument, accounts map[string]gwclient.Account, requireAccount bool) (Leg, error) {
+func (engine *Engine) ResolveLeg(ctx context.Context, index int, input LegInput, instruments map[string]gwclient.Instrument, accounts map[string]gwclient.Account, requireAccount bool) (Leg, error) {
 	instrument, ok := instruments[input.Instrument]
 	if !ok {
-		return Leg{}, invalid("invalid.legUnknownInst", "leg", index+1, "inst", input.Instrument)
+		return Leg{}, Invalid("invalid.legUnknownInst", "leg", index+1, "inst", input.Instrument)
 	}
 	rules := gwclient.Route{Instrument: instrument.ID, TickSize: instrument.TickSize, StepSize: instrument.StepSize, MinQty: instrument.MinQty, MinNotional: instrument.MinNotional}
 	broker := false
 	if requireAccount || input.AccountID != "" {
 		account, ok := accounts[input.AccountID]
 		if !ok {
-			return Leg{}, invalid("invalid.legUnknownAccount", "leg", index+1, "account", input.AccountID)
+			return Leg{}, Invalid("invalid.legUnknownAccount", "leg", index+1, "account", input.AccountID)
 		}
 		if !account.Active {
-			return Leg{}, invalid("invalid.legInactive", "leg", index+1, "account", account.Label)
+			return Leg{}, Invalid("invalid.legInactive", "leg", index+1, "account", account.Label)
 		}
 		if !slices.Contains(account.Markets, marketOf(instrument)) {
-			return Leg{}, invalid("invalid.legMarket", "leg", index+1, "account", account.Label, "market", marketOf(instrument))
+			return Leg{}, Invalid("invalid.legMarket", "leg", index+1, "account", account.Label, "market", marketOf(instrument))
 		}
 		route, err := engine.route(ctx, account.ID, instrument.ID)
 		if err != nil {
 			return Leg{}, err
 		}
 		if route == nil {
-			return Leg{}, invalid("invalid.legRoute", "leg", index+1, "account", account.Label, "inst", instrument.ID)
+			return Leg{}, Invalid("invalid.legRoute", "leg", index+1, "account", account.Label, "inst", instrument.ID)
 		}
 		rules, broker = *route, account.Broker()
 	}
 	if input.Side != "buy" && input.Side != "sell" {
-		return Leg{}, invalid("invalid.legSide", "leg", index+1)
+		return Leg{}, Invalid("invalid.legSide", "leg", index+1)
 	}
 	if instrument.Product == "spot" && input.Side == "sell" {
-		return Leg{}, invalid("invalid.legSpotShort", "leg", index+1)
+		return Leg{}, Invalid("invalid.legSpotShort", "leg", index+1)
 	}
 	parse := func(text string) decimal.Decimal {
 		value, _ := decimal.NewFromString(text)
@@ -108,7 +108,7 @@ func (engine *Engine) resolveLeg(ctx context.Context, index int, input LegInput,
 		leg.Quote = instrument.Settle
 	}
 	if !leg.StepSize.IsPositive() || !leg.TickSize.IsPositive() {
-		return Leg{}, invalid("invalid.legRules", "leg", index+1)
+		return Leg{}, Invalid("invalid.legRules", "leg", index+1)
 	}
 	return leg, nil
 }
@@ -128,7 +128,7 @@ func (engine *Engine) route(ctx context.Context, accountID, instrumentID string)
 	return nil, nil
 }
 
-func (engine *Engine) catalog(ctx context.Context) (map[string]gwclient.Instrument, map[string]gwclient.Account, error) {
+func (engine *Engine) Catalog(ctx context.Context) (map[string]gwclient.Instrument, map[string]gwclient.Account, error) {
 	instruments, err := engine.gateway.Instruments(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("gateway instruments: %w", err)
@@ -154,10 +154,10 @@ func validateMode(mode string, maker int, price decimal.Decimal, tif string) (st
 		return "", nil
 	case ModeLimit:
 		if maker != 0 && maker != 1 {
-			return "", invalid("invalid.makerLeg")
+			return "", Invalid("invalid.makerLeg")
 		}
 		if !price.IsPositive() {
-			return "", invalid("invalid.limitPrice")
+			return "", Invalid("invalid.limitPrice")
 		}
 		switch tif {
 		case "", "gtc":
@@ -165,30 +165,30 @@ func validateMode(mode string, maker int, price decimal.Decimal, tif string) (st
 		case "post_only":
 			return "post_only", nil
 		}
-		return "", invalid("invalid.tif")
+		return "", Invalid("invalid.tif")
 	}
-	return "", invalid("invalid.mode")
+	return "", Invalid("invalid.mode")
 }
 
 // Open validates and starts a new hedge. Sizing uses the live books, so the
 // stored quantities are exactly what is sent.
 func (engine *Engine) Open(ctx context.Context, market *Market, request OpenRequest) (Group, error) {
-	instruments, accounts, err := engine.catalog(ctx)
+	instruments, accounts, err := engine.Catalog(ctx)
 	if err != nil {
 		return Group{}, err
 	}
 	var legs [2]Leg
 	for i := range legs {
-		if legs[i], err = engine.resolveLeg(ctx, i, request.Legs[i], instruments, accounts, true); err != nil {
+		if legs[i], err = engine.ResolveLeg(ctx, i, request.Legs[i], instruments, accounts, true); err != nil {
 			return Group{}, err
 		}
 	}
 	if legs[0].Instrument == legs[1].Instrument && legs[0].AccountID == legs[1].AccountID {
-		return Group{}, invalid("invalid.sameLegs")
+		return Group{}, Invalid("invalid.sameLegs")
 	}
 	match, ratio := MatchLegs(legs)
 	if legs[0].Side == legs[1].Side {
-		return Group{}, invalid("invalid.sameSide", "side", legs[0].Side)
+		return Group{}, Invalid("invalid.sameSide", "side", legs[0].Side)
 	}
 	tif, err := validateMode(request.Mode, request.Maker, request.Price, request.TIF)
 	if err != nil {
@@ -199,13 +199,13 @@ func (engine *Engine) Open(ctx context.Context, market *Market, request OpenRequ
 		policy = PolicyUnwind
 	}
 	if policy != PolicyUnwind && policy != PolicyHold {
-		return Group{}, invalid("invalid.policy")
+		return Group{}, Invalid("invalid.policy")
 	}
 	var prices [2]decimal.Decimal
 	for i, leg := range legs {
 		_, _, ok := market.Book(ctx, leg.Instrument, 5*time.Second)
 		if !ok {
-			return Group{}, invalid("invalid.noBook", "inst", leg.Instrument)
+			return Group{}, Invalid("invalid.noBook", "inst", leg.Instrument)
 		}
 		prices[i] = market.TradePrice(leg.Instrument, leg.Side)
 	}
@@ -260,14 +260,14 @@ func (engine *Engine) Close(ctx context.Context, groupID string, request CloseRe
 		return Action{}, err
 	}
 	if group.Status != StatusOpen && group.Status != StatusBroken {
-		return Action{}, invalid("invalid.cannotClose", "status", group.Status)
+		return Action{}, Invalid("invalid.cannotClose", "status", group.Status)
 	}
 	fraction := request.Fraction
 	if fraction.IsZero() {
 		fraction = decimal.NewFromInt(1)
 	}
 	if !fraction.IsPositive() || fraction.GreaterThan(decimal.NewFromInt(1)) {
-		return Action{}, invalid("invalid.fraction")
+		return Action{}, Invalid("invalid.fraction")
 	}
 	tif, err := validateMode(request.Mode, request.Maker, request.Price, request.TIF)
 	if err != nil {
@@ -288,10 +288,10 @@ func (engine *Engine) Close(ctx context.Context, groupID string, request CloseRe
 		target[1] = decimal.Max(target[1], books[1].Held.Neg())
 	}
 	if target[0].IsZero() && target[1].IsZero() {
-		return Action{}, invalid("invalid.nothingToClose")
+		return Action{}, Invalid("invalid.nothingToClose")
 	}
 	if request.Mode == ModeLimit && target[request.Maker].IsZero() {
-		return Action{}, invalid("invalid.makerNothing")
+		return Action{}, Invalid("invalid.makerNothing")
 	}
 	action := Action{ID: newID("ha_"), GroupID: group.ID, Kind: KindClose, Mode: request.Mode, TIF: tif, Target: target, Status: ActionWorking, CreatedAt: engine.now().UTC()}
 	if request.Mode == ModeLimit {
@@ -300,7 +300,7 @@ func (engine *Engine) Close(ctx context.Context, groupID string, request CloseRe
 	}
 	if err := engine.store.StartAction(ctx, action, StatusClosing); err != nil {
 		if err == ErrBusy {
-			return Action{}, invalid("invalid.busy")
+			return Action{}, Invalid("invalid.busy")
 		}
 		return Action{}, err
 	}
@@ -318,14 +318,14 @@ func (engine *Engine) Rehedge(ctx context.Context, groupID string) (Action, erro
 		return Action{}, err
 	}
 	if group.Status != StatusBroken && group.Status != StatusOpen {
-		return Action{}, invalid("invalid.cannotRehedge", "status", group.Status)
+		return Action{}, Invalid("invalid.cannotRehedge", "status", group.Status)
 	}
 	if Negligible(group, Imbalance(group, books)) {
-		return Action{}, invalid("invalid.balanced")
+		return Action{}, Invalid("invalid.balanced")
 	}
 	target := RehedgeTargets(group, books)
 	if target[0].IsZero() && target[1].IsZero() {
-		return Action{}, invalid("invalid.belowStep")
+		return Action{}, Invalid("invalid.belowStep")
 	}
 	return engine.startRepair(ctx, group, KindRehedge, target, withReason(textOf("event.rehedging"), describeTargets(group, target)))
 }
@@ -338,14 +338,14 @@ func (engine *Engine) Trim(ctx context.Context, groupID string) (Action, error) 
 		return Action{}, err
 	}
 	if group.Status != StatusBroken && group.Status != StatusOpen {
-		return Action{}, invalid("invalid.cannotTrim", "status", group.Status)
+		return Action{}, Invalid("invalid.cannotTrim", "status", group.Status)
 	}
 	if Negligible(group, Imbalance(group, books)) {
-		return Action{}, invalid("invalid.balanced")
+		return Action{}, Invalid("invalid.balanced")
 	}
 	target := TrimTargets(group, books)
 	if target[0].IsZero() && target[1].IsZero() {
-		return Action{}, invalid("invalid.nothingToTrim")
+		return Action{}, Invalid("invalid.nothingToTrim")
 	}
 	return engine.startRepair(ctx, group, KindUnwind, target, withReason(textOf("event.trimming"), describeTargets(group, target)))
 }
@@ -374,11 +374,11 @@ func (engine *Engine) Unwind(ctx context.Context, groupID string) (Action, error
 		return Action{}, err
 	}
 	if group.Status != StatusBroken && group.Status != StatusOpen {
-		return Action{}, invalid("invalid.cannotUnwind", "status", group.Status)
+		return Action{}, Invalid("invalid.cannotUnwind", "status", group.Status)
 	}
 	target := [2]decimal.Decimal{books[0].Held.Neg(), books[1].Held.Neg()}
 	if target[0].IsZero() && target[1].IsZero() {
-		return Action{}, invalid("invalid.nothingHeld")
+		return Action{}, Invalid("invalid.nothingHeld")
 	}
 	return engine.startRepair(ctx, group, KindUnwind, target, textOf("event.unwinding", "qty0", target[0].Abs(), "qty1", target[1].Abs()))
 }
@@ -391,7 +391,7 @@ func (engine *Engine) startRepair(ctx context.Context, group Group, kind string,
 	}
 	if err := engine.store.StartAction(ctx, action, status); err != nil {
 		if err == ErrBusy {
-			return Action{}, invalid("invalid.busy")
+			return Action{}, Invalid("invalid.busy")
 		}
 		return Action{}, err
 	}
@@ -470,6 +470,14 @@ func (engine *Engine) settle(ctx context.Context, groupID string, action Action,
 		return
 	}
 	engine.changed(groupID)
+	if engine.observer != nil {
+		group.Status, group.Problem = status, problem
+		finished := action
+		if updated, err := engine.store.Action(ctx, action.ID); err == nil {
+			finished = updated
+		}
+		engine.observer.ActionSettled(group, finished, status)
+	}
 	if status != StatusBroken {
 		return
 	}

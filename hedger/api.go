@@ -1,3 +1,5 @@
+// Package hedger is the hedge app's HTTP API (funding carry): open previews
+// and the group endpoints, on the shared two-leg execution core (pairexec).
 package hedger
 
 import (
@@ -5,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"github.com/QuantProcessing/keeluni/pairexec"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -18,12 +21,12 @@ import (
 // API is the hedger's HTTP surface (/v1). It sits behind the trader, which
 // authenticates the operator and forwards with the hedger's bearer token.
 type API struct {
-	service *Service
+	service *pairexec.Service
 	token   []byte
 	mux     *http.ServeMux
 }
 
-func NewAPI(service *Service, token string) *API {
+func NewAPI(service *pairexec.Service, token string) *API {
 	api := &API{service: service, token: []byte(token), mux: http.NewServeMux()}
 	m := api.mux
 	m.HandleFunc("GET /v1/health", api.health)
@@ -69,16 +72,16 @@ func (api *API) health(w http.ResponseWriter, r *http.Request) {
 }
 
 // views builds views for groups, with funding totals in one query.
-func (api *API) views(ctx context.Context, groups []Group) ([]GroupView, error) {
+func (api *API) views(ctx context.Context, groups []pairexec.Group) ([]pairexec.GroupView, error) {
 	ids := make([]string, len(groups))
 	for i, group := range groups {
 		ids[i] = group.ID
 	}
-	totals, err := api.service.store.FundingTotals(ctx, ids)
+	totals, err := api.service.Store().FundingTotals(ctx, ids)
 	if err != nil {
 		return nil, err
 	}
-	views := make([]GroupView, 0, len(groups))
+	views := make([]pairexec.GroupView, 0, len(groups))
 	for _, group := range groups {
 		view, err := api.service.Engine.View(ctx, group, totals[group.ID])
 		if err != nil {
@@ -97,7 +100,7 @@ func (api *API) groups(w http.ResponseWriter, r *http.Request) {
 			days = int(parsed.IntPart())
 		}
 	}
-	groups, err := api.service.store.Groups(r.Context(), time.Now().Add(-time.Duration(days)*24*time.Hour))
+	groups, err := api.service.Store().Groups(r.Context(), time.Now().Add(-time.Duration(days)*24*time.Hour))
 	if err != nil {
 		api.fail(w, err)
 		return
@@ -112,32 +115,32 @@ func (api *API) groups(w http.ResponseWriter, r *http.Request) {
 
 // GroupDetail is one group with its history.
 type GroupDetail struct {
-	GroupView
-	Actions []Action         `json:"actions"`
-	Orders  []Order          `json:"orders"`
-	Fills   []Fill           `json:"fills"`
-	Events  []Event          `json:"events"`
-	Funding []FundingAccrual `json:"funding"`
+	pairexec.GroupView
+	Actions []pairexec.Action         `json:"actions"`
+	Orders  []pairexec.Order          `json:"orders"`
+	Fills   []pairexec.Fill           `json:"fills"`
+	Events  []pairexec.Event          `json:"events"`
+	Funding []pairexec.FundingAccrual `json:"funding"`
 }
 
 func (api *API) group(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	group, err := api.service.store.Group(ctx, r.PathValue("id"))
+	group, err := api.service.Store().Group(ctx, r.PathValue("id"))
 	if err != nil {
 		api.fail(w, err)
 		return
 	}
-	views, err := api.views(ctx, []Group{group})
+	views, err := api.views(ctx, []pairexec.Group{group})
 	if err != nil {
 		api.fail(w, err)
 		return
 	}
 	detail := GroupDetail{GroupView: views[0]}
-	if detail.Actions, err = api.service.store.Actions(ctx, group.ID); err == nil {
-		if detail.Orders, err = api.service.store.Orders(ctx, group.ID); err == nil {
-			if detail.Fills, err = api.service.store.Fills(ctx, group.ID); err == nil {
-				if detail.Events, err = api.service.store.Events(ctx, group.ID, 200); err == nil {
-					detail.Funding, err = api.service.store.FundingLog(ctx, group.ID)
+	if detail.Actions, err = api.service.Store().Actions(ctx, group.ID); err == nil {
+		if detail.Orders, err = api.service.Store().Orders(ctx, group.ID); err == nil {
+			if detail.Fills, err = api.service.Store().Fills(ctx, group.ID); err == nil {
+				if detail.Events, err = api.service.Store().Events(ctx, group.ID, 200); err == nil {
+					detail.Funding, err = api.service.Store().FundingLog(ctx, group.ID)
 				}
 			}
 		}
@@ -154,13 +157,13 @@ func (api *API) group(w http.ResponseWriter, r *http.Request) {
 // quantities, the cost of crossing each book, fees are not included (they
 // depend on the account's tier).
 type Preview struct {
-	SizePlan
+	pairexec.SizePlan
 	// Match is how the legs are sized against each other, derived from the
 	// instruments: base (same underlying, by quantity through the ratio) or
 	// notional (different underlyings).
 	Match     string                    `json:"match"`
 	Price     [2]decimal.Decimal        `json:"price"`
-	Sweep     [2]Sweep                  `json:"sweep"`
+	Sweep     [2]pairexec.Sweep         `json:"sweep"`
 	SpreadBps decimal.Decimal           `json:"spreadBps"`
 	Funding   [2]*gwclient.FundingQuote `json:"funding"`
 	// NetFundingApr is absent while a perp leg's funding is not known yet
@@ -168,7 +171,7 @@ type Preview struct {
 	NetFundingApr *decimal.Decimal `json:"netFundingApr,omitempty"`
 	// Legs are the resolved legs: the rules each leg follows on its account
 	// (a broker's can differ from the venue's).
-	Legs [2]Leg `json:"legs"`
+	Legs [2]pairexec.Leg `json:"legs"`
 	// SharedPool is set when both legs trade from one broker account: one
 	// margin pool backs both, so its available margin is not counted twice.
 	SharedPool bool `json:"sharedPool,omitempty"`
@@ -182,59 +185,59 @@ func (api *API) match(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid", "two inst parameters are required")
 		return
 	}
-	instruments, _, err := api.service.Engine.catalog(r.Context())
+	instruments, _, err := api.service.Engine.Catalog(r.Context())
 	if err != nil {
 		api.fail(w, err)
 		return
 	}
-	var legs [2]Leg
+	var legs [2]pairexec.Leg
 	for i, id := range ids {
 		instrument, ok := instruments[id]
 		if !ok {
-			api.fail(w, invalid("invalid.unknownInstrument", "inst", id))
+			api.fail(w, pairexec.Invalid("invalid.unknownInstrument", "inst", id))
 			return
 		}
-		legs[i] = Leg{Venue: instrument.Venue, Base: instrument.Base}
+		legs[i] = pairexec.Leg{Venue: instrument.Venue, Base: instrument.Base}
 	}
-	match, ratio := MatchLegs(legs)
+	match, ratio := pairexec.MatchLegs(legs)
 	writeJSON(w, http.StatusOK, map[string]any{"match": match, "ratio": ratio})
 }
 
 func (api *API) preview(w http.ResponseWriter, r *http.Request) {
-	var request OpenRequest
+	var request pairexec.OpenRequest
 	if !decodeBody(w, r, &request) {
 		return
 	}
 	ctx := r.Context()
-	instruments, accounts, err := api.service.Engine.catalog(ctx)
+	instruments, accounts, err := api.service.Engine.Catalog(ctx)
 	if err != nil {
 		api.fail(w, err)
 		return
 	}
-	var legs [2]Leg
+	var legs [2]pairexec.Leg
 	for i := range legs {
-		if legs[i], err = api.service.Engine.resolveLeg(ctx, i, request.Legs[i], instruments, accounts, false); err != nil {
+		if legs[i], err = api.service.Engine.ResolveLeg(ctx, i, request.Legs[i], instruments, accounts, false); err != nil {
 			api.fail(w, err)
 			return
 		}
 	}
 	var preview Preview
-	var books [2][2]BookSide
+	var books [2][2]pairexec.BookSide
 	for i, leg := range legs {
 		bids, asks, ok := api.service.Market.Book(ctx, leg.Instrument, 5*time.Second)
 		if !ok {
-			api.fail(w, invalid("invalid.noBook", "inst", leg.Instrument))
+			api.fail(w, pairexec.Invalid("invalid.noBook", "inst", leg.Instrument))
 			return
 		}
-		books[i] = [2]BookSide{bids, asks}
+		books[i] = [2]pairexec.BookSide{bids, asks}
 		preview.Price[i] = api.service.Market.TradePrice(leg.Instrument, leg.Side)
 	}
 	prices := preview.Price
-	if request.Mode == ModeLimit && (request.Maker == 0 || request.Maker == 1) && request.Price.IsPositive() {
+	if request.Mode == pairexec.ModeLimit && (request.Maker == 0 || request.Maker == 1) && request.Price.IsPositive() {
 		prices[request.Maker] = request.Price
 	}
-	match, ratio := MatchLegs(legs)
-	plan, err := PlanSize(SizeInput{Size: request.Size, Unit: request.Unit, Match: match, Price: prices, Ratio: ratio}, legs)
+	match, ratio := pairexec.MatchLegs(legs)
+	plan, err := pairexec.PlanSize(pairexec.SizeInput{Size: request.Size, Unit: request.Unit, Match: match, Price: prices, Ratio: ratio}, legs)
 	if err != nil {
 		api.fail(w, err)
 		return
@@ -243,18 +246,18 @@ func (api *API) preview(w http.ResponseWriter, r *http.Request) {
 	preview.Legs = legs
 	preview.SharedPool = legs[0].Broker && legs[0].AccountID != "" && legs[0].AccountID == legs[1].AccountID
 	for i, leg := range legs {
-		if request.Mode == ModeLimit && request.Maker == i {
+		if request.Mode == pairexec.ModeLimit && request.Maker == i {
 			continue // the maker leg does not cross the book
 		}
 		side := books[i][1]
 		if leg.Side == "sell" {
 			side = books[i][0]
 		}
-		preview.Sweep[i] = SweepBook(side, plan.Qty[i], leg.Side == "buy")
+		preview.Sweep[i] = pairexec.SweepBook(side, plan.Qty[i], leg.Side == "buy")
 	}
 	preview.Match = match
-	group := Group{Match: match, Ratio: plan.Ratio, Legs: legs}
-	preview.SpreadBps = SpreadBps(group, prices[0], prices[1])
+	group := pairexec.Group{Match: match, Ratio: plan.Ratio, Legs: legs}
+	preview.SpreadBps = pairexec.SpreadBps(group, prices[0], prices[1])
 	earn, notional, known := decimal.Zero, decimal.Zero, true
 	for i, leg := range legs {
 		if leg.Product != "perp" {
@@ -268,7 +271,7 @@ func (api *API) preview(w http.ResponseWriter, r *http.Request) {
 		}
 		copied := quote
 		preview.Funding[i] = &copied
-		earn = earn.Add(apr.Mul(plan.Notional[i]).Mul(fundingSign(leg)))
+		earn = earn.Add(apr.Mul(plan.Notional[i]).Mul(pairexec.FundingSign(leg)))
 	}
 	notional = plan.Notional[0].Add(plan.Notional[1])
 	if known && notional.IsPositive() {
@@ -279,7 +282,7 @@ func (api *API) preview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *API) open(w http.ResponseWriter, r *http.Request) {
-	var request OpenRequest
+	var request pairexec.OpenRequest
 	if !decodeBody(w, r, &request) {
 		return
 	}
@@ -303,19 +306,19 @@ func (api *API) edit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(request.Label) > 80 || len(request.Note) > 2000 {
-		api.fail(w, invalid("invalid.textTooLong"))
+		api.fail(w, pairexec.Invalid("invalid.textTooLong"))
 		return
 	}
-	if err := api.service.store.UpdateGroupText(r.Context(), r.PathValue("id"), strings.TrimSpace(request.Label), strings.TrimSpace(request.Note)); err != nil {
+	if err := api.service.Store().UpdateGroupText(r.Context(), r.PathValue("id"), strings.TrimSpace(request.Label), strings.TrimSpace(request.Note)); err != nil {
 		api.fail(w, err)
 		return
 	}
-	api.service.broadcast(r.PathValue("id"))
+	api.service.Broadcast(r.PathValue("id"))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (api *API) close(w http.ResponseWriter, r *http.Request) {
-	var request CloseRequest
+	var request pairexec.CloseRequest
 	if !decodeBody(w, r, &request) {
 		return
 	}
@@ -357,7 +360,7 @@ func (api *API) websocket(w http.ResponseWriter, r *http.Request) {
 	changes, stop := api.service.Listen()
 	defer stop()
 	push := func() error {
-		groups, err := api.service.store.Groups(ctx, time.Now().Add(-7*24*time.Hour))
+		groups, err := api.service.Store().Groups(ctx, time.Now().Add(-7*24*time.Hour))
 		if err != nil {
 			return err
 		}
@@ -415,12 +418,12 @@ func (api *API) respond(w http.ResponseWriter, value any, err error) {
 func (api *API) fail(w http.ResponseWriter, err error) {
 	var gatewayErr *gwclient.Error
 	switch {
-	case IsInvalid(err):
-		text, _ := invalidText(err)
+	case pairexec.IsInvalid(err):
+		text, _ := pairexec.InvalidText(err)
 		// text carries the code and parameters; the interface renders it in the
 		// reader's language and falls back to message.
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"code": "INVALID_REQUEST", "message": text.Message, "text": text}})
-	case errors.Is(err, ErrNotFound):
+	case errors.Is(err, pairexec.ErrNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error())
 	case errors.As(err, &gatewayErr):
 		writeError(w, http.StatusBadGateway, "GATEWAY", gatewayErr.Error())

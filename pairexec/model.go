@@ -1,12 +1,14 @@
-// Package hedger is the hedge-trading app: it opens, tracks and closes a
-// position made of two legs on (possibly) different venues as one unit. It
-// trades only through the gateway and keeps its own state in PostgreSQL.
+// Package pairexec is the two-leg execution core shared by the hedger
+// (funding carry) and the spreader (spread arbitrage): it opens, tracks and
+// closes a position made of two legs on (possibly) different venues as one
+// unit. It trades only through the gateway and keeps its state in an app's
+// own PostgreSQL tables (one table prefix per app).
 //
 // A group's state is derived from its orders and fills, never asserted: the
 // filled quantity of each leg is the sum of its fills, so a restart, a lost
 // response or a stream gap cannot make the app believe in a hedge that the
 // venues do not hold.
-package hedger
+package pairexec
 
 import (
 	"time"
@@ -260,7 +262,7 @@ type errInvalid struct{ text Text }
 func (e errInvalid) Error() string { return e.text.Message }
 
 // invalid refuses a request with a coded text (see text.go).
-func invalid(code string, pairs ...any) error {
+func Invalid(code string, pairs ...any) error {
 	return errInvalid{text: textOf(code, pairs...)}
 }
 
@@ -271,7 +273,7 @@ func IsInvalid(err error) bool {
 }
 
 // invalidText is the coded text of a refused request.
-func invalidText(err error) (Text, bool) {
+func InvalidText(err error) (Text, bool) {
 	e, ok := err.(errInvalid)
 	return e.text, ok
 }

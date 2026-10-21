@@ -1,4 +1,4 @@
-package hedger
+package pairexec
 
 import (
 	"sort"

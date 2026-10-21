@@ -1,4 +1,4 @@
-package hedger
+package pairexec
 
 import (
 	"context"
@@ -17,6 +17,11 @@ import (
 // testStore opens a fresh database on the server named by
 // HEDGER_TEST_DATABASE_URL (a superuser URL); tests skip without it.
 func testStore(t *testing.T) *Store {
+	t.Helper()
+	return testStoreWith(t, HedgeSchema)
+}
+
+func testStoreWith(t *testing.T, schema Schema) *Store {
 	t.Helper()
 	admin := os.Getenv("HEDGER_TEST_DATABASE_URL")
 	if admin == "" {
@@ -42,7 +47,7 @@ func testStore(t *testing.T) *Store {
 		t.Fatal(err)
 	}
 	parsed.Path = "/" + name
-	store, err := OpenStore(ctx, parsed.String())
+	store, err := OpenStore(ctx, parsed.String(), schema)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,5 +190,34 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 	store := testStore(t)
 	if err := store.migrate(context.Background()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Two apps can share one database: each schema's tables, indexes and
+// migration record are its own.
+func TestSchemasKeepTheirOwnTables(t *testing.T) {
+	hedge := testStore(t)
+	spread := NewStoreWithPool(hedge.Pool(), Schema{Prefix: "spread_", Migrations: "spreader_exec_migrations", Lock: 42})
+	ctx := context.Background()
+	if err := spread.migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	group, action := sampleGroup("g_hedge")
+	if err := hedge.CreateGroup(ctx, group, action); err != nil {
+		t.Fatal(err)
+	}
+	other, otherAction := sampleGroup("g_spread")
+	if err := spread.CreateGroup(ctx, other, otherAction); err != nil {
+		t.Fatal(err)
+	}
+	for store, want := range map[*Store]string{hedge: "g_hedge", spread: "g_spread"} {
+		groups, err := store.Groups(ctx, time.Time{})
+		if err != nil || len(groups) != 1 || groups[0].ID != want {
+			t.Fatalf("groups = %+v, %v; want only %s", groups, err, want)
+		}
+	}
+	var tables int
+	if err := hedge.Pool().QueryRow(ctx, `select count(*) from information_schema.tables where table_name like 'spread\_%'`).Scan(&tables); err != nil || tables != 7 {
+		t.Fatalf("spread tables = %d, %v", tables, err)
 	}
 }

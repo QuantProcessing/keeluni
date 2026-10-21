@@ -37,6 +37,7 @@ import (
 
 	"github.com/QuantProcessing/keeluni/gwclient"
 	"github.com/QuantProcessing/keeluni/hedger"
+	"github.com/QuantProcessing/keeluni/pairexec"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -88,10 +89,10 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	var store *hedger.Store
+	var store *pairexec.Store
 	for attempt := 0; ; attempt++ {
 		openCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		store, err = hedger.OpenStore(openCtx, databaseURL)
+		store, err = pairexec.OpenStore(openCtx, databaseURL, pairexec.HedgeSchema)
 		cancel()
 		if err == nil {
 			break
@@ -108,7 +109,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	service := hedger.NewService(store, client)
+	service := pairexec.NewService(store, client)
 	errs := make(chan error, 2)
 	go func() { errs <- service.Run(ctx) }()
 
