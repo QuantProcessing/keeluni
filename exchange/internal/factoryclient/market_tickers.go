@@ -19,9 +19,12 @@ import (
 // MarketTickerLoader reads every instrument's 24h ticker of one market.
 type MarketTickerLoader func(context.Context) ([]exchange.MarketTicker, error)
 
-// NewMarketTickerLoader returns the loader of a served market, or nil when
-// the venue has no bulk ticker read.
-func NewMarketTickerLoader(venue exchange.Venue, product exchange.Product, settlement string, settings Settings) MarketTickerLoader {
+// NewMarketTickerLoader returns the loader of a venue's spot or perpetual
+// tickers, or nil when the venue has no bulk ticker read. A perpetual loader
+// reads every settlement the venue serves (Binance's and Bybit's single read
+// carries USDT and USDC alike; Bitget reads both categories), so one read
+// serves all of a venue's perpetual markets.
+func NewMarketTickerLoader(venue exchange.Venue, product exchange.Product, settings Settings) MarketTickerLoader {
 	if product != exchange.ProductPerp && product != exchange.ProductSpot {
 		return nil
 	}
@@ -47,12 +50,21 @@ func NewMarketTickerLoader(venue exchange.Venue, product exchange.Product, settl
 			return bybitTickers(ctx, settings, category)
 		}
 	case exchange.VenueBitget:
-		category := "SPOT"
-		if perp {
-			category = strings.ToUpper(settlement) + "-FUTURES"
+		if !perp {
+			return func(ctx context.Context) ([]exchange.MarketTicker, error) {
+				return bitgetTickers(ctx, settings, "SPOT")
+			}
 		}
 		return func(ctx context.Context) ([]exchange.MarketTicker, error) {
-			return bitgetTickers(ctx, settings, category)
+			usdt, err := bitgetTickers(ctx, settings, "USDT-FUTURES")
+			if err != nil {
+				return nil, err
+			}
+			usdc, err := bitgetTickers(ctx, settings, "USDC-FUTURES")
+			if err != nil {
+				return nil, err
+			}
+			return append(usdt, usdc...), nil
 		}
 	case exchange.VenueGate:
 		return func(ctx context.Context) ([]exchange.MarketTicker, error) { return gateTickers(ctx, settings, perp) }

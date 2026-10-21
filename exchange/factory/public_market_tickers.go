@@ -8,15 +8,18 @@ import (
 	"github.com/QuantProcessing/keeluni/exchange/internal/factoryclient"
 )
 
-// PublicMarketTickers reads every instrument's 24h ticker of one served
-// market in one (or a few) credential-free reads: the market list's price,
-// change and volume columns. Construction performs no I/O.
+// PublicMarketTickers reads every instrument's 24h ticker of one venue's
+// spot or perpetual markets in one (or a few) credential-free reads: the
+// market list's price, change and volume columns. A perpetual read covers
+// every settlement the venue serves, so one reader serves all of them.
+// Construction performs no I/O.
 type PublicMarketTickers struct {
 	load factoryclient.MarketTickerLoader
 }
 
-// NewPublicMarketTickers builds the reader of a served market; venues
-// without a whole-market ticker read are unsupported.
+// NewPublicMarketTickers builds the reader from any served market of the
+// venue and product (the settlement only selects the endpoint profile);
+// venues without a whole-market ticker read are unsupported.
 func NewPublicMarketTickers(venue exchange.Venue, product exchange.Product, settlement string, environment Environment, httpClient *http.Client) (*PublicMarketTickers, error) {
 	configName, ok := publicConnectorConfigName(venue, product, settlement)
 	if !ok || httpClient == nil {
@@ -26,7 +29,7 @@ func NewPublicMarketTickers(venue exchange.Venue, product exchange.Product, sett
 	if err := settings.validate(); err != nil {
 		return nil, err
 	}
-	load := factoryclient.NewMarketTickerLoader(venue, product, settlement, factorySettingsForConfig(configName, settings))
+	load := factoryclient.NewMarketTickerLoader(venue, product, factorySettingsForConfig(configName, settings))
 	if load == nil {
 		return nil, exchange.NewError(exchange.KindUnsupported, exchange.ErrorDetails{Venue: venue, Product: product, Operation: "MarketTickers", SafeMessage: "this market has no whole-market ticker read"})
 	}

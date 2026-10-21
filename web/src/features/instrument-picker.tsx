@@ -13,9 +13,9 @@ import { cx } from "@/ui/primitives";
 
 import { DEFAULT_FILTERS, classesOf, filterAndSort, loadFavorites, quotesOf, saveFavorites, type Category, type Filters, type ListItem, type SortKey } from "./market-list";
 
-/** The market list refreshes with the gateway's 30 s reads. */
+/** The market list follows the gateway's 60 s reads. */
 function useMarketRows(enabled: boolean) {
-  return useQuery({ queryKey: ["markets"], queryFn: ({ signal }) => api.markets(signal), enabled, staleTime: 25_000, refetchInterval: enabled ? 30_000 : false });
+  return useQuery({ queryKey: ["markets"], queryFn: ({ signal }) => api.markets(signal), enabled, staleTime: 50_000, refetchInterval: enabled ? 60_000 : false });
 }
 
 const LIMIT = 300;

@@ -1,6 +1,6 @@
 // Package tickers is the gateway's resident market list: every served
 // spot and perpetual instrument's last price, 24h open, change and 24h traded
-// value, read whole per market every 30 s and joined with the funding
+// value, read whole per venue and product every 60 s and joined with the funding
 // dataset (rate, APR, open interest) for the market picker.
 //
 // It is a normalization of venue facts (one bulk public read per market)
@@ -26,8 +26,21 @@ import (
 
 const datasetName = "tickers"
 
-// Cadence is how often each market is read.
-const Cadence = 30 * time.Second
+// Cadence is how often each venue's spot and perpetual tickers are read.
+// Bulk reads are heavy (Binance: 40 weight for perps, 80 for spot) and share
+// the background quarter of the venue budget with funding collection; 24h
+// figures do not need more.
+const Cadence = 60 * time.Second
+
+// cadenceOf is a group's read interval. Hyperliquid's perpetual read is one
+// /info call per dex (12 at 20 weight each, 240 of the 300 background
+// weight per minute), so it runs every 3 minutes.
+func cadenceOf(key group) time.Duration {
+	if key.venue == exchange.VenueHyperliquid && key.product == exchange.ProductPerp {
+		return 3 * time.Minute
+	}
+	return Cadence
+}
 
 // Row is one instrument of the market list.
 type Row struct {
@@ -61,11 +74,21 @@ type Source interface {
 	Load(context.Context) ([]exchange.MarketTicker, error)
 }
 
+// group is one bulk read: a venue's spot or perpetual tickers, serving
+// every market of that venue and product (USDT and USDC perps alike).
+type group struct {
+	venue   exchange.Venue
+	product exchange.Product
+}
+
+func (g group) String() string { return string(g.venue) + ":" + string(g.product) }
+
 type Dataset struct {
 	catalog  *market.Catalog
 	registry *resident.Registry
 	funding  FundingSource
-	sources  map[venue.Market]Source
+	sources  map[group]Source
+	markets  map[group][]venue.Market
 
 	mu   sync.RWMutex
 	rows map[venue.Market]map[venue.InstrumentID]Row
@@ -74,17 +97,21 @@ type Dataset struct {
 // New builds the dataset for every served spot and perpetual market that has
 // a whole-market ticker read.
 func New(catalog *market.Catalog, registry *resident.Registry, funding FundingSource, httpClient *http.Client) *Dataset {
-	dataset := &Dataset{catalog: catalog, registry: registry, funding: funding, sources: map[venue.Market]Source{}, rows: map[venue.Market]map[venue.InstrumentID]Row{}}
+	dataset := &Dataset{catalog: catalog, registry: registry, funding: funding, sources: map[group]Source{}, markets: map[group][]venue.Market{}, rows: map[venue.Market]map[venue.InstrumentID]Row{}}
 	for _, served := range venue.Markets {
 		if served.Product == exchange.ProductOption {
 			continue
 		}
-		source, err := factory.NewPublicMarketTickers(served.Venue, served.Product, served.Settlement, factory.EnvironmentLive, httpClient)
-		if err != nil {
-			continue
+		key := group{venue: served.Venue, product: served.Product}
+		if _, ok := dataset.sources[key]; !ok {
+			source, err := factory.NewPublicMarketTickers(served.Venue, served.Product, served.Settlement, factory.EnvironmentLive, httpClient)
+			if err != nil {
+				continue
+			}
+			dataset.sources[key] = source
+			registry.Declare(datasetName, key.String(), resident.ModePoll, cadenceOf(key))
 		}
-		dataset.sources[served] = source
-		registry.Declare(datasetName, served.String(), resident.ModePoll, Cadence)
+		dataset.markets[key] = append(dataset.markets[key], served)
 	}
 	return dataset
 }
@@ -92,16 +119,20 @@ func New(catalog *market.Catalog, registry *resident.Registry, funding FundingSo
 // Run polls every market until ctx ends.
 func (dataset *Dataset) Run(ctx context.Context) {
 	var wg sync.WaitGroup
-	for served, source := range dataset.sources {
+	for key, source := range dataset.sources {
 		wg.Add(1)
-		go func(served venue.Market, source Source) {
+		go func(key group, source Source) {
 			defer wg.Done()
 			resident.Run(ctx, dataset.registry, resident.Spec[[]exchange.MarketTicker]{
-				Dataset: datasetName, Market: served.String(), Interval: Cadence,
-				Load:  source.Load,
-				Apply: func(rows []exchange.MarketTicker) { dataset.apply(served, rows) },
+				Dataset: datasetName, Market: key.String(), Interval: cadenceOf(key),
+				Load: source.Load,
+				Apply: func(rows []exchange.MarketTicker) {
+					for _, served := range dataset.markets[key] {
+						dataset.apply(served, rows)
+					}
+				},
 			})
-		}(served, source)
+		}(key, source)
 	}
 	wg.Wait()
 }
