@@ -1,6 +1,8 @@
 package perp
 
 import (
+	"encoding/json"
+
 	hyperliquid "github.com/QuantProcessing/keeluni/sdk/hyperliquid"
 )
 
@@ -52,6 +54,26 @@ type OrderStatus struct {
 	Resting *OrderResting `json:"resting,omitempty"`
 	Filled  *OrderFilled  `json:"filled,omitempty"`
 	Error   *string       `json:"error,omitempty"`
+	// Waiting is a bare status string the venue may send instead of an
+	// object: "waitingForTrigger" (a trigger order accepted, no order id
+	// returned) or "waitingForFill".
+	Waiting string `json:"-"`
+}
+
+// UnmarshalJSON accepts both the object statuses and the bare strings.
+func (status *OrderStatus) UnmarshalJSON(data []byte) error {
+	var bare string
+	if err := json.Unmarshal(data, &bare); err == nil {
+		*status = OrderStatus{Waiting: bare}
+		return nil
+	}
+	type plain OrderStatus
+	var value plain
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	*status = OrderStatus(value)
+	return nil
 }
 
 type OrderResting struct {
@@ -101,6 +123,11 @@ type Order struct {
 	Tif        string `json:"tif"`
 	IsTrigger  bool   `json:"isTrigger"`
 	TriggerPx  string `json:"triggerPx"`
+	// TriggerCondition is the venue's description ("Price above 2600").
+	TriggerCondition string `json:"triggerCondition"`
+	// IsPositionTpsl: a position take-profit / stop-loss, which closes the
+	// whole position whatever its size.
+	IsPositionTpsl bool `json:"isPositionTpsl"`
 }
 
 type UserFill struct {

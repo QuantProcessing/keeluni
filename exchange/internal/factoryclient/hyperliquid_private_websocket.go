@@ -326,7 +326,7 @@ func (backend *hyperliquidPrivateWSBackend) StartOrders(
 		ctx,
 		backend.nextSinkKey("orders"),
 		func(row hyperliquid.WsOrderUpdate) {
-			if row.Order.Coin != meta.nativeCoin {
+			if row.Order.Coin != meta.nativeCoin || hlIsTriggerRow(row.Order.IsTrigger, row.Order.OrderType) {
 				return
 			}
 			event, err := hyperliquidPrivateOrderEvent(meta, row)
@@ -685,7 +685,11 @@ func (backend *hyperliquidPrivateWSBackend) StartAccountEvents(ctx context.Conte
 
 func projectHyperliquidAccountOrder(metas map[string]hyperliquidMarketMeta, row hyperliquid.WsOrderUpdate) (accountBackendEvent, bool, error) {
 	meta, ok := metas[row.Order.Coin]
-	if !ok {
+	if !ok || hlIsTriggerRow(row.Order.IsTrigger, row.Order.OrderType) {
+		// Trigger orders (take-profit / stop-loss) are read by
+		// OpenTriggerOrders; the order they send and its fills arrive as
+		// ordinary events once triggered.
+		//
 		// Hyperliquid's account topic is user-wide and may include the other
 		// product family. Each route projects only its own catalog; the sibling
 		// spot/perp owner consumes that event.

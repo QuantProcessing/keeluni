@@ -241,7 +241,13 @@ HTTP：accepted 200、rejected 422、unknown 202。
 
 ### 止盈止损（触发单）
 
-止盈 / 止损是挂在交易所的只减仓市价单：价格触及触发价时由交易所发出。只有 `GET /instruments` 中带 `triggers` 的市场支持（`{"triggers":{"priceTypes":["last","mark"]}}`，列出可用的触发价类型，第一个为默认）；不支持的市场（如 Gate CrossEx）只能限价或市价平仓。目前已接入：Binance 永续。
+止盈 / 止损是挂在交易所的只减仓市价单：价格触及触发价时由交易所发出。只有 `GET /instruments` 中带 `triggers` 的市场支持（`{"triggers":{"priceTypes":["last","mark"]}}`，列出可用的触发价类型，第一个为默认）；不支持的市场（如 Gate CrossEx）只能限价或市价平仓。目前已接入：
+
+| 交易所 | 触发价 | 说明 |
+|---|---|---|
+| Binance 永续 | 最新价 / 标记价 | 条件单（algo order），`clientAlgoId` 即 `clientOrderId` |
+| Hyperliquid 永续 | 仅标记价 | trigger 单，触发后以触发价 ±10% 为保护价的市价单成交；含 builder dex（xyz: 等） |
+| Lighter 永续 | 仅标记价 | 止损 / 止盈单，触发后 IOC，保护价同上；下单为异步交易，查询不到时返回 unknown 而不是 not_found |
 
 #### POST /triggers
 
