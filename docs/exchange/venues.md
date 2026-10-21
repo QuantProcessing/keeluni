@@ -32,6 +32,8 @@
 
 SWAP 下单使用全仓/net 的可移植形态。改杠杆前先查当前仓位；同一标的同时存在多个持仓范围时拒绝，因为一个标的级的请求无法可移植地指明其中一个。
 
+盘口订阅 `books` 频道：首次推送最多 400 档的快照，之后每 100 ms 推送增量，所有用户都能订阅（逐笔的 `books-l2-tbt` / `books50-l2-tbt` 需要 VIP4）。原来的 `books5` 只有 5 档，比其他所有交易所都浅。增量以 `seqId` / `prevSeqId` 串联：某条的 `prevSeqId` 不等于上一条的 `seqId` 即为丢包，退订后重订拿新快照，期间报 `resyncing`。`seqId` 可能重置为更小的值，所以只校验链，不作为通用的单调序号向上传。gateway 合并后只向前端发布前 50 档、最多每 100 ms 一次，所以 400 档只在交易所适配层与 gateway 之间流动：每个合约约 30 KB 的快照加小增量，浏览器负载不变。
+
 期权（`okx:option`）是一个市场，覆盖 BTC、ETH 的币本位族（`BTC-USD`，权利金与结算为 BTC）与 BTC、ETH、SOL、XAU 的 U 本位族（`BTC-USD_UM`，权利金与结算为 USD）。数量按张换算为标的（`ctVal × ctMult`），价格分档来自 `instrument-tick-bands`。期权链每个合约族读 `opt-summary`、`tickers`、`mark-price`、`open-interest`；远期取 `fwdPx`，与 Deribit 一样按远期零折现定价（见[产品类别](/architecture/products#定价-optionmath)）。只接受限价单；`tdMode` 由账户模式决定（现货模式 `cash`，只能买入期权；其他模式 `cross`）；不支持 reduce-only。三个产品共用一个账户，余额按交易所列一次。
 
 ### Bybit

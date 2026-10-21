@@ -103,45 +103,103 @@ func newOKXPerpWSBackendWithClients(clientMeta clientMeta, ws, candleWS okxPubli
 	return backend
 }
 
+// okxBookDepth is the books channel: up to 400 levels, a snapshot then
+// 100 ms increments chained by seqId, open to every user. books5 capped every
+// OKX book at five levels a side, shallower than any other venue.
+const okxBookDepth = 0
+
 func (backend *okxPublicWSBackend) StartOrderBook(
 	ctx context.Context,
 	instrument exchange.Instrument,
 	callbacks streamCallbacks[exchange.BookEvent],
 ) (func() error, error) {
-	if err := backend.validateInstrument("WatchOrderBook", instrument); err != nil {
+	const operation = "WatchOrderBook"
+	if err := backend.validateInstrument(operation, instrument); err != nil {
 		return nil, err
 	}
-	if err := backend.ensureConnected(ctx, "WatchOrderBook"); err != nil {
+	if err := backend.ensureConnected(ctx, operation); err != nil {
 		return nil, err
 	}
 	registration := backend.registerStatus(callbacks.Status)
 	native := instrument.Identity.NativeSymbol
-	multiplier, err := backend.quantityMultiplier(ctx, "WatchOrderBook", instrument)
+	channel, _ := okx.OrderBookChannel(okxBookDepth)
+	args := okx.WsSubscribeArgs{Channel: channel, InstId: native}
+	multiplier, err := backend.quantityMultiplier(ctx, operation, instrument)
 	if err != nil {
 		backend.unregisterStatus(registration)
 		return nil, err
 	}
-	if err := backend.ws.SubscribeOrderBookDepthWithError(
-		native,
-		5,
-		func(book *okx.OrderBook, action string) {
-			event, err := backend.bookEvent("WatchOrderBook", instrument, book, action, multiplier)
+	// chain follows seqId: an update whose prevSeqId is not the last seqId
+	// means a lost message, and the book is rebuilt from a new snapshot.
+	var mu sync.Mutex
+	last, started, resyncing, stopped := int64(0), false, false, false
+	var subscribe func() error
+	resubscribe := func() {
+		mu.Lock()
+		if resyncing || stopped {
+			mu.Unlock()
+			return
+		}
+		resyncing, started = true, false
+		mu.Unlock()
+		if callbacks.Status != nil {
+			callbacks.Status(backendStatus{State: exchange.SubscriptionResyncing, Reason: "OKX order book sequence gap; resubscribing for a snapshot", Time: time.Now().UTC()})
+		}
+		go func() {
+			_ = backend.ws.Unsubscribe(args)
+			err := subscribe()
+			mu.Lock()
+			resyncing = false
+			mu.Unlock()
 			if err != nil {
-				emitOKXWSError(callbacks, err)
-				return
+				emitOKXWSError(callbacks, okxWSError(backend.meta, operation, exchange.KindTransport, err.Error()))
 			}
-			callbacks.Event(event)
-		},
-		func(err error) {
-			emitOKXWSError(callbacks, okxWSError(backend.meta, "WatchOrderBook", exchange.KindMalformedResponse, err.Error()))
-		},
-	); err != nil {
+		}()
+	}
+	handle := func(book *okx.OrderBook, action string) {
+		mu.Lock()
+		snapshot := action == "snapshot" || action == ""
+		switch {
+		case snapshot:
+			started, last = true, book.SeqId
+		case !started || resyncing:
+			mu.Unlock()
+			return
+		case book.PrevSeqId != last:
+			mu.Unlock()
+			resubscribe()
+			return
+		default:
+			last = book.SeqId
+		}
+		mu.Unlock()
+		event, err := backend.bookEvent(operation, instrument, book, action, multiplier)
+		if err != nil {
+			emitOKXWSError(callbacks, err)
+			return
+		}
+		if snapshot {
+			mu.Lock()
+			event.Resync = event.Resync || resyncing
+			mu.Unlock()
+		}
+		callbacks.Event(event)
+	}
+	subscribe = func() error {
+		return backend.ws.SubscribeOrderBookDepthWithError(native, okxBookDepth, handle, func(err error) {
+			emitOKXWSError(callbacks, okxWSError(backend.meta, operation, exchange.KindMalformedResponse, err.Error()))
+		})
+	}
+	if err := subscribe(); err != nil {
 		backend.unregisterStatus(registration)
-		return nil, okxWSError(backend.meta, "WatchOrderBook", exchange.KindTransport, err.Error())
+		return nil, okxWSError(backend.meta, operation, exchange.KindTransport, err.Error())
 	}
 	return func() error {
+		mu.Lock()
+		stopped = true
+		mu.Unlock()
 		backend.unregisterStatus(registration)
-		return backend.unsubscribe("WatchOrderBook", okx.WsSubscribeArgs{Channel: "books5", InstId: native})
+		return backend.unsubscribe(operation, args)
 	}, nil
 }
 
@@ -681,7 +739,7 @@ func (backend *okxPublicWSBackend) bookEvent(
 	if book == nil {
 		return exchange.BookEvent{}, okxWSError(backend.meta, operation, exchange.KindMalformedResponse, "book push is nil")
 	}
-	restBook, err := okxOrderBook(backend.meta.product, operation, instrument, 5, []okx.OrderBook{*book}, multiplier)
+	restBook, err := okxOrderBook(backend.meta.product, operation, instrument, 0, []okx.OrderBook{*book}, multiplier)
 	if err != nil {
 		return exchange.BookEvent{}, err
 	}
@@ -693,14 +751,18 @@ func (backend *okxPublicWSBackend) bookEvent(
 	resync := backend.resyncNextBook
 	backend.resyncNextBook = false
 	backend.mu.Unlock()
-	return exchange.BookEvent{
+	event := exchange.BookEvent{
 		Kind:       kind,
 		Instrument: restBook.Instrument,
 		Resync:     resync,
 		Bids:       restBook.Bids,
 		Asks:       restBook.Asks,
 		Time:       restBook.Time,
-	}, nil
+	}
+	// The seqId chain is checked in StartOrderBook; it is not forwarded as a
+	// Sequence because OKX may reset it to a smaller value, which the shared
+	// book contract would read as a stale update.
+	return event, nil
 }
 
 func (backend *okxPublicWSBackend) quantityMultiplier(ctx context.Context, operation string, instrument exchange.Instrument) (decimal.Decimal, error) {
