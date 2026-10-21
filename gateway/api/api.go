@@ -2,6 +2,7 @@
 package api
 
 import (
+	"compress/gzip"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"github.com/QuantProcessing/keeluni/gateway/market"
 	"github.com/QuantProcessing/keeluni/gateway/optionchain"
 	"github.com/QuantProcessing/keeluni/gateway/resident"
+	"github.com/QuantProcessing/keeluni/gateway/tickers"
 	"github.com/QuantProcessing/keeluni/gateway/venue"
 )
 
@@ -30,6 +32,7 @@ type Deps struct {
 	Feeds    *market.Feeds
 	Funding  *funding.Dataset
 	Options  *optionchain.Dataset
+	Tickers  *tickers.Dataset
 	Resident *resident.Registry
 	// Hubs: public market streams, private account streams, resident datasets
 	// (funding), option chains.
@@ -43,6 +46,7 @@ type Server struct {
 	feeds    *market.Feeds
 	funding  *funding.Dataset
 	options  *optionchain.Dataset
+	tickers  *tickers.Dataset
 	resident *resident.Registry
 	public   *hub.Hub
 	private  *hub.Hub
@@ -55,7 +59,7 @@ type Server struct {
 func NewServer(token []byte, deps Deps) *Server {
 	server := &Server{
 		token: token, catalog: deps.Catalog, accounts: deps.Accounts, feeds: deps.Feeds,
-		funding: deps.Funding, options: deps.Options, resident: deps.Resident,
+		funding: deps.Funding, options: deps.Options, tickers: deps.Tickers, resident: deps.Resident,
 		public: deps.Public, private: deps.Private, datasets: deps.Datasets, optionHub: deps.OptionChains, mux: http.NewServeMux(),
 	}
 	m := server.mux
@@ -65,6 +69,7 @@ func NewServer(token []byte, deps Deps) *Server {
 	m.HandleFunc("GET /v1/orderbook", server.orderBook)
 	m.HandleFunc("GET /v1/candles", server.candles)
 	m.HandleFunc("GET /v1/ticker", server.ticker)
+	m.HandleFunc("GET /v1/markets", server.marketList)
 	m.HandleFunc("GET /v1/funding", server.fundingTable)
 	m.HandleFunc("GET /v1/funding/history", server.fundingHistory)
 	m.HandleFunc("GET /v1/options", server.optionSeries)
@@ -172,6 +177,27 @@ func (server *Server) candles(w http.ResponseWriter, r *http.Request) {
 func (server *Server) ticker(w http.ResponseWriter, r *http.Request) {
 	stats, err := server.feeds.Stats(r.Context(), venue.InstrumentID(r.URL.Query().Get("inst")))
 	server.respond(w, stats, err)
+}
+
+// marketList serves every spot and perpetual instrument's last price, 24h
+// change and value, funding and open interest, by 24h value.
+func (server *Server) marketList(w http.ResponseWriter, r *http.Request) {
+	if server.tickers == nil {
+		writeJSON(w, http.StatusOK, []tickers.Row{})
+		return
+	}
+	rows := server.tickers.List()
+	// ~13k rows: 1.6 MB of JSON, ~15% of that gzipped.
+	if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Vary", "Accept-Encoding")
+		zipped := gzip.NewWriter(w)
+		_ = json.NewEncoder(zipped).Encode(rows)
+		_ = zipped.Close()
+		return
+	}
+	writeJSON(w, http.StatusOK, rows)
 }
 
 // fundingTable serves the resident funding table, optionally filtered by

@@ -300,6 +300,20 @@ func (dataset *Dataset) decorate(quote Quote) Quote {
 	return quote
 }
 
+// FundingRow serves the market list: the instrument's rate, APR and open
+// interest in USD.
+func (dataset *Dataset) FundingRow(id venue.InstrumentID) (string, string, float64, bool) {
+	dataset.mu.RLock()
+	quote, ok := dataset.quotes[id]
+	dataset.mu.RUnlock()
+	if !ok {
+		return "", "", 0, false
+	}
+	oi, _ := decimal.NewFromString(quote.OiUsd)
+	value, _ := oi.Float64()
+	return quote.Rate, quote.Apr, value, true
+}
+
 // FundingOf serves the market feeds (ticker stream, 24h stats), so every
 // consumer reads funding from this one source.
 func (dataset *Dataset) FundingOf(id venue.InstrumentID) (market.FundingView, bool) {

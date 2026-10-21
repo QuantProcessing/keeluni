@@ -36,6 +36,7 @@ import (
 	"github.com/QuantProcessing/keeluni/gateway/ratelimit"
 	"github.com/QuantProcessing/keeluni/gateway/resident"
 	"github.com/QuantProcessing/keeluni/gateway/store"
+	"github.com/QuantProcessing/keeluni/gateway/tickers"
 	"github.com/QuantProcessing/keeluni/secretstore"
 )
 
@@ -138,6 +139,8 @@ func run() error {
 	go fundingData.Run(ctx)
 	optionChains := optionchain.New(catalog, residents)
 	go optionChains.Run(ctx)
+	marketList := tickers.New(catalog, residents, fundingData, httpClient)
+	go marketList.Run(ctx)
 
 	feeds := market.NewFeeds(catalog, fundingData)
 	publicHub := hub.New(feeds.Source, 30*time.Second)
@@ -153,7 +156,7 @@ func run() error {
 	server := &http.Server{
 		Addr: env("GATEWAY_ADDR", "127.0.0.1:8081"),
 		Handler: api.NewServer(token, api.Deps{
-			Catalog: catalog, Accounts: manager, Feeds: feeds, Funding: fundingData, Options: optionChains, Resident: residents,
+			Catalog: catalog, Accounts: manager, Feeds: feeds, Funding: fundingData, Options: optionChains, Tickers: marketList, Resident: residents,
 			Public: publicHub, Private: privateHub, Datasets: datasetHub, OptionChains: optionHub,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
