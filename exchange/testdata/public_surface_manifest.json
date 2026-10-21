@@ -8192,6 +8192,38 @@
       "tests": [
         "TestOptionPublicConnectorServesTheChain"
       ]
+    },
+    {
+      "id": "exchange.MarketTicker",
+      "kind": "type",
+      "coverage": "contract",
+      "tests": [
+        "TestPublicMarketTickersNormalizeVenueUnits"
+      ]
+    },
+    {
+      "id": "exchange/factory.NewPublicMarketTickers",
+      "kind": "func",
+      "coverage": "contract",
+      "tests": [
+        "TestPublicMarketTickersConstructWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange/factory.PublicMarketTickers",
+      "kind": "type",
+      "coverage": "contract",
+      "tests": [
+        "TestPublicMarketTickersConstructWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange/factory.PublicMarketTickers.Load",
+      "kind": "method",
+      "coverage": "contract",
+      "tests": [
+        "TestPublicMarketTickersNormalizeVenueUnits"
+      ]
     }
   ]
 }
