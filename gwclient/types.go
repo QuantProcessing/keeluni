@@ -160,6 +160,16 @@ type VenueMargin struct {
 }
 
 // Book is a top-N order book snapshot: [price, quantity] levels.
+// Candle is one bar; prices and volume as decimal strings.
+type Candle struct {
+	Time   int64  `json:"t"`
+	Open   string `json:"o"`
+	High   string `json:"h"`
+	Low    string `json:"l"`
+	Close  string `json:"c"`
+	Volume string `json:"v"`
+}
+
 type Book struct {
 	Bids [][2]string `json:"bids"`
 	Asks [][2]string `json:"asks"`

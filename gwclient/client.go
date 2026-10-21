@@ -226,6 +226,20 @@ func (client *Client) Cancel(ctx context.Context, accountID, instrument, orderID
 	return err
 }
 
+// Candles reads one page of an instrument's candles ending at end (zero:
+// now), oldest first; the venue caps the page (1000 at most).
+func (client *Client) Candles(ctx context.Context, instrument, interval string, end time.Time, limit int) ([]Candle, error) {
+	query := url.Values{"inst": {instrument}, "interval": {interval}}
+	if !end.IsZero() {
+		query.Set("end", strconv.FormatInt(end.UnixMilli(), 10))
+	}
+	if limit > 0 {
+		query.Set("limit", strconv.Itoa(limit))
+	}
+	var out []Candle
+	return out, client.get(ctx, "/v1/candles", query, &out)
+}
+
 func (client *Client) Funding(ctx context.Context, instrument string) (FundingQuote, error) {
 	var out FundingQuote
 	return out, client.get(ctx, "/v1/funding", url.Values{"inst": {instrument}}, &out)
