@@ -64,6 +64,63 @@ func (c *Client) GetInstrumentsByFamily(ctx context.Context, instType, instFamil
 	return Request[Instrument](c, ctx, MethodGet, path, nil, false)
 }
 
+// GetUnderlyings lists the underlyings ("BTC-USD") of an instrument type;
+// options are listed per underlying or family, never all at once.
+func (c *Client) GetUnderlyings(ctx context.Context, instType string) ([]string, error) {
+	params := url.Values{}
+	params.Add("instType", instType)
+	rows, err := Request[[]string](c, ctx, MethodGet, "/api/v5/public/underlying?"+params.Encode(), nil, false)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, row := range rows {
+		out = append(out, row...)
+	}
+	return out, nil
+}
+
+// GetInstrumentsByUnderlying lists every family of one underlying: for
+// options both the coin-margined (BTC-USD) and USD-margined (BTC-USD_UM)
+// families of BTC-USD.
+func (c *Client) GetInstrumentsByUnderlying(ctx context.Context, instType, underlying string) ([]Instrument, error) {
+	params := url.Values{}
+	params.Add("instType", instType)
+	params.Add("uly", underlying)
+	return Request[Instrument](c, ctx, MethodGet, "/api/v5/public/instruments?"+params.Encode(), nil, false)
+}
+
+// TickBand is one price band of an option family: prices in [MinPx, MaxPx)
+// move in TickSz.
+type TickBand struct {
+	MinPx  string `json:"minPx"`
+	MaxPx  string `json:"maxPx"`
+	TickSz string `json:"tickSz"`
+}
+
+// InstrumentTickBands are the price bands of one family.
+type InstrumentTickBands struct {
+	InstType   string     `json:"instType"`
+	InstFamily string     `json:"instFamily"`
+	TickBand   []TickBand `json:"tickBand"`
+}
+
+// GetInstrumentTickBands lists the tick bands of every family of a type
+// (OPTION): an option's instrument tickSz is only the finest band.
+func (c *Client) GetInstrumentTickBands(ctx context.Context, instType string) ([]InstrumentTickBands, error) {
+	params := url.Values{}
+	params.Add("instType", instType)
+	return Request[InstrumentTickBands](c, ctx, MethodGet, "/api/v5/public/instrument-tick-bands?"+params.Encode(), nil, false)
+}
+
+// GetOpenInterestsByFamily reads the open interest of one family.
+func (c *Client) GetOpenInterestsByFamily(ctx context.Context, instType, instFamily string) ([]OpenInterest, error) {
+	params := url.Values{}
+	params.Add("instType", instType)
+	params.Add("instFamily", instFamily)
+	return Request[OpenInterest](c, ctx, MethodGet, "/api/v5/public/open-interest?"+params.Encode(), nil, false)
+}
+
 // GetSpreads retrieves OKX Nitro spread instruments.
 func (c *Client) GetSpreads(ctx context.Context) ([]SpreadInstrument, error) {
 	return Request[SpreadInstrument](c, ctx, MethodGet, "/api/v5/sprd/spreads", nil, false)
@@ -149,6 +206,15 @@ func (c *Client) GetMarkPrice(ctx context.Context, instType, instId string) (*Ma
 
 // GetMarkPrices returns the full derivative mark-price surface for one native
 // market family. It intentionally omits instId instead of looping symbols.
+// GetMarkPricesByFamily reads every mark of one instrument family
+// (options: BTC-USD).
+func (c *Client) GetMarkPricesByFamily(ctx context.Context, instType, instFamily string) ([]MarkPrice, error) {
+	params := url.Values{}
+	params.Add("instType", instType)
+	params.Add("instFamily", instFamily)
+	return Request[MarkPrice](c, ctx, MethodGet, "/api/v5/public/mark-price?"+params.Encode(), nil, false)
+}
+
 func (c *Client) GetMarkPrices(ctx context.Context, instType string) ([]MarkPrice, error) {
 	params := url.Values{}
 	params.Add("instType", instType)

@@ -7,7 +7,10 @@ import { zh } from "./zh";
 const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map((match) => match[1]).sort();
 
 // Values that read the same in both languages: names, codes, symbols.
-const SAME = new Set(["nav.api", "asset.pre_ipo", "asset.rwa_other", "groups.orders.client"]);
+const SAME = new Set(["nav.api", "asset.pre_ipo", "asset.rwa_other", "groups.orders.client",
+  // Greek letters and order codes stay in Latin script in Chinese desks.
+  "options.showIv", "options.tif.gtc", "options.tif.ioc", "options.risk.delta", "options.risk.gamma", "options.risk.vega", "options.risk.theta",
+  "options.hedgeSent", "options.contractsCount"]);
 
 describe("dictionaries", () => {
   it("translate every key with the same placeholders", () => {

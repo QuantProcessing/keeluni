@@ -23,11 +23,12 @@ src/
     client.ts             gateway REST 客户端；ApiError；newClientOrderId
     realtime.ts           WebSocket：订阅、重连、保留最后一条
     hedge.ts              hedger 客户端；useHedgeGroups（推送）；useMatching；useHedgeHoldings
+    options.ts            期权链（useOptionSeries / useOptionChain / useOptionQuote）与 optioner 客户端（useOptionerStream）
     types.ts              gateway 的线上类型
   state/
     workspace.tsx         工作区：所选标的、全部账户与其实时状态、路由、委托与成交、交易账户选择、连接对话框
     hooks.ts              useInstruments / useBook / useTicker / useFunding / useAccountStreams …
-    route.ts              极简的前端路由（/、/hedge）
+    route.ts              极简的前端路由（/、/options、/hedge）
   features/
     market-header.tsx     行情头与市场选择器（InstrumentPicker，交易页与对冲页共用）
     chart.tsx             K 线与画线工具
@@ -39,6 +40,7 @@ src/
     connect.tsx           连接交易所对话框、账户菜单
     submit.ts             下单与结果未知时的查询
     hedge/                对冲页（组合栏、价差图、腿盘口、下单、对冲列表）
+    options/              期权页（系列栏、到期日、T 型报价、微笑与期限结构、组合下单、组合风险）；按需加载
   lib/
     format.ts             数字、价格、时间、交易所名称
     routes.ts             账户能否交易标的、账户选择、路由规则、权益、保证金等级

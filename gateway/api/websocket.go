@@ -9,6 +9,7 @@ import (
 
 	"github.com/QuantProcessing/keeluni/gateway/funding"
 	"github.com/QuantProcessing/keeluni/gateway/hub"
+	"github.com/QuantProcessing/keeluni/gateway/optionchain"
 	"github.com/coder/websocket"
 )
 
@@ -144,6 +145,12 @@ func (server *Server) route(key hub.Key) (hub.Key, *hub.Hub, error) {
 			return key, nil, errInvalidTopic
 		}
 		return key, server.datasets, server.funding.ValidKey(key)
+	}
+	if key.Channel == optionchain.Channel {
+		if server.optionHub == nil || server.options == nil {
+			return key, nil, errInvalidTopic
+		}
+		return key, server.optionHub, server.options.ValidKey(key)
 	}
 	if key.Channel == "account" {
 		if key.Instrument != "" || key.Interval != "" {

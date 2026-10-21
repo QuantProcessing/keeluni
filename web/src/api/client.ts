@@ -73,7 +73,7 @@ export const api = {
     request<{ quotes: FundingQuote[] }>("GET", gw("/funding" + query({ base })), undefined, signal),
   fundingHistory: (inst: string, since: number, signal?: AbortSignal) =>
     request<FundingPoint[]>("GET", gw("/funding/history" + query({ inst, since })), undefined, signal),
-  apps: () => request<{ hedge: boolean }>("GET", "/api/apps"),
+  apps: () => request<{ hedge: boolean; options?: boolean }>("GET", "/api/apps"),
 
   accounts: () => request<Account[]>("GET", gw("/accounts")),
   createAccount: (venue: string, label: string, credentials: Record<string, string>) =>

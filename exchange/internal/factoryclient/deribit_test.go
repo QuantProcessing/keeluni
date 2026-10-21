@@ -2,6 +2,7 @@ package factoryclient
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -75,11 +76,44 @@ func newDeribitStub(t *testing.T) *deribitStub {
 				t.Error(err)
 			}
 			payload = string(data)
+			if strings.Contains(method, "get_instruments") || strings.Contains(method, "book_summary") {
+				if r.URL.Query().Get("kind") == "option" {
+					payload = deribitFilterCurrency(payload, r.URL.Query().Get("currency"))
+				}
+			}
 		}
 		_, _ = io.WriteString(w, payload)
 	}))
 	t.Cleanup(stub.server.Close)
 	return stub
+}
+
+// deribitFilterCurrency keeps the rows Deribit files under currency (its
+// settlement currency), as the venue does for currency-scoped reads.
+func deribitFilterCurrency(payload, currency string) string {
+	if currency == "" || currency == "any" {
+		return payload
+	}
+	var envelope map[string]json.RawMessage
+	if json.Unmarshal([]byte(payload), &envelope) != nil {
+		return payload
+	}
+	var rows []map[string]any
+	if json.Unmarshal(envelope["result"], &rows) != nil {
+		return payload
+	}
+	kept := []map[string]any{}
+	for _, row := range rows {
+		settle, _ := row["settlement_currency"].(string)
+		name, _ := row["instrument_name"].(string)
+		linear := strings.Contains(name, "_USDC-")
+		if settle == currency || (settle == "" && ((currency == "USDC" && linear) || (!linear && strings.HasPrefix(name, currency+"-")))) {
+			kept = append(kept, row)
+		}
+	}
+	envelope["result"], _ = json.Marshal(kept)
+	out, _ := json.Marshal(envelope)
+	return string(out)
 }
 
 func (stub *deribitStub) set(method, body string) {

@@ -1,5 +1,5 @@
-# One image, three processes: gateway, trader (which also serves the web app)
-# and hedger (the hedge app; optional).
+# One image, four processes: gateway, trader (which also serves the web app),
+# hedger (the hedge app; optional) and optioner (the options app; optional).
 
 FROM node:22-alpine AS web
 WORKDIR /web
@@ -15,12 +15,12 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
 ARG TARGETOS TARGETARCH
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    for cmd in gateway trader hedger; do \
+    for cmd in gateway trader hedger optioner; do \
       CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/$cmd ./cmd/$cmd; \
     done
 # A named volume mounted at /data copies this directory's ownership, so the
 # nonroot user (65532) can write state without running as root.
-RUN mkdir -p /data/gateway /data/trader /data/hedger && chown -R 65532:65532 /data && chmod -R 0700 /data
+RUN mkdir -p /data/gateway /data/trader /data/hedger /data/optioner && chown -R 65532:65532 /data && chmod -R 0700 /data
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=go /out/ /usr/local/bin/

@@ -13,6 +13,7 @@ import (
 	"github.com/QuantProcessing/keeluni/gateway/market"
 	"github.com/QuantProcessing/keeluni/gateway/ratelimit"
 	"github.com/QuantProcessing/keeluni/gateway/venue"
+	"github.com/shopspring/decimal"
 )
 
 // routeClient is one authenticated client of an account and the markets it
@@ -25,26 +26,64 @@ type routeClient struct {
 	markets []venue.Market
 	spot    exchange.SpotClient
 	perp    exchange.PerpClient
+	option  exchange.OptionClient
 	broker  bool
 }
 
 func (client routeClient) orders() exchange.OrderREST {
-	if client.perp != nil {
+	switch {
+	case client.perp != nil:
 		return client.perp
+	case client.option != nil:
+		return client.option
 	}
 	return client.spot
 }
 
+// market is the client's instrument surface.
+func (client routeClient) market() exchange.MarketREST {
+	return client.orders().(exchange.MarketREST)
+}
+
 func (client routeClient) socket() any {
-	if client.perp != nil {
+	switch {
+	case client.perp != nil:
 		return client.perp.WebSocket()
+	case client.option != nil:
+		return client.option.WebSocket()
 	}
 	return client.spot.WebSocket()
+}
+
+// holdsPositions reports a client whose account has positions (derivatives).
+func (client routeClient) holdsPositions() bool { return client.perp != nil || client.option != nil }
+
+func (client routeClient) balances(ctx context.Context) ([]exchange.Balance, error) {
+	switch {
+	case client.perp != nil:
+		return client.perp.Balances(ctx)
+	case client.option != nil:
+		return client.option.Balances(ctx)
+	}
+	return client.spot.Balances(ctx)
+}
+
+func (client routeClient) positions(ctx context.Context) ([]exchange.Position, error) {
+	switch {
+	case client.perp != nil:
+		return client.perp.Positions(ctx, exchange.PositionsRequest{})
+	case client.option != nil:
+		return client.option.Positions(ctx, exchange.PositionsRequest{})
+	}
+	return nil, nil
 }
 
 func (client routeClient) close() {
 	if client.perp != nil {
 		_ = client.perp.Close()
+	}
+	if client.option != nil {
+		_ = client.option.Close()
 	}
 	if client.spot != nil {
 		_ = client.spot.Close()
@@ -63,15 +102,28 @@ func (client routeClient) trades(market venue.Market) bool {
 // balanceMarket labels the client's balances: the market for a native client,
 // the broker's single pool for a broker client.
 func (client routeClient) balanceMarket() string {
-	if client.broker {
+	if client.broker || sharedWallets[client.key.Venue] {
 		return string(client.key.Venue)
 	}
 	return client.key.String()
 }
 
+// sharedWallets are venues whose products draw on one wallet per currency:
+// every Deribit client (perp, spot, option) and every OKX client (one
+// unified trading account) reads the same balances, which are labelled with
+// the venue and listed once.
+var sharedWallets = map[exchange.Venue]bool{exchange.VenueDeribit: true, exchange.VenueOKX: true}
+
 // buildClients constructs the account's clients. Construction is local; no
 // network I/O happens here.
 func buildClients(accountID string, decoded *credential.Decoded, httpClient *http.Client, catalog *market.Catalog) ([]routeClient, error) {
+	return buildClientsWithAsks(accountID, decoded, httpClient, catalog, nil)
+}
+
+// BestAsk reads an instrument's best ask from its own venue's public market.
+type BestAsk func(context.Context, exchange.Instrument) (decimal.Decimal, error)
+
+func buildClientsWithAsks(accountID string, decoded *credential.Decoded, httpClient *http.Client, catalog *market.Catalog, asks BestAsk) ([]routeClient, error) {
 	// Each account gets its own endpoint budget key so one busy account cannot
 	// starve another's writes; the venue-wide egress budget stays shared.
 	hash := sha256.Sum256([]byte(accountID))
@@ -83,7 +135,7 @@ func buildClients(accountID string, decoded *credential.Decoded, httpClient *htt
 		if !ok {
 			return nil, fmt.Errorf("%s credentials have the wrong shape", decoded.Venue)
 		}
-		perp, err := factory.New(factory.CrossExPerpConfig(credentials.APIKey, credentials.APISecret, brokerNatives(catalog, broker), options...))
+		perp, err := factory.New(factory.CrossExConfig(credentials.APIKey, credentials.APISecret, brokerNatives(catalog, broker), factory.BestAskSource(asks), options...))
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", broker.Venue, err)
 		}
@@ -107,9 +159,21 @@ func buildClients(accountID string, decoded *credential.Decoded, httpClient *htt
 			case "binance:perp:USDT":
 				client.perp, err = factory.New(factory.BinanceUSDPerpConfig(key, secret, options...))
 			case "kraken:perp:USD":
-				client.perp, err = factory.New(factory.KrakenPerpConfig(key, secret, options...))
+				if key != "" {
+					client.perp, err = factory.New(factory.KrakenPerpConfig(key, secret, options...))
+				}
 			case "deribit:perp:USDC":
 				client.perp, err = factory.New(factory.DeribitPerpConfig(key, secret, options...))
+			case "deribit:spot":
+				client.spot, err = factory.New(factory.DeribitSpotConfig(key, secret, options...))
+			case "deribit:option":
+				client.option, err = factory.New(factory.DeribitOptionConfig(key, secret, options...))
+			case "kraken:spot":
+				// Kraken Spot keys are a separate pair; one Kraken account
+				// holds both, added as optional fields (see credential).
+				if spotKey, spotSecret := credentials.SpotKeys(); spotKey != "" {
+					client.spot, err = factory.New(factory.KrakenSpotConfig(spotKey, spotSecret, options...))
+				}
 			case "bybit:spot":
 				client.spot, err = factory.New(factory.BybitSpotConfig(key, secret, options...))
 			case "bybit:perp:USDT":
@@ -128,6 +192,8 @@ func buildClients(accountID string, decoded *credential.Decoded, httpClient *htt
 				client.spot, err = factory.New(factory.OKXSpotConfig(key, secret, passphrase, options...))
 			case "okx:perp:USDT":
 				client.perp, err = factory.New(factory.OKXUSDTPerpConfig(key, secret, passphrase, options...))
+			case "okx:option":
+				client.option, err = factory.New(factory.OKXOptionConfig(key, secret, passphrase, options...))
 			case "bitget:spot":
 				client.spot, err = factory.New(factory.BitgetSpotConfig(key, secret, passphrase, options...))
 			case "bitget:perp:USDT":
@@ -160,7 +226,7 @@ func buildClients(accountID string, decoded *credential.Decoded, httpClient *htt
 			}
 			return nil, fmt.Errorf("%s: %w", market, err)
 		}
-		if client.spot == nil && client.perp == nil {
+		if client.spot == nil && client.perp == nil && client.option == nil {
 			continue
 		}
 		clients = append(clients, client)

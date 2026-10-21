@@ -7891,6 +7891,307 @@
         "TestPublicFundingBoardCoversEveryServedPerpMarket",
         "TestPublicFundingBoardDeliversNativeFacts"
       ]
+    },
+    {
+      "id": "exchange.InstrumentRules.TickAt",
+      "kind": "method",
+      "coverage": "unit",
+      "tests": [
+        "TestCoarseTickAppliesAboveItsBoundary"
+      ]
+    },
+    {
+      "id": "exchange.IsDerivative",
+      "kind": "func",
+      "coverage": "unit",
+      "tests": [
+        "TestOptionProductIsModelled"
+      ]
+    },
+    {
+      "id": "exchange.KnownProduct",
+      "kind": "func",
+      "coverage": "unit",
+      "tests": [
+        "TestOptionProductIsModelled"
+      ]
+    },
+    {
+      "id": "exchange.MarketFamilyOption",
+      "kind": "const",
+      "coverage": "unit",
+      "tests": [
+        "TestOptionProductIsModelled"
+      ]
+    },
+    {
+      "id": "exchange.NativeFamilyOption",
+      "kind": "const",
+      "coverage": "contract",
+      "tests": [
+        "TestOptionInterfacesShape"
+      ]
+    },
+    {
+      "id": "exchange.OptionAccount",
+      "kind": "type",
+      "coverage": "contract",
+      "tests": [
+        "TestOptionInterfacesShape"
+      ]
+    },
+    {
+      "id": "exchange.OptionAccountREST",
+      "kind": "interface",
+      "coverage": "contract",
+      "tests": [
+        "TestOptionInterfacesShape",
+        "TestSpotAndOptionConfigsConstructWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange.OptionAccountREST.Balances",
+      "kind": "interface_method",
+      "coverage": "contract",
+      "tests": [
+        "TestOptionInterfacesShape"
+      ]
+    },
+    {
+      "id": "exchange.OptionAccountREST.OptionAccount",
+      "kind": "interface_method",
+      "coverage": "contract",
+      "tests": [
+        "TestOptionInterfacesShape"
+      ]
+    },
+    {
+      "id": "exchange.OptionAccountREST.Positions",
+      "kind": "interface_method",
+      "coverage": "contract",
+      "tests": [
+        "TestOptionInterfacesShape"
+      ]
+    },
+    {
+      "id": "exchange.OptionCall",
+      "kind": "const",
+      "coverage": "unit",
+      "tests": [
+        "TestOptionProductIsModelled"
+      ]
+    },
+    {
+      "id": "exchange.OptionChainRequest",
+      "kind": "type",
+      "coverage": "contract",
+      "tests": [
+        "TestOptionInterfacesShape"
+      ]
+    },
+    {
+      "id": "exchange.OptionClient",
+      "kind": "interface",
+      "coverage": "contract",
+      "tests": [
+        "TestOptionInterfacesShape",
+        "TestSpotAndOptionConfigsConstructWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange.OptionClient.Close",
+      "kind": "interface_method",
+      "coverage": "contract",
+      "tests": [
+        "TestOptionInterfacesShape"
+      ]
+    },
+    {
+      "id": "exchange.OptionClient.WebSocket",
+      "kind": "interface_method",
+      "coverage": "contract",
+      "tests": [
+        "TestOptionInterfacesShape"
+      ]
+    },
+    {
+      "id": "exchange.OptionGreeks",
+      "kind": "type",
+      "coverage": "contract",
+      "tests": [
+        "TestOptionInterfacesShape"
+      ]
+    },
+    {
+      "id": "exchange.OptionKind",
+      "kind": "type",
+      "coverage": "unit",
+      "tests": [
+        "TestOptionProductIsModelled"
+      ]
+    },
+    {
+      "id": "exchange.OptionMarketREST",
+      "kind": "interface",
+      "coverage": "contract",
+      "tests": [
+        "TestOptionInterfacesShape",
+        "TestSpotAndOptionConfigsConstructWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange.OptionMarketREST.OptionChain",
+      "kind": "interface_method",
+      "coverage": "contract",
+      "tests": [
+        "TestOptionInterfacesShape"
+      ]
+    },
+    {
+      "id": "exchange.OptionPut",
+      "kind": "const",
+      "coverage": "unit",
+      "tests": [
+        "TestOptionProductIsModelled"
+      ]
+    },
+    {
+      "id": "exchange.OptionQuote",
+      "kind": "type",
+      "coverage": "contract",
+      "tests": [
+        "TestOptionInterfacesShape"
+      ]
+    },
+    {
+      "id": "exchange.OptionQuoteWebSocket",
+      "kind": "interface",
+      "coverage": "contract",
+      "tests": [
+        "TestOptionInterfacesShape",
+        "TestSpotAndOptionConfigsConstructWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange.OptionQuoteWebSocket.WatchOptionQuote",
+      "kind": "interface_method",
+      "coverage": "contract",
+      "tests": [
+        "TestOptionInterfacesShape"
+      ]
+    },
+    {
+      "id": "exchange.OptionTerms",
+      "kind": "type",
+      "coverage": "unit",
+      "tests": [
+        "TestOptionProductIsModelled"
+      ]
+    },
+    {
+      "id": "exchange.OptionTerms.IsZero",
+      "kind": "method",
+      "coverage": "unit",
+      "tests": [
+        "TestOptionProductIsModelled"
+      ]
+    },
+    {
+      "id": "exchange.OptionTerms.Validate",
+      "kind": "method",
+      "coverage": "unit",
+      "tests": [
+        "TestOptionProductIsModelled"
+      ]
+    },
+    {
+      "id": "exchange.OptionWebSocket",
+      "kind": "interface",
+      "coverage": "contract",
+      "tests": [
+        "TestOptionInterfacesShape",
+        "TestSpotAndOptionConfigsConstructWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange.OptionWebSocket.WatchOptionQuote",
+      "kind": "interface_method",
+      "coverage": "contract",
+      "tests": [
+        "TestOptionInterfacesShape"
+      ]
+    },
+    {
+      "id": "exchange.OptionWebSocket.WatchPositions",
+      "kind": "interface_method",
+      "coverage": "contract",
+      "tests": [
+        "TestOptionInterfacesShape"
+      ]
+    },
+    {
+      "id": "exchange.ProductOption",
+      "kind": "const",
+      "coverage": "contract",
+      "tests": [
+        "TestOptionProductIsModelled"
+      ]
+    },
+    {
+      "id": "exchange/factory.BestAskSource",
+      "kind": "type",
+      "coverage": "contract",
+      "tests": [
+        "TestSpotAndOptionConfigsConstructWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange/factory.CrossExConfig",
+      "kind": "func",
+      "coverage": "contract",
+      "tests": [
+        "TestSpotAndOptionConfigsConstructWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange/factory.DeribitOptionConfig",
+      "kind": "func",
+      "coverage": "contract",
+      "tests": [
+        "TestSpotAndOptionConfigsConstructWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange/factory.DeribitSpotConfig",
+      "kind": "func",
+      "coverage": "contract",
+      "tests": [
+        "TestSpotAndOptionConfigsConstructWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange/factory.KrakenSpotConfig",
+      "kind": "func",
+      "coverage": "contract",
+      "tests": [
+        "TestSpotAndOptionConfigsConstructWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange/factory.OKXOptionConfig",
+      "kind": "func",
+      "coverage": "contract",
+      "tests": [
+        "TestSpotAndOptionConfigsConstructWithoutIO"
+      ]
+    },
+    {
+      "id": "exchange/factory.PublicMarketConnector.OptionChain",
+      "kind": "method",
+      "coverage": "contract",
+      "tests": [
+        "TestOptionPublicConnectorServesTheChain"
+      ]
     }
   ]
 }

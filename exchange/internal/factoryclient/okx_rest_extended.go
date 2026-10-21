@@ -299,10 +299,7 @@ func okxOrderHistory(
 	if !req.Start.IsZero() || !req.End.IsZero() {
 		return exchange.OrderPage{}, okxInvalid(product, "OrderHistory", "OKX order history does not support exchange time windows")
 	}
-	instType := okxSpotType
-	if product == exchange.ProductPerp {
-		instType = okxSwapType
-	}
+	instType := okxInstType(product)
 	rows, err := sdk.GetOrderHistory(ctx, instType, instrument, req.Cursor, "", req.Limit)
 	if err != nil {
 		return exchange.OrderPage{}, okxNormalizeErr(product, "OrderHistory", err)

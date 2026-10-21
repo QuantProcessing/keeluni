@@ -54,6 +54,7 @@ func TestPublicMarketConnectorsCoverProfilesWithoutCredentialsOrConstructionIO(t
 			"WatchPublicTrades": true, "WatchCandles": true,
 			"WatchMarkPrice": wantPerp, "WatchFundingRate": wantPerp,
 			"WatchDerivativeReference": wantPerp,
+			"WatchOptionQuote":         profile.Product == routeprofile.ProductOption,
 		}
 		typ := reflect.TypeOf(socket)
 		for index := 0; index < typ.NumMethod(); index++ {

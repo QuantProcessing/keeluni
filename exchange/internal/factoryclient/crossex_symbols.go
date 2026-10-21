@@ -21,6 +21,8 @@ type crossExMarket struct {
 	exchangeType string
 	venue        exchange.Venue
 	settlement   string
+	// product is perp unless set; spot rows match on canonical BASE-QUOTE.
+	product exchange.Product
 	// native returns the underlying venue's native symbol for a CrossEx row.
 	native func(row crossex.Symbol) string
 }
@@ -29,23 +31,29 @@ type crossExMarket struct {
 // counterpart, whose catalog supplies identity; OKX USDC perps are absent
 // because CrossEx quotes them in contracts of unknown size.
 var crossExMarkets = []crossExMarket{
-	{"BINANCE", exchange.VenueBinance, "USDT", func(row crossex.Symbol) string { return row.Base() + "USDT" }},
-	{"BINANCE", exchange.VenueBinance, "USDC", func(row crossex.Symbol) string { return row.Base() + "USDC" }},
-	{"OKX", exchange.VenueOKX, "USDT", func(row crossex.Symbol) string { return row.Base() + "-USDT-SWAP" }},
-	{"BYBIT", exchange.VenueBybit, "USDT", func(row crossex.Symbol) string { return row.Base() + "USDT" }},
-	{"BYBIT", exchange.VenueBybit, "USDC", func(row crossex.Symbol) string { return row.Base() + "PERP" }},
-	{"GATE", exchange.VenueGate, "USDT", func(row crossex.Symbol) string { return row.Base() + "_USDT" }},
-	{"HYPERLIQUID", exchange.VenueHyperliquid, "USDC", func(row crossex.Symbol) string {
+	{"BINANCE", exchange.VenueBinance, "USDT", "", func(row crossex.Symbol) string { return row.Base() + "USDT" }},
+	{"BINANCE", exchange.VenueBinance, "USDC", "", func(row crossex.Symbol) string { return row.Base() + "USDC" }},
+	{"OKX", exchange.VenueOKX, "USDT", "", func(row crossex.Symbol) string { return row.Base() + "-USDT-SWAP" }},
+	{"BYBIT", exchange.VenueBybit, "USDT", "", func(row crossex.Symbol) string { return row.Base() + "USDT" }},
+	{"BYBIT", exchange.VenueBybit, "USDC", "", func(row crossex.Symbol) string { return row.Base() + "PERP" }},
+	{"GATE", exchange.VenueGate, "USDT", "", func(row crossex.Symbol) string { return row.Base() + "_USDT" }},
+	{"HYPERLIQUID", exchange.VenueHyperliquid, "USDC", "", func(row crossex.Symbol) string {
 		// Builder-deployed markets carry their dex in the tag.
 		if dex := strings.TrimSpace(row.Tag); dex != "" {
 			return dex + ":" + row.Base()
 		}
 		return row.Base()
 	}},
-	{"LIGHTER", exchange.VenueLighter, "USDC", func(row crossex.Symbol) string { return row.Base() }},
-	{"KRAKEN", exchange.VenueKraken, "USD", func(row crossex.Symbol) string { return "PF_" + krakenNativeBase(row.Base()) + "USD" }},
-	{"DERIBIT", exchange.VenueDeribit, "USDC", func(row crossex.Symbol) string { return row.Base() + "_USDC-PERPETUAL" }},
+	{"LIGHTER", exchange.VenueLighter, "USDC", "", func(row crossex.Symbol) string { return row.Base() }},
+	{"KRAKEN", exchange.VenueKraken, "USD", "", func(row crossex.Symbol) string { return "PF_" + krakenNativeBase(row.Base()) + "USD" }},
+	{"DERIBIT", exchange.VenueDeribit, "USDC", "", func(row crossex.Symbol) string { return row.Base() + "_USDC-PERPETUAL" }},
 }
+
+// crossExSpotMarkets are the spot books CrossEx reaches. Measured
+// 2026-10-20: every live Binance, OKX, Bybit and Gate spot row matches the
+// native catalog by canonical BASE-QUOTE (2939 of 2939). Deribit's spot rows
+// (BTC_USDT, ETH_USDT, USDC_USDT, USDE_USDT) match Deribit spot the same way.
+var crossExSpotMarkets = []string{"BINANCE", "OKX", "BYBIT", "GATE", "DERIBIT"}
 
 // krakenNativeBase spells a CrossEx base as Kraken does: bitcoin is XBT.
 func krakenNativeBase(base string) string {
@@ -72,6 +80,15 @@ func CrossExReachableMarkets() []CrossExMarketRoute {
 }
 
 func crossExMarketFor(row crossex.Symbol) (crossExMarket, bool) {
+	if row.BusinessType == crossex.BusinessSpot {
+		for _, exchangeType := range crossExSpotMarkets {
+			if exchangeType == row.ExchangeType {
+				venue, _ := crossExVenueOf(exchangeType)
+				return crossExMarket{exchangeType: exchangeType, venue: venue, product: exchange.ProductSpot}, true
+			}
+		}
+		return crossExMarket{}, false
+	}
 	for _, market := range crossExMarkets {
 		if market.exchangeType == row.ExchangeType && market.settlement == row.Quote() {
 			return market, true
@@ -90,8 +107,10 @@ type CrossExMapping struct {
 	Unmatched map[string]int
 }
 
-// MapCrossExInstruments matches live CrossEx futures rows to native perp
-// instruments. natives may mix venues; only reachable markets are consulted.
+// MapCrossExInstruments matches live CrossEx futures and spot rows to
+// native instruments. natives may mix venues and products; only reachable
+// markets are consulted. Futures match by native symbol, spot by canonical
+// BASE-QUOTE.
 func MapCrossExInstruments(rows []crossex.Symbol, natives []exchange.Instrument) (CrossExMapping, error) {
 	type nativeKey struct {
 		venue  exchange.Venue
@@ -99,18 +118,21 @@ func MapCrossExInstruments(rows []crossex.Symbol, natives []exchange.Instrument)
 		symbol string
 	}
 	byNative := make(map[nativeKey]exchange.Instrument, len(natives))
+	bySpot := make(map[nativeKey]exchange.Instrument)
 	for _, instrument := range natives {
 		identity := instrument.Identity
-		if identity.Product != exchange.ProductPerp {
-			continue
+		switch identity.Product {
+		case exchange.ProductPerp:
+			byNative[nativeKey{identity.Venue, instrumentSettlement(instrument), identity.NativeSymbol}] = instrument
+		case exchange.ProductSpot:
+			bySpot[nativeKey{venue: identity.Venue, symbol: identity.Symbol}] = instrument
 		}
-		byNative[nativeKey{identity.Venue, instrumentSettlement(instrument), identity.NativeSymbol}] = instrument
 	}
 
 	mapping := CrossExMapping{Unmatched: map[string]int{}}
 	seen := map[string]bool{}
 	for _, row := range rows {
-		if row.BusinessType != crossex.BusinessFuture || row.State != "live" {
+		if (row.BusinessType != crossex.BusinessFuture && row.BusinessType != crossex.BusinessSpot) || row.State != "live" {
 			continue
 		}
 		market, ok := crossExMarketFor(row)
@@ -118,7 +140,12 @@ func MapCrossExInstruments(rows []crossex.Symbol, natives []exchange.Instrument)
 			mapping.Unmatched[row.ExchangeType]++
 			continue
 		}
-		native, ok := byNative[nativeKey{market.venue, market.settlement, market.native(row)}]
+		var native exchange.Instrument
+		if market.product == exchange.ProductSpot {
+			native, ok = bySpot[nativeKey{venue: market.venue, symbol: row.Base() + "-" + row.Quote()}]
+		} else {
+			native, ok = byNative[nativeKey{market.venue, market.settlement, market.native(row)}]
+		}
 		if !ok {
 			mapping.Unmatched[row.ExchangeType]++
 			continue
@@ -127,7 +154,7 @@ func MapCrossExInstruments(rows []crossex.Symbol, natives []exchange.Instrument)
 		if err != nil {
 			return CrossExMapping{}, fmt.Errorf("crossex symbol %s: %w", row.Symbol, err)
 		}
-		key := string(instrument.Identity.Venue) + ":" + instrument.Identity.Symbol
+		key := crossExKey(instrument.Identity)
 		if seen[key] {
 			return CrossExMapping{}, fmt.Errorf("crossex symbols map twice onto %s", key)
 		}
@@ -142,6 +169,16 @@ func MapCrossExInstruments(rows []crossex.Symbol, natives []exchange.Instrument)
 		return a.Symbol < b.Symbol
 	})
 	return mapping, nil
+}
+
+// crossExKey names an instrument the way a CrossEx client resolves it:
+// "venue:SYMBOL" for perps, "venue:spot:SYMBOL" for spot (a spot and a perp
+// can share a canonical symbol).
+func crossExKey(identity exchange.InstrumentIdentity) string {
+	if identity.Product == exchange.ProductSpot {
+		return string(identity.Venue) + ":spot:" + identity.Symbol
+	}
+	return string(identity.Venue) + ":" + identity.Symbol
 }
 
 func instrumentSettlement(instrument exchange.Instrument) string {

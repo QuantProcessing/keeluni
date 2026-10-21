@@ -42,7 +42,8 @@ func TestMapCrossExInstrumentsMatchesByNativeSymbol(t *testing.T) {
 		nativePerp(exchange.VenueKraken, "BTC-USD", "BTC", "USD", "PF_XBTUSD", "1", "0.0001"),
 		nativePerp(exchange.VenueKraken, "TSLAX-USD", "TSLAX", "USD", "PF_TSLAXUSD", "0.01", "0.01"),
 		nativePerp(exchange.VenueDeribit, "AAPL-USDC", "AAPL", "USDC", "AAPL_USDC-PERPETUAL", "0.01", "0.01"),
-		// A native spot instrument with the same native symbol must not match.
+		// A native spot instrument: a futures row must not match it, the
+		// spot row must.
 		newInstrument(exchange.VenueBinance, exchange.ProductSpot, "ETH-USDT", "ETH", "USDT", "", "ETHUSDT", "",
 			decimal.RequireFromString("0.01"), decimal.RequireFromString("0.0001"), decimal.RequireFromString("0.0001"), exchange.OptionalDecimal{}, oneContract()),
 	}
@@ -95,6 +96,7 @@ func TestMapCrossExInstrumentsMatchesByNativeSymbol(t *testing.T) {
 		"KRAKEN_FUTURE_BTC_USD":         {exchange.VenueKraken, "BTC-USD"},
 		"KRAKEN_FUTURE_TSLAX_USD":       {exchange.VenueKraken, "TSLAX-USD"},
 		"DERIBIT_FUTURE_AAPL_USDC":      {exchange.VenueDeribit, "AAPL-USDC"},
+		"BINANCE_SPOT_ETH_USDT":         {exchange.VenueBinance, "ETH-USDT"},
 	}
 	if len(got) != len(wantIdentity) {
 		t.Fatalf("mapped %d instruments, want %d: %v", len(got), len(wantIdentity), mapKeysOf(got))
@@ -104,7 +106,11 @@ func TestMapCrossExInstrumentsMatchesByNativeSymbol(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s was not mapped", native)
 		}
-		if instrument.Identity.Venue != want.venue || instrument.Identity.Symbol != want.symbol || instrument.Identity.Product != exchange.ProductPerp {
+		wantProduct := exchange.ProductPerp
+		if strings.Contains(native, "_SPOT_") {
+			wantProduct = exchange.ProductSpot
+		}
+		if instrument.Identity.Venue != want.venue || instrument.Identity.Symbol != want.symbol || instrument.Identity.Product != wantProduct {
 			t.Fatalf("%s identity = %+v", native, instrument.Identity)
 		}
 		if err := instrument.Validate(); err != nil {

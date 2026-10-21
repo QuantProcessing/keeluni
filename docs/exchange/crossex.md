@@ -1,6 +1,6 @@
 # Gate CrossEx
 
-Gate CrossEx 让**一套 API Key、一个保证金池**交易多个交易所的永续合约：Binance、OKX、Bybit、Gate、Hyperliquid、Lighter、Kraken、Deribit。各交易所之间的盈亏在同一个池里互抵，也一起被强平。
+Gate CrossEx 让**一套 API Key、一个保证金池**交易多个交易所的永续合约：Binance、OKX、Bybit、Gate、Hyperliquid、Lighter、Kraken、Deribit；以及 Binance、OKX、Bybit、Gate、Deribit 的现货。各交易所之间的盈亏在同一个池里互抵，也一起被强平。
 
 规格来源：Gate CrossEx API v1.0.6（2026-10-12）、CrossEx WebSocket v1.0.0、`github.com/gate/gateapi-go` v4.106.160 的 `api_cross_ex.go` / `model_crossex_*.go`。
 
@@ -48,6 +48,9 @@ CrossEx symbol 格式 `{EXCHANGE}_{BUSINESS}_{BASE}_{QUOTE}`。映射按**交易
 | `KRAKEN_FUTURE_{B}_USD` | `PF_{B}USD`（`BTC` → `XBT`） | `kraken:perp:USD` | 205/205 |
 | `DERIBIT_FUTURE_{B}_USDC` | `{B}_USDC-PERPETUAL` | `deribit:perp:USDC` | 142/142 |
 
+- **现货**：`{EXCHANGE}_SPOT_{B}_{Q}` 按规范 `B-Q` 与原生现货目录匹配。2026-10-20 实测 Binance 485、OKX 439、Bybit 387、Gate 1628 行全部匹配；Deribit 只有 USDT 计价的 4 行。经纪客户端用 `venue:spot:SYMBOL` 解析现货标的（同一规范 symbol 可能同时是永续）。
+- **现货市价买单**必须以 `quote_qty`（计价币数量）下单、不接受 `qty`。gateway 从标的所在交易所读最优卖价换算并向上取整；读不到报价时不发送（`CommandNotSent`）。限价单与卖单仍按数量。
+- 杠杆（`MARGIN`）、股票、ETF 行不在范围内，订单查询与私有流按 `business_type` 过滤掉。
 - 映射在 CrossEx 规则表（`GET /crossex/rule/symbols`，公开）或原生标的目录刷新后重建。
 - `state != live` 或映射不到的行不进入可交易集合，并计入目录状态便于观测。
 - **OKX USDC 合约（240 个）未接入**：CrossEx 行情按张推送，下单用币，面值没有可靠来源，单位无法证明前不接入。

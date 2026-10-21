@@ -11,6 +11,7 @@ import (
 	gate "github.com/QuantProcessing/keeluni/sdk/gate"
 	hyperliquid "github.com/QuantProcessing/keeluni/sdk/hyperliquid"
 	kraken "github.com/QuantProcessing/keeluni/sdk/kraken"
+	krakenspot "github.com/QuantProcessing/keeluni/sdk/krakenspot"
 	"github.com/QuantProcessing/keeluni/sdk/lighter"
 	nadosdk "github.com/QuantProcessing/keeluni/sdk/nado"
 	"github.com/QuantProcessing/keeluni/sdk/okx"
@@ -53,7 +54,7 @@ func ApplyDefaultCatalogEndpoints(configName string, descriptor *exchange.Source
 		if descriptor.WebSocketEndpoint == "" {
 			descriptor.WebSocketEndpoint = lighter.MainnetWSURL
 		}
-	case "okx-spot", "okx-usdt-perp":
+	case "okx-spot", "okx-usdt-perp", "okx-option":
 		endpoints := okx.DefaultEndpointURLs()
 		if descriptor.Endpoint == "" {
 			descriptor.Endpoint = endpoints.REST
@@ -133,7 +134,14 @@ func ApplyDefaultCatalogEndpoints(configName string, descriptor *exchange.Source
 		if descriptor.WebSocketEndpoint == "" {
 			descriptor.WebSocketEndpoint = kraken.DefaultWSURL
 		}
-	case "deribit-usdc-perp":
+	case "kraken-spot":
+		if descriptor.Endpoint == "" {
+			descriptor.Endpoint = krakenspot.DefaultRESTBaseURL
+		}
+		if descriptor.WebSocketEndpoint == "" {
+			descriptor.WebSocketEndpoint = krakenspot.DefaultWSURL
+		}
+	case "deribit-usdc-perp", "deribit-spot", "deribit-option":
 		if descriptor.Endpoint == "" {
 			descriptor.Endpoint = deribit.DefaultRESTBaseURL
 		}

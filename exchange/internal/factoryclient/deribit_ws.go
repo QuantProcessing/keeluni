@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantProcessing/keeluni/exchange"
@@ -16,12 +17,12 @@ import (
 // owns one supervised connection; private watches share none (each opens its
 // own authenticated connection), matching how the socket layer shares topics.
 type deribitWSBackend struct {
-	client    *deribitPerpClient
+	client    *deribitBase
 	lifecycle context.Context
 	cancel    context.CancelFunc
 }
 
-func newDeribitWSBackend(client *deribitPerpClient) *deribitWSBackend {
+func newDeribitWSBackend(client *deribitBase) *deribitWSBackend {
 	lifecycle, cancel := context.WithCancel(context.Background())
 	return &deribitWSBackend{client: client, lifecycle: lifecycle, cancel: cancel}
 }
@@ -233,6 +234,17 @@ func (backend *deribitWSBackend) StartReference(ctx context.Context, instrument 
 
 var deribitAccountChannels = []string{"user.changes.future." + deribitCurrency + ".raw", "user.portfolio." + deribitCurrency}
 
+// accountChannels are the private channels of the client's scope: changes of
+// its kind, and the portfolio of every currency it settles in.
+func (backend *deribitWSBackend) accountChannels() []string {
+	scope := backend.client.scope
+	channels := []string{"user.changes." + scope.kind + "." + scope.eventCurrency + ".raw"}
+	for _, currency := range scope.currencies {
+		channels = append(channels, "user.portfolio."+currency)
+	}
+	return channels
+}
+
 type deribitChanges struct {
 	InstrumentName string             `json:"instrument_name"`
 	Trades         []deribit.Trade    `json:"trades"`
@@ -241,12 +253,13 @@ type deribitChanges struct {
 }
 
 func deribitAccountEvents(note deribit.Notification) ([]accountBackendEvent, error) {
-	if note.Channel == deribitAccountChannels[1] {
+	if strings.HasPrefix(note.Channel, "user.portfolio.") {
 		var summary deribit.AccountSummary
 		if deribit.Decode(note.Data, &summary) != nil {
 			return nil, fmt.Errorf("deribit portfolio message is malformed")
 		}
-		return []accountBackendEvent{{Kind: exchange.AccountEventBalance, Balance: &exchange.BalanceEvent{Kind: exchange.EventSnapshot, Balances: deribitBalances(summary), Time: time.Now().UTC()}}}, nil
+		// One currency's balance: a delta to the others.
+		return []accountBackendEvent{{Kind: exchange.AccountEventBalance, Balance: &exchange.BalanceEvent{Kind: exchange.EventDelta, Balances: deribitSummaryBalances(summary), Time: time.Now().UTC()}}}, nil
 	}
 	var changes deribitChanges
 	if deribit.Decode(note.Data, &changes) != nil {
@@ -262,6 +275,9 @@ func deribitAccountEvents(note deribit.Notification) ([]accountBackendEvent, err
 		out = append(out, accountBackendEvent{Kind: exchange.AccountEventFill, NativeSymbol: fill.NativeSymbol, Fill: &exchange.FillEvent{Kind: exchange.EventDelta, Fill: fill}})
 	}
 	for _, row := range changes.Positions {
+		if row.Kind == "spot" {
+			continue
+		}
 		position := deribitPosition(row)
 		positions := []exchange.Position{}
 		if !position.Quantity.IsZero() {
@@ -275,12 +291,12 @@ func deribitAccountEvents(note deribit.Notification) ([]accountBackendEvent, err
 
 func (backend *deribitWSBackend) private(ctx context.Context, status func(backendStatus), onError func(error), emit func(accountBackendEvent)) (func() error, error) {
 	return startSupervisedStream(ctx, backend.lifecycle, func(runCtx context.Context, ready func()) error {
-		return backend.client.stream().Run(runCtx, deribitAccountChannels, deribit.Handler{
+		return backend.client.stream().Run(runCtx, backend.accountChannels(), deribit.Handler{
 			Ready: ready,
 			Notification: func(note deribit.Notification) {
 				events, err := deribitAccountEvents(note)
 				if err != nil {
-					onError(exchange.NewError(exchange.KindMalformedResponse, exchange.ErrorDetails{Venue: exchange.VenueDeribit, Product: exchange.ProductPerp, Operation: "Watch", SafeMessage: err.Error()}))
+					onError(exchange.NewError(exchange.KindMalformedResponse, exchange.ErrorDetails{Venue: exchange.VenueDeribit, Product: backend.client.meta.product, Operation: "Watch", SafeMessage: err.Error()}))
 					return
 				}
 				for _, event := range events {
@@ -290,21 +306,47 @@ func (backend *deribitWSBackend) private(ctx context.Context, status func(backen
 		})
 	}, status, onError, func(err error) bool {
 		if errors.Is(err, deribit.ErrAuthRejected) || errors.Is(err, deribit.ErrCredentialsRequired) {
-			onError(exchange.NewError(exchange.KindAuthentication, exchange.ErrorDetails{Venue: exchange.VenueDeribit, Product: exchange.ProductPerp, Operation: "Watch",
+			onError(exchange.NewError(exchange.KindAuthentication, exchange.ErrorDetails{Venue: exchange.VenueDeribit, Product: backend.client.meta.product, Operation: "Watch",
 				SafeMessage: "deribit private stream authentication rejected"}))
 		}
 		return false
 	})
 }
 
-// StartAccountEvents streams the account. Options, dated and inverse
-// futures share it; only indexed USDC linear perps are routed.
+// StartAccountEvents streams the client's slice of the account. Other kinds
+// share the account but arrive on other channels; within the kind only
+// indexed instruments are routed.
 func (backend *deribitWSBackend) StartAccountEvents(ctx context.Context, index accountInstrumentIndex, callbacks accountEventCallbacks) (func() error, error) {
 	return backend.private(ctx, func(status backendStatus) { callbacks.Status(accountStreamStatus(backend.meta(), status)) }, callbacks.Error, func(event accountBackendEvent) {
+		if event.Kind == exchange.AccountEventBalance && backend.client.meta.product == exchange.ProductPerp {
+			event = deribitPerpBalanceEvent(event)
+			if event.Balance == nil {
+				return
+			}
+		}
 		if servedAccountEvent(index, event) {
 			callbacks.Event(event)
 		}
 	})
+}
+
+// deribitPerpBalanceEvent keeps the USDC balance for the perp client, the
+// only collateral its margin uses.
+func deribitPerpBalanceEvent(event accountBackendEvent) accountBackendEvent {
+	var kept []exchange.Balance
+	for _, balance := range event.Balance.Balances {
+		if balance.Asset == deribitCurrency {
+			kept = append(kept, balance)
+		}
+	}
+	if len(kept) == 0 {
+		event.Balance = nil
+		return event
+	}
+	copied := *event.Balance
+	copied.Balances, copied.Kind = kept, exchange.EventSnapshot
+	event.Balance = &copied
+	return event
 }
 
 func deribitServed(native string) bool {

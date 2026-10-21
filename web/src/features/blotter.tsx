@@ -356,9 +356,13 @@ function Balances({ balances, loading, many }: { balances: AccountBalance[]; loa
   );
 }
 
-/** A broker's single pool reads "Cross-exchange pool"; Binance perps are one USD-M account. */
+/**
+ * A broker's single pool reads "Cross-exchange pool"; a venue whose products
+ * share one wallet (Deribit, OKX) reads "<venue> unified account"; Binance
+ * perps are one USD-M account.
+ */
 function balanceMarket(market: string): string {
-  if (!market.includes(":")) return translate("blotter.pool");
+  if (!market.includes(":")) return market === "crossex" ? translate("blotter.pool") : translate("blotter.unified", { venue: venueLabel(market) });
   if (market === "binance:perp:USDT") return translate("blotter.binanceUsdm");
   return marketLabel(market);
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/QuantProcessing/keeluni/gateway/market"
 	"github.com/QuantProcessing/keeluni/gateway/store"
 	"github.com/QuantProcessing/keeluni/gateway/venue"
+	"github.com/shopspring/decimal"
 )
 
 var (
@@ -64,7 +65,7 @@ func (manager *Manager) activate(account store.Account) error {
 		return err
 	}
 	defer decoded.Clear()
-	clients, err := buildClients(account.ID, decoded, manager.httpClient, manager.catalog)
+	clients, err := buildClientsWithAsks(account.ID, decoded, manager.httpClient, manager.catalog, manager.bestAsk)
 	if err != nil {
 		return err
 	}
@@ -135,7 +136,7 @@ func (manager *Manager) Create(ctx context.Context, request CreateRequest) (Acco
 	if err != nil {
 		return AccountView{}, err
 	}
-	clients, err := buildClients(id, decoded, manager.httpClient, manager.catalog)
+	clients, err := buildClientsWithAsks(id, decoded, manager.httpClient, manager.catalog, manager.bestAsk)
 	if err != nil {
 		return AccountView{}, fmt.Errorf("%w: %s", ErrInvalidRequest, safeMessage(err))
 	}
@@ -254,6 +255,20 @@ func (manager *Manager) Delete(id string) error {
 	}
 	slog.Info("account deleted", "account", id)
 	return nil
+}
+
+// bestAsk reads the best ask from the instrument's own venue (a one-level
+// REST book). A broker sizes spot market buys in quote from it.
+func (manager *Manager) bestAsk(ctx context.Context, native exchange.Instrument) (decimal.Decimal, error) {
+	identity := native.Identity
+	book, err := manager.catalog.OrderBook(ctx, venue.NewInstrumentID(identity.Venue, identity.Product, identity.Symbol), 1)
+	if err != nil {
+		return decimal.Zero, err
+	}
+	if len(book.Asks) == 0 {
+		return decimal.Zero, fmt.Errorf("no ask")
+	}
+	return decimal.NewFromString(book.Asks[0][0])
 }
 
 func (manager *Manager) runtime(id string) (*runtime, error) {

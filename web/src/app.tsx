@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Popover from "@radix-ui/react-popover";
-import { useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
+import { Suspense, lazy, useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
 
 import { ApiError, api, setUnauthenticatedHandler } from "@/api/client";
 import { realtime } from "@/api/realtime";
@@ -11,7 +11,9 @@ import { MarketHeader } from "@/features/market-header";
 import { BookPanel } from "@/features/order-book";
 import { OrderTicket } from "@/features/order-ticket";
 import { AccountSummary } from "@/features/account-summary";
-import { HedgeApp } from "@/features/hedge/hedge-app";
+// The apps load on first visit: the trade page does not pay for them.
+const HedgeApp = lazy(() => import("@/features/hedge/hedge-app").then((module) => ({ default: module.HedgeApp })));
+const OptionsApp = lazy(() => import("@/features/options/options-app").then((module) => ({ default: module.OptionsApp })));
 import { navigate, usePath } from "@/state/route";
 import { useConnection } from "@/state/hooks";
 import { WorkspaceProvider } from "@/state/workspace";
@@ -58,29 +60,34 @@ function Gate() {
   );
 }
 
+type Page = "trade" | "hedge" | "options";
+
+function pageOf(path: string): Page {
+  if (path.startsWith("/hedge")) return "hedge";
+  if (path.startsWith("/options")) return "options";
+  return "trade";
+}
+
 function Shell() {
   const t = useT();
-  const path = usePath();
+  const page = pageOf(usePath());
   const apps = useQuery({ queryKey: ["apps"], queryFn: api.apps, staleTime: Infinity, retry: false });
-  const hedge = path.startsWith("/hedge");
-  if (hedge && apps.data?.hedge) {
+  const enabled = { hedge: !!apps.data?.hedge, options: !!apps.data?.options };
+  if (page !== "trade") {
+    const deployed = enabled[page];
     return (
       <div className="flex h-full flex-col gap-[3px]">
-        <TopBar hedge />
-        <HedgeApp />
+        <TopBar page={page} enabled={enabled} />
+        {deployed ? (
+          <Suspense fallback={<main className="flex-1 bg-surface" />}>{page === "hedge" ? <HedgeApp /> : <OptionsApp />}</Suspense>
+        ) : apps.data ? (
+          <main className="flex flex-1 items-center justify-center bg-surface text-muted">{t(page === "hedge" ? "hedge.notDeployed" : "options.notDeployed")}</main>
+        ) : <main className="flex-1 bg-surface" />}
         <StatusBar />
       </div>
     );
   }
-  if (hedge && apps.data && !apps.data.hedge) {
-    return (
-      <div className="flex h-full flex-col gap-[3px]">
-        <TopBar hedge={false} />
-        <main className="flex flex-1 items-center justify-center bg-surface text-muted">{t("hedge.notDeployed")}</main>
-      </div>
-    );
-  }
-  return <Terminal hedgeEnabled={!!apps.data?.hedge} />;
+  return <Terminal enabled={enabled} />;
 }
 
 function Login() {
@@ -181,10 +188,10 @@ const MORE_LINKS = [
 /** Panels are flat, 5px-rounded tiles; the canvas shows through 3px gaps. */
 const PANEL = "shrink-0 overflow-hidden rounded-md min-[1001px]:shrink";
 
-function Terminal({ hedgeEnabled }: { hedgeEnabled: boolean }) {
+function Terminal({ enabled }: { enabled: { hedge: boolean; options: boolean } }) {
   return (
     <div className="flex h-full flex-col gap-[3px]">
-      <TopBar hedge={false} hedgeEnabled={hedgeEnabled} />
+      <TopBar page="trade" enabled={enabled} />
 
       {/* Desktop: chart+book | ticket on top, blotter below chart+book. */}
       <main className="grid min-h-0 flex-1 gap-[3px] px-[3px] max-[1000px]:flex max-[1000px]:flex-col max-[1000px]:overflow-y-auto min-[1001px]:grid-cols-[minmax(0,1fr)_300px_320px] min-[1001px]:grid-rows-[56px_minmax(0,1fr)_minmax(220px,35%)]">
@@ -220,14 +227,15 @@ function NavLink({ href, active, children }: { href: string; active: boolean; ch
   );
 }
 
-function TopBar({ hedge, hedgeEnabled = true }: { hedge: boolean; hedgeEnabled?: boolean }) {
+function TopBar({ page, enabled }: { page: Page; enabled: { hedge: boolean; options: boolean } }) {
   const t = useT();
   return (
     <header className="flex h-14 shrink-0 items-center bg-surface px-4">
       <a href="/" aria-label="KeelUni" onClick={(event) => { event.preventDefault(); navigate("/"); }} className="mr-[18px] flex items-center"><Wordmark /></a>
       <nav aria-label={t("nav.main")} className="flex items-center gap-2">
-        <NavLink href="/" active={!hedge}>{t("nav.trade")}</NavLink>
-        {(hedge || hedgeEnabled) && <NavLink href="/hedge" active={hedge}>{t("nav.hedge")}</NavLink>}
+        <NavLink href="/" active={page === "trade"}>{t("nav.trade")}</NavLink>
+        {(page === "options" || enabled.options) && <NavLink href="/options" active={page === "options"}>{t("nav.options")}</NavLink>}
+        {(page === "hedge" || enabled.hedge) && <NavLink href="/hedge" active={page === "hedge"}>{t("nav.hedge")}</NavLink>}
         <MoreMenu />
       </nav>
       <div className="ml-auto flex items-center gap-2">

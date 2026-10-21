@@ -279,6 +279,7 @@ type Instrument struct {
 	CtVal             string   `json:"ctVal"`
 	CtMult            string   `json:"ctMult"`
 	CtValCcy          string   `json:"ctValCcy"`
+	CtType            string   `json:"ctType"` // linear, inverse
 	OptType           string   `json:"optType"`
 	Stk               string   `json:"stk"`
 	ListTime          string   `json:"listTime"`
@@ -378,12 +379,18 @@ type OptionSummary struct {
 	VegaPA     string `json:"vegaPA"`
 	ThetaBS    string `json:"thetaBS"`
 	ThetaPA    string `json:"thetaPA"`
-	MarkVol    string `json:"markVol"`
-	BidVol     string `json:"bidVol"`
-	AskVol     string `json:"askVol"`
-	FwdPx      string `json:"fwdPx"`
-	OI         string `json:"oi"`
-	Ts         string `json:"ts"`
+	// Delta, Gamma, Vega, Theta are in coin (premium) units; the BS
+	// variants in USD.
+	Delta   string `json:"delta"`
+	Gamma   string `json:"gamma"`
+	Vega    string `json:"vega"`
+	Theta   string `json:"theta"`
+	MarkVol string `json:"markVol"`
+	BidVol  string `json:"bidVol"`
+	AskVol  string `json:"askVol"`
+	FwdPx   string `json:"fwdPx"`
+	OI      string `json:"oi"`
+	Ts      string `json:"ts"`
 }
 
 type EstimatedPrice struct {

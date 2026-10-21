@@ -26,6 +26,8 @@ type crossExPerpClient struct {
 	meta    clientMeta
 	sdk     *crossex.Client
 	natives func(context.Context) ([]exchange.Instrument, error)
+	// books returns the native venue's best ask of an instrument.
+	books CrossExBestAsk
 
 	stream func() *crossex.PrivateStream
 
@@ -35,11 +37,14 @@ type crossExPerpClient struct {
 	ws *crossExWebSocket
 }
 
-// CrossExNativeSource supplies the native perp catalogs CrossEx symbols are
-// matched against.
+// CrossExNativeSource supplies the native perp and spot catalogs CrossEx
+// symbols are matched against.
 type CrossExNativeSource func(context.Context) ([]exchange.Instrument, error)
 
-func NewCrossExPerp(apiKey, secretKey string, natives CrossExNativeSource, settings Settings) exchange.PerpClient {
+// CrossExBestAsk reads the best ask of an instrument from its own venue.
+type CrossExBestAsk func(context.Context, exchange.Instrument) (decimal.Decimal, error)
+
+func NewCrossExPerp(apiKey, secretKey string, natives CrossExNativeSource, settings Settings, books ...CrossExBestAsk) exchange.PerpClient {
 	sdk := crossex.NewClient().WithCredentials(apiKey, secretKey)
 	if settings.Endpoint != "" {
 		sdk.WithBaseURL(settings.Endpoint)
@@ -60,6 +65,9 @@ func NewCrossExPerp(apiKey, secretKey string, natives CrossExNativeSource, setti
 			return stream
 		},
 		instruments: map[string]exchange.Instrument{},
+	}
+	if len(books) > 0 {
+		client.books = books[0]
 	}
 	client.ws = &crossExWebSocket{client: client}
 	return client
@@ -83,6 +91,14 @@ func (client *crossExPerpClient) Reaches() []exchange.MarketRoute {
 	}
 	for _, market := range crossExMarkets {
 		add(market.venue, market.settlement)
+	}
+	for _, exchangeType := range crossExSpotMarkets {
+		venue, _ := crossExVenueOf(exchangeType)
+		route := exchange.MarketRoute{Venue: venue, Product: exchange.ProductSpot}
+		if !seen[route] {
+			seen[route] = true
+			out = append(out, route)
+		}
 	}
 	return out
 }
@@ -138,7 +154,8 @@ func (client *crossExPerpClient) Instruments(ctx context.Context) ([]exchange.In
 	return out, nil
 }
 
-// ResolveInstrument accepts a CrossEx symbol or "venue:SYMBOL".
+// ResolveInstrument accepts a CrossEx symbol, "venue:SYMBOL" (perp) or
+// "venue:spot:SYMBOL".
 func (client *crossExPerpClient) ResolveInstrument(ctx context.Context, symbol string) (exchange.Instrument, error) {
 	symbol = strings.TrimSpace(symbol)
 	if symbol == "" {
@@ -150,7 +167,7 @@ func (client *crossExPerpClient) ResolveInstrument(ctx context.Context, symbol s
 	}
 	for _, instrument := range instruments {
 		identity := instrument.Identity
-		if identity.NativeSymbol == symbol || string(identity.Venue)+":"+identity.Symbol == symbol {
+		if identity.NativeSymbol == symbol || crossExKey(identity) == symbol {
 			return instrument, nil
 		}
 	}
@@ -160,8 +177,8 @@ func (client *crossExPerpClient) ResolveInstrument(ctx context.Context, symbol s
 // instrument returns the CrossEx-bound instrument for a request instrument.
 // Callers may pass either the CrossEx instrument or the native one.
 func (client *crossExPerpClient) instrument(ctx context.Context, operation string, requested exchange.Instrument) (exchange.Instrument, error) {
-	if requested.Identity.Product != exchange.ProductPerp {
-		return exchange.Instrument{}, client.meta.catalogInvalidRequest(operation, "crossex trades perpetual instruments only")
+	if requested.Identity.Product != exchange.ProductPerp && requested.Identity.Product != exchange.ProductSpot {
+		return exchange.Instrument{}, client.meta.catalogInvalidRequest(operation, "crossex trades perpetual and spot instruments only")
 	}
 	instruments, err := client.Instruments(ctx)
 	if err != nil {
@@ -169,7 +186,7 @@ func (client *crossExPerpClient) instrument(ctx context.Context, operation strin
 	}
 	for _, instrument := range instruments {
 		identity := instrument.Identity
-		if identity.Venue == requested.Identity.Venue && identity.Symbol == requested.Identity.Symbol {
+		if identity.Venue == requested.Identity.Venue && identity.Product == requested.Identity.Product && identity.Symbol == requested.Identity.Symbol {
 			return instrument, nil
 		}
 	}
@@ -456,12 +473,23 @@ func (client *crossExPerpClient) PlaceOrder(ctx context.Context, request exchang
 	}
 	// Validate against CrossEx rules, which may differ from the native venue's.
 	request.Instrument = instrument
-	if err := request.Validate(exchange.ProductPerp); err != nil {
+	product := instrument.Identity.Product
+	if err := request.Validate(product); err != nil {
 		return exchange.OrderAcknowledgement{}, client.meta.catalogInvalidRequest("PlaceOrder", crossExSafeValidation(err))
 	}
-	action, err := client.sdk.PlaceOrder(ctx, crossExOrderRequest(request))
+	native := crossExOrderRequest(request)
+	if product == exchange.ProductSpot && request.Type == exchange.OrderTypeMarket && request.Side == exchange.SideBuy {
+		// CrossEx spot market buys are sized in quote: quote_qty is required
+		// and qty is not accepted. Size it from the native venue's best ask.
+		quote, err := client.spotBuyQuote(ctx, request)
+		if err != nil {
+			return exchange.OrderAcknowledgement{}, err
+		}
+		native.Qty, native.QuoteQty = "", quote
+	}
+	action, err := client.sdk.PlaceOrder(ctx, native)
 	ack := exchange.OrderAcknowledgement{
-		Venue: instrument.Identity.Venue, Product: exchange.ProductPerp, Operation: exchange.OrderOperationPlace,
+		Venue: instrument.Identity.Venue, Product: product, Operation: exchange.OrderOperationPlace,
 		NativeSymbol: instrument.Identity.NativeSymbol, OrderType: request.Type, ClientOrderID: request.ClientOrderID,
 	}
 	if err != nil {
@@ -490,7 +518,7 @@ func (client *crossExPerpClient) CancelOrder(ctx context.Context, request exchan
 		return exchange.OrderAcknowledgement{}, client.meta.catalogInvalidRequest("CancelOrder", "order id is required")
 	}
 	ack := exchange.OrderAcknowledgement{
-		Venue: instrument.Identity.Venue, Product: exchange.ProductPerp, Operation: exchange.OrderOperationCancel,
+		Venue: instrument.Identity.Venue, Product: instrument.Identity.Product, Operation: exchange.OrderOperationCancel,
 		NativeSymbol: instrument.Identity.NativeSymbol, OrderID: request.OrderID,
 	}
 	action, err := client.sdk.CancelOrder(ctx, request.OrderID)
@@ -509,7 +537,7 @@ func (client *crossExPerpClient) OpenOrders(ctx context.Context, request exchang
 	if err := crossExContext(ctx, client.meta, "OpenOrders"); err != nil {
 		return exchange.OrderPage{}, err
 	}
-	query := crossex.OpenOrdersQuery{BusinessType: crossex.BusinessFuture}
+	query := crossex.OpenOrdersQuery{}
 	if request.Instrument != nil {
 		instrument, err := client.instrument(ctx, "OpenOrders", *request.Instrument)
 		if err != nil {
@@ -523,6 +551,9 @@ func (client *crossExPerpClient) OpenOrders(ctx context.Context, request exchang
 	}
 	orders := make([]exchange.Order, 0, len(rows))
 	for _, row := range rows {
+		if !crossExServedBusiness(row.BusinessType) {
+			continue
+		}
 		orders = append(orders, crossExOrder(row))
 	}
 	return boundedOrderPage(orders, request.Limit, ""), nil
@@ -539,7 +570,7 @@ func (client *crossExPerpClient) OrderHistory(ctx context.Context, request excha
 	}
 	orders := make([]exchange.Order, 0, len(rows))
 	for _, row := range rows {
-		if row.BusinessType != "" && row.BusinessType != crossex.BusinessFuture {
+		if !crossExServedBusiness(row.BusinessType) {
 			continue
 		}
 		orders = append(orders, crossExOrder(row))
@@ -558,7 +589,7 @@ func (client *crossExPerpClient) Fills(ctx context.Context, request exchange.Fil
 	}
 	fills := make([]exchange.Fill, 0, len(rows))
 	for _, row := range rows {
-		if row.BusinessType != "" && row.BusinessType != crossex.BusinessFuture {
+		if !crossExServedBusiness(row.BusinessType) {
 			continue
 		}
 		if request.OrderID != "" && row.OrderID != request.OrderID {
@@ -627,6 +658,7 @@ func (client *crossExPerpClient) LookupExactOrder(ctx context.Context, request e
 		return exchange.ExactOrderLookupResult{}, err
 	}
 	scopeVenue := instrument.Identity.Venue
+	product = instrument.Identity.Product
 	id := request.VenueOrderID
 	if request.ClientOrderID != "" {
 		id = request.ClientOrderID
@@ -661,6 +693,27 @@ func (client *crossExPerpClient) LookupExactOrder(ctx context.Context, request e
 	default:
 		return exchange.ExactOrderLookupResult{}, crossExNormalizeErr(client.meta, exactLookupOperation, err)
 	}
+}
+
+// crossExServedBusiness reports the business types the client serves:
+// futures and spot. Margin, stock and ETF orders on the same account are
+// not this client's.
+func crossExServedBusiness(business string) bool {
+	return business == "" || business == crossex.BusinessFuture || business == crossex.BusinessSpot
+}
+
+// spotBuyQuote sizes a spot market buy in quote: quantity at the native
+// book's best ask, rounded up to a cent so the fill reaches the quantity.
+func (client *crossExPerpClient) spotBuyQuote(ctx context.Context, request exchange.PlaceOrderRequest) (string, error) {
+	if client.books == nil {
+		return "", client.meta.catalogInvalidRequest("PlaceOrder", "crossex spot market buys need a price source; use a limit order")
+	}
+	ask, err := client.books(ctx, request.Instrument)
+	if err != nil || !ask.IsPositive() {
+		return "", exchange.NewError(exchange.KindTransport, exchange.ErrorDetails{Venue: client.meta.venue, Product: exchange.ProductSpot, Operation: "PlaceOrder",
+			SafeMessage: "no best ask to size the market buy", CommandNotSent: true})
+	}
+	return request.Quantity.Mul(ask).RoundCeil(2).String(), nil
 }
 
 // ---------------------------------------------------------------------------

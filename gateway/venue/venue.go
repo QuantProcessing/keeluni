@@ -22,7 +22,7 @@ import (
 type Market struct {
 	Venue      exchange.Venue
 	Product    exchange.Product
-	Settlement string // "" for spot
+	Settlement string // "" for spot and for options (one market per venue)
 }
 
 func (market Market) String() string {
@@ -52,7 +52,14 @@ var Markets = []Market{
 	{exchange.VenueLighter, exchange.ProductPerp, "USDC"},
 	{exchange.VenueLighter, exchange.ProductSpot, ""},
 	{exchange.VenueKraken, exchange.ProductPerp, "USD"},
+	{exchange.VenueKraken, exchange.ProductSpot, ""},
 	{exchange.VenueDeribit, exchange.ProductPerp, "USDC"},
+	{exchange.VenueDeribit, exchange.ProductSpot, ""},
+	// Every Deribit option — BTC and ETH inverse, USDC linear — is one
+	// market: one account margins and streams them together.
+	{exchange.VenueDeribit, exchange.ProductOption, ""},
+	// OKX coin- and USD-margined options: one trading account.
+	{exchange.VenueOKX, exchange.ProductOption, ""},
 }
 
 // Broker is an account venue that trades other venues' markets.
@@ -76,6 +83,11 @@ var Brokers = []Broker{{
 		{exchange.VenueLighter, exchange.ProductPerp, "USDC"},
 		{exchange.VenueKraken, exchange.ProductPerp, "USD"},
 		{exchange.VenueDeribit, exchange.ProductPerp, "USDC"},
+		{exchange.VenueBinance, exchange.ProductSpot, ""},
+		{exchange.VenueOKX, exchange.ProductSpot, ""},
+		{exchange.VenueBybit, exchange.ProductSpot, ""},
+		{exchange.VenueGate, exchange.ProductSpot, ""},
+		{exchange.VenueDeribit, exchange.ProductSpot, ""},
 	},
 }}
 
@@ -154,8 +166,8 @@ func (id InstrumentID) Parse() (exchange.Venue, exchange.Product, string, error)
 		return "", "", "", fmt.Errorf("instrument id must be venue:product:symbol")
 	}
 	product := exchange.Product(parts[1])
-	if product != exchange.ProductSpot && product != exchange.ProductPerp {
-		return "", "", "", fmt.Errorf("instrument id product must be spot or perp")
+	if !exchange.KnownProduct(product) {
+		return "", "", "", fmt.Errorf("instrument id product must be spot, perp or option")
 	}
 	return exchange.Venue(parts[0]), product, parts[2], nil
 }

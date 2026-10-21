@@ -32,6 +32,8 @@ type okxPrivateWSBackend struct {
 	instrumentCode okxInstrumentCodeLoader
 	spotTradeMode  okxSpotTradeModeLoader
 	perpMeta       okxPerpMetaLoader
+	// optionTradeMode is the tdMode of option orders (the account mode).
+	optionTradeMode okxSpotTradeModeLoader
 
 	closeOnce sync.Once
 
@@ -227,10 +229,10 @@ func (backend *okxPrivateWSBackend) StartPositions(
 	instrument exchange.Instrument,
 	callbacks streamCallbacks[exchange.PositionEvent],
 ) (func() error, error) {
-	if backend.meta.product != exchange.ProductPerp {
-		return nil, okxWSError(backend.meta, "WatchPositions", exchange.KindInvalidConfig, "positions are available only for perpetual products")
+	if !exchange.IsDerivative(backend.meta.product) {
+		return nil, okxWSError(backend.meta, "WatchPositions", exchange.KindInvalidConfig, "positions are available only for derivative products")
 	}
-	if err := okxValidateSwapInstrument(instrument); err != nil {
+	if err := okxValidateDerivativeInstrument(instrument); err != nil {
 		return nil, okxWSError(backend.meta, "WatchPositions", exchange.KindInvalidRequest, err.Error())
 	}
 	if err := backend.ensureConnected(ctx, "WatchPositions"); err != nil {
@@ -245,7 +247,7 @@ func (backend *okxPrivateWSBackend) StartPositions(
 	first := backend.addPositionRegistration(registration)
 	if first {
 		if err := backend.ws.SubscribePositionsWithError(
-			okxSwapType,
+			backend.instType(),
 			func(position *okx.Position) {
 				backend.emitPosition(position)
 			},
@@ -313,7 +315,7 @@ func (backend *okxPrivateWSBackend) StartAccountEvents(ctx context.Context, _ ac
 		}
 	}
 	stops = append(stops, func() error { return backend.removeBalanceRegistration(balance) })
-	if backend.meta.product == exchange.ProductPerp {
+	if exchange.IsDerivative(backend.meta.product) {
 		position := &okxPrivatePositionRegistration{instrument: accountWideNative, callbacks: streamCallbacks[exchange.PositionEvent]{
 			Event: func(event exchange.PositionEvent) {
 				callbacks.Event(accountBackendEvent{Kind: exchange.AccountEventPosition, Position: &event})
@@ -321,7 +323,7 @@ func (backend *okxPrivateWSBackend) StartAccountEvents(ctx context.Context, _ ac
 			Error: callbacks.Error,
 		}}
 		if firstPosition := backend.addPositionRegistration(position); firstPosition {
-			if err := backend.ws.SubscribePositionsWithError(okxSwapType, backend.emitPosition, func(err error) {
+			if err := backend.ws.SubscribePositionsWithError(backend.instType(), backend.emitPosition, func(err error) {
 				backend.emitPositionError(okxWSError(backend.meta, operation, exchange.KindMalformedResponse, err.Error()))
 			}); err != nil {
 				_ = backend.removePositionRegistration(position)
@@ -523,7 +525,7 @@ func (backend *okxPrivateWSBackend) addPositionRegistration(registration *okxPri
 	first := backend.positionsStream == nil
 	if backend.positionsStream == nil {
 		backend.positionsStream = &okxPrivatePositionsStream{
-			instType:      okxSwapType,
+			instType:      backend.instType(),
 			registrations: make(map[*okxPrivatePositionRegistration]struct{}),
 		}
 	}
@@ -710,7 +712,7 @@ func (backend *okxPrivateWSBackend) emitPosition(row *okx.Position) {
 		backend.emitPositionError(okxWSError(backend.meta, "WatchPositions", exchange.KindMalformedResponse, "position push is nil"))
 		return
 	}
-	if row.InstType != okxSwapType {
+	if row.InstType != backend.instType() {
 		backend.emitPositionError(okxWSError(backend.meta, "WatchPositions", exchange.KindMalformedResponse, "position product mismatch"))
 		return
 	}
@@ -782,7 +784,7 @@ func (backend *okxPrivateWSBackend) validateInstrument(operation string, instrum
 		}
 		return nil
 	}
-	if err := okxValidateSwapInstrument(instrument); err != nil {
+	if err := okxValidateDerivativeInstrument(instrument); err != nil {
 		return okxWSError(backend.meta, operation, exchange.KindInvalidRequest, err.Error())
 	}
 	return nil
@@ -836,6 +838,18 @@ func (backend *okxPrivateWSBackend) placeRequest(
 	contracts := req.Quantity.Div(meta.contractValue)
 	if !contracts.Mod(meta.contractIncrement).IsZero() {
 		return nil, okxWSError(backend.meta, operation, exchange.KindInvalidRequest, "quantity must align to OKX contract lot size")
+	}
+	if backend.meta.product == exchange.ProductOption {
+		mode, err := okxOptionOrderShape(ctx, operation, req, backend.optionTradeMode)
+		if err != nil {
+			return nil, err
+		}
+		native.TdMode = mode
+		native.Sz = contracts.String()
+		if req.ReduceOnly {
+			native.ReduceOnly = &req.ReduceOnly
+		}
+		return native, nil
 	}
 	native.TdMode = okxCrossMode
 	native.Sz = contracts.String()
@@ -1025,10 +1039,7 @@ func (backend *okxPrivateWSBackend) unsubscribe(operation string, args okx.WsSub
 }
 
 func (backend *okxPrivateWSBackend) instType() string {
-	if backend.meta.product == exchange.ProductPerp {
-		return okxSwapType
-	}
-	return okxSpotType
+	return okxInstType(backend.meta.product)
 }
 
 func okxSpotInstrumentCodeLoader(meta clientMeta) okxInstrumentCodeLoader {
@@ -1045,7 +1056,7 @@ func okxCatalogInstrumentCodeLoader(meta clientMeta, product exchange.Product) o
 			if err := okxValidateSpotInstrument(instrument); err != nil {
 				return 0, okxInvalid(product, operation, err.Error())
 			}
-		} else if err := okxValidateSwapInstrument(instrument); err != nil {
+		} else if err := okxValidateDerivativeInstrument(instrument); err != nil {
 			return 0, okxInvalid(product, operation, err.Error())
 		}
 		if strings.TrimSpace(instrument.Identity.NativeID) == "" {

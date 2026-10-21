@@ -23,6 +23,7 @@ mkdir -p data bin
 go build -o bin/gateway ./cmd/gateway
 go build -o bin/trader ./cmd/trader
 go build -o bin/hedger ./cmd/hedger
+go build -o bin/optioner ./cmd/optioner
 
 PIDS=()
 trap 'kill "${PIDS[@]}" 2>/dev/null || true' EXIT
@@ -42,4 +43,8 @@ else
   echo "Hedge app disabled: set POSTGRES_ADMIN_URL once to enable it (see scripts/dev.sh)." >&2
 fi
 
-env TRADER_DATA_DIR=data/trader TRADER_WEB_DIR=web/dist GATEWAY_TOKEN_FILE=data/gateway/token "${HEDGER[@]}" bin/trader
+# The options app needs no database.
+OPTIONER_DATA_DIR=data/optioner GATEWAY_TOKEN_FILE=data/gateway/token bin/optioner &
+PIDS+=($!)
+
+env TRADER_DATA_DIR=data/trader OPTIONER_URL=http://127.0.0.1:8083 OPTIONER_TOKEN_FILE=data/optioner/token TRADER_WEB_DIR=web/dist GATEWAY_TOKEN_FILE=data/gateway/token "${HEDGER[@]}" bin/trader

@@ -53,7 +53,7 @@ breakpoints:
 # KeelUni trading terminal
 
 **KeelUni** = Keel (the steady spine under a hull) + Uni (one place for every
-market: perps, spot, and later options and commodities). Always written
+market: spot, perps, options, and later commodities). Always written
 KeelUni; in the wordmark "Keel" is `text` and "Uni" is `accent`. Tagline:
 "一站式交易终端，连接你所有的交易所。" / "One terminal for every connected
 exchange."
@@ -147,7 +147,8 @@ from venues with different periods are only comparable through the APR.
 
 **Instrument selector** — popover anchored under the name, 800px wide: search
 input (radius lg, `surface-raised`), category tabs (All · Tradable · Perps ·
-Spot, plus one tab per venue; Tradable appears once an account exists),
+Spot, plus one tab per venue; Tradable appears once an account exists;
+options are not listed — they live on the Options page),
 table: Market · Venue · Type. Keyboard: ↑/↓ navigate, Enter select, Esc
 close, ⌘K open. Every market is listed and fully live — market data always
 comes from the venue itself, whatever account trades it. A small `long` dot
@@ -322,6 +323,109 @@ the pair, laid out like the trade page:
   Note.
 - The Hedge menu appears only when the trader serves a hedger. Below 1000px
   everything stacks: pair bar, chart, books, ticket, hedges.
+
+## Options page (`/options`)
+
+Trading one option is the core action — as on every options venue — so the
+page is laid out like the Trade page: market left, the selected option's
+book in the middle, the ticket right. Combos are the advanced mode of the
+same page, never the default.
+
+```
+┌ header: [BTC Options ▾ OKX · Coin-margined] Index · Forward · ATM IV · RR · BF │ Price|IV · BTC|USD · Single|Combo ┐
+├ expiry strip: 21OCT26 20h·31% │ 22OCT26 2d·31% │ … (term structure as tabs)                                       ┤
+├ T-board: calls │ strike │ puts, forward line          ┬ selected option 300px ┬ ticket 320px                 ┤
+│ pos · OI · Δ · bid · mark · ask │ K │ bid · mark · ask… │ quote · greeks         │ single: account · side ·     │
+│ click an option = select it (row tinted)              │ book with IV per level │ price by price|IV · size ·   │
+│ bid sells, ask buys                                   │ payoff of this order   │ execution · send · +combo    │
+├ Open orders · Fills · Positions · By expiry · Scenarios · Executions · Volatility ┤ combo: template ▾ · legs…    │
+└ status bar ─────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **Market picker, not a row of chips.** The title is a dropdown
+  ("BTC Options ▾" with a `Venue · Coin-margined` badge). It opens venue
+  first — venues differ in index, settlement and margin, so a series never
+  mixes them — then the venue's underlyings, each with its coin- and
+  USD-margined series, index and front ATM IV.
+- **Header numbers** for the selected expiry: index, the expiry's forward
+  (what the options are valued against — not spot), ATM IV, 25Δ risk
+  reversal (pink when puts are rich) and 25Δ butterfly. Labels are dotted;
+  tooltips say how each is computed. **Price | IV** switches every quote on
+  the board between premium and implied vol; for inverse series **BTC | USD**
+  shows premiums in the coin or dollars; **Single | Combo** switches the
+  ticket (Combo shows the leg count).
+- **Expiry strip.** Every live expiry with DTE and ATM IV, so the term
+  structure is readable without a chart. The default is the first expiry
+  beyond one day; the choice is kept while the expiry lives.
+- **T-board.** Calls left, strike centre (bordered column), puts right.
+  Columns mirror outward from the strike: bid · mark · ask, then Δ, OI, and
+  the user's own position (signed, side-coloured) on the outer edge. The
+  board scrolls to the forward; a teal line labelled "Forward 81,447" sits
+  between the strikes it falls between. In-the-money halves get the
+  `raised` tint. ±8 / ±12 / All strikes around the forward.
+  - **Clicking selects in place** — the page never drills down. Any cell of
+    a half selects that option (accent-soft tint); the bid and ask cells
+    also choose the side (bid = sell, ask = buy). In combo mode the bid adds
+    a short leg and the ask a long one instead.
+  - Until the user picks, the expiry's ATM call is selected so the middle
+    and right columns are never empty.
+- **Selected option** (middle column): name, Call/Put, DTE; a 2×4 grid of
+  bid / ask (with IVs), mark, forward, Δ, Γ 1% ($), Vega ($/pt), Θ ($/day),
+  live from the option's quote stream; its **book**, six levels a side, each
+  with the IV of that price and a depth bar — a click fills the ticket's
+  price; then the **payoff**: of the order being written (side, size, limit)
+  in single mode, of the whole package in combo mode. Solid at the first
+  expiry (teal above zero, pink below), dashed today at current IVs, over
+  ±3σ of the move; max gain, max loss (∞ when unlimited), breakevens.
+- **Single ticket** (the default): account (or "Connect OKX to trade
+  options"), the contract name, Buy / Sell, **Price by** Price | IV — an IV
+  is turned into a premium on the expiry's model and snapped to the tick that
+  applies (down for a buy, up for a sell), the other unit shown under the
+  field — size in the underlying with step and minimum, GTC / Post only /
+  IOC, the send button (pink for a sell). Under it: premium paid / received
+  (coin and $), the order's delta, and for a sell a muted line that selling
+  an option not held opens a short. **+ Add to combo** carries the option
+  into combo mode.
+- **Combo ticket** (advanced): "Combo" with "← Single" to leave. A
+  **Template** dropdown (structures chosen by delta the way desks quote
+  them: 25Δ strangle and risk reversal, 40/25 verticals, 25/10 condor) with
+  Long/Short to flip the whole structure; legs as
+  `Buy 1 × 82,750 C 22OCT 0.0063 29.4%` (side clickable to flip, ratio,
+  contract, live price, IV); size per 1×; price at **Mid** / **Touch** /
+  **Mark**; net debit (pink) / credit (teal) in dollars and coin; Δ, Γ 1%,
+  Vega, Θ tiles. A muted line says each leg is its own limit order and a
+  package can fill partly — true on every venue in scope, never hidden. The
+  combo's payoff is the middle column's chart. Combo is a mode, not a
+  dialog: picking legs means reading the board, which a modal would cover.
+- **Book risk.** A strip of greeks per underlying (Delta in units and $,
+  Gamma 1%, Vega, Theta, Value, PnL, Perp delta) with **Hedge delta** at
+  its right; then tabs:
+  - **Positions** — contract (`27NOV26 80,000 C 38d`), size, entry, mark,
+    IV, and each position's greeks; **Close** selects the option and loads
+    the opposite side and size into the single ticket (closing is a trade
+    like any other, reviewed in the ticket).
+  - **By expiry** — greeks per expiry bucket: where the vega and theta sit.
+  - **Scenarios** — spot −30%…+30% × IV −20…+20 points, full revaluation,
+    cells shaded teal/pink by size, the current state outlined; Now / +1d /
+    +7d rolls time forward so theta is in the grid.
+  - **Executions** — each package with every leg's state; a package with a
+    rejected leg is **partial** in pink.
+  "Include perps" nets perp and spot positions on the underlying into delta.
+  Delta of inverse options includes the coin their premium is held in.
+- **Hedge delta** opens a dialog: the account to hedge on (accounts trading
+  perps), the market order that flattens delta to the perp's step, and the
+  residual. Nothing is sent without the click.
+- **Volatility** (a bottom tab, not beside the board): the selected expiry's
+  smile — out-of-the-money mark IV against strike with each strike's bid–ask
+  IV as a grey bar — and the ATM term structure on a √time axis. Context
+  for vol traders, on demand.
+- **Open orders** and **Fills** (bottom tabs, first) list option orders and
+  fills across accounts; a row selects its option; open orders cancel in
+  place.
+- Below 1100px everything stacks: header, expiries, board, selected option,
+  ticket, bottom tabs.
+- The Options menu sits between Trade and Hedge and appears only when the
+  trader serves the options app.
 
 ## Language
 

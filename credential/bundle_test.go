@@ -93,3 +93,37 @@ func TestDecodedFormattingIsRedactedAndClearIsIdempotent(t *testing.T) {
 		t.Fatalf("credentials not cleared: %#v", credentials)
 	}
 }
+
+// Kraken holds two key systems; an account may carry either or both. Kraken
+// accounts stored before spot (api_key_secret bundles) keep decoding.
+func TestKrakenBundlesCarryFuturesSpotOrBoth(t *testing.T) {
+	bundle := func(kind, secrets string) []byte {
+		return []byte(fmt.Sprintf(`{"schemaVersion":1,"venue":"kraken","authKind":%q,"metadata":{},"secrets":%s}`, kind, secrets))
+	}
+	for name, payload := range map[string][]byte{
+		"legacy futures": bundle("api_key_secret", `{"apiKey":"k","apiSecret":"s"}`),
+		"futures":        bundle("kraken_keys", `{"apiKey":"k","apiSecret":"s"}`),
+		"spot":           bundle("kraken_keys", `{"spotApiKey":"k","spotApiSecret":"s"}`),
+		"both":           bundle("kraken_keys", `{"apiKey":"k","apiSecret":"s","spotApiKey":"k2","spotApiSecret":"s2"}`),
+	} {
+		decoded, err := credential.DefaultRegistry().Decode("kraken", payload)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		keys := decoded.Credentials.(*credential.APIKeySecret)
+		if name == "spot" || name == "both" {
+			if key, _ := keys.SpotKeys(); key == "" {
+				t.Fatalf("%s lost the spot key", name)
+			}
+		}
+		decoded.Clear()
+	}
+	for name, payload := range map[string][]byte{
+		"empty":     bundle("kraken_keys", `{}`),
+		"half spot": bundle("kraken_keys", `{"apiKey":"k","apiSecret":"s","spotApiKey":"k2"}`),
+	} {
+		if _, err := credential.DefaultRegistry().Decode("kraken", payload); !errors.Is(err, credential.ErrInvalidBundle) {
+			t.Fatalf("%s: err = %v", name, err)
+		}
+	}
+}

@@ -241,7 +241,8 @@ func TestBrokerAccountStreamsEveryVenueAndPublishesMargin(t *testing.T) {
 		return margin != nil && margin.Available == "1200" && margin.MaintenanceMarginRate == "4.8" && len(margin.ByVenue) == 1 &&
 			len(balances) == 1 && balances[0].Market == "crossex"
 	})
-	if names := rt.marketNames(); len(names) != 10 || rt.kind() != "broker" {
+	// Ten perp markets and five spot markets.
+	if names := rt.marketNames(); len(names) != 15 || rt.kind() != "broker" {
 		t.Fatalf("markets = %v kind = %s", names, rt.kind())
 	}
 

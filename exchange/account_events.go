@@ -33,7 +33,7 @@ type AccountRoute struct {
 func (route AccountRoute) Validate() error {
 	if strings.TrimSpace(route.AccountID) == "" || strings.TrimSpace(route.RouteID) == "" ||
 		!(knownVenue(route.Venue) || knownBroker(route.Venue)) || route.Environment != EnvironmentLive ||
-		(route.Product != ProductSpot && route.Product != ProductPerp) || strings.TrimSpace(route.NativeFamily) == "" {
+		!KnownProduct(route.Product) || strings.TrimSpace(route.NativeFamily) == "" {
 		return fmt.Errorf("account route is invalid")
 	}
 	return nil

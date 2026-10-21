@@ -14,6 +14,10 @@ const (
 	AuthEVMPrivateKey          AuthKind = "evm_private_key"
 	AuthAsterAPIWallet         AuthKind = "aster_api_wallet"
 	AuthNadoSigner             AuthKind = "nado_signer"
+	// AuthKrakenKeys is Kraken's two key systems: a Futures key pair and an
+	// optional Spot key pair. Earlier Kraken accounts are api_key_secret
+	// bundles (futures only) and still decode.
+	AuthKrakenKeys AuthKind = "kraken_keys"
 )
 
 type BundleV1 struct {
@@ -27,6 +31,18 @@ type BundleV1 struct {
 type APIKeySecret struct {
 	APIKey    string `json:"apiKey"`
 	APISecret string `json:"apiSecret"`
+	// SpotAPIKey and SpotAPISecret are Kraken Spot's separate key pair.
+	SpotAPIKey    string `json:"spotApiKey,omitempty"`
+	SpotAPISecret string `json:"spotApiSecret,omitempty"`
+}
+
+// SpotKeys returns the Kraken Spot key pair stored with the account, if any.
+// Only Kraken accounts carry one.
+func (credentials *APIKeySecret) SpotKeys() (string, string) {
+	if credentials == nil {
+		return "", ""
+	}
+	return credentials.SpotAPIKey, credentials.SpotAPISecret
 }
 
 type APIKeySecretPassphrase struct {

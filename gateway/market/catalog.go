@@ -36,8 +36,25 @@ type Instrument struct {
 	// AssetClass is the venue's classification (crypto, equity, commodity,
 	// fx, ...) when it publishes one.
 	AssetClass string `json:"assetClass,omitempty"`
+	// CoarseTick applies at prices from CoarseTickFrom up (Deribit options).
+	CoarseTickFrom string `json:"coarseTickFrom,omitempty"`
+	CoarseTick     string `json:"coarseTick,omitempty"`
+	// Option is set for options.
+	Option *OptionTerms `json:"option,omitempty"`
 
 	native exchange.Instrument
+}
+
+// OptionTerms is an option's contract as served. Expiry is unix ms.
+// Quantities are in the underlying; premiums in PremiumAsset per unit.
+type OptionTerms struct {
+	Underlying   string `json:"underlying"`
+	Kind         string `json:"kind"` // call | put
+	Strike       string `json:"strike"`
+	Expiry       int64  `json:"expiry"`
+	PremiumAsset string `json:"premiumAsset"`
+	Inverse      bool   `json:"inverse,omitempty"`
+	European     bool   `json:"european"`
 }
 
 // Native returns the exchange-layer instrument used for venue calls.
@@ -207,6 +224,14 @@ func project(native exchange.Instrument) Instrument {
 	if class := native.Metadata.AssetClass; class != "" && class != exchange.AssetClassUnknown {
 		instrument.AssetClass = string(class)
 	}
+	if native.Rules.CoarseTick.Valid {
+		instrument.CoarseTickFrom, instrument.CoarseTick = native.Rules.CoarseTickFrom.Value.String(), native.Rules.CoarseTick.Value.String()
+	}
+	if native.Identity.Product == exchange.ProductOption {
+		terms := native.Option
+		instrument.Option = &OptionTerms{Underlying: terms.Underlying, Kind: string(terms.Kind), Strike: terms.Strike.String(),
+			Expiry: terms.Expiry.UnixMilli(), PremiumAsset: terms.PremiumAsset, Inverse: terms.Inverse, European: terms.European}
+	}
 	return instrument
 }
 
@@ -221,13 +246,18 @@ func (catalog *Catalog) Get(id venue.InstrumentID) (Instrument, error) {
 	return instrument, nil
 }
 
-// List returns instruments filtered by venue and product (either may be empty).
+// List returns instruments filtered by venue and product (either may be
+// empty). Options are listed only when asked for by product: thousands of
+// contracts belong in a chain, not in the trade page's market picker.
 func (catalog *Catalog) List(filterVenue exchange.Venue, filterProduct exchange.Product) []Instrument {
 	catalog.mu.RLock()
 	defer catalog.mu.RUnlock()
 	var result []Instrument
 	for _, market := range venue.Markets {
 		if (filterVenue != "" && market.Venue != filterVenue) || (filterProduct != "" && market.Product != filterProduct) {
+			continue
+		}
+		if filterProduct == "" && market.Product == exchange.ProductOption {
 			continue
 		}
 		for _, id := range catalog.byMarket[market] {
@@ -247,6 +277,16 @@ func (catalog *Catalog) MarketInstruments(market venue.Market) []Instrument {
 		result = append(result, catalog.instruments[id])
 	}
 	return result
+}
+
+// OptionChain reads one options market's chain through its public
+// connector; false when the market has none.
+func (catalog *Catalog) OptionChain(ctx context.Context, market venue.Market, underlying string) ([]exchange.OptionQuote, bool, error) {
+	item := catalog.connectors[market]
+	if item == nil {
+		return nil, false, nil
+	}
+	return item.client.OptionChain(ctx, exchange.OptionChainRequest{Underlying: underlying})
 }
 
 // ResolveNative maps a venue-native symbol or id back to the gateway id.

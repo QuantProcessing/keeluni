@@ -69,6 +69,16 @@ func OrderBookChannel(depth int) (string, error) {
 	}
 }
 
+// SubscribeBestBidOfferWithError subscribes to bbo-tbt: one level a side,
+// pushed as a snapshot on every change. A separate channel from books5, so a
+// quote stream and a book stream of one instrument do not share a handler.
+func (c *WSClient) SubscribeBestBidOfferWithError(instId string, handler func(*OrderBook), errorHandler func(error)) error {
+	args := WsSubscribeArgs{Channel: "bbo-tbt", InstId: instId}
+	return c.Subscribe(args, marketPushHandler("bbo", func(value OrderBook, _ string) {
+		handler(&value)
+	}, errorHandler))
+}
+
 // SubscribeTrades subscribes to public trades channel.
 func (c *WSClient) SubscribeTrades(instId string, handler func(*PublicTrade)) error {
 	return c.SubscribeTradesWithError(instId, handler, nil)
@@ -193,6 +203,16 @@ func (c *WSClient) SubscribeOpenInterest(instId string, handler func(*OpenIntere
 func (c *WSClient) SubscribeOpenInterestWithError(instId string, handler func(*OpenInterest), errorHandler func(error)) error {
 	args := WsSubscribeArgs{Channel: "open-interest", InstType: "SWAP", InstId: instId}
 	return c.Subscribe(args, marketPushHandler("open interest", func(value OpenInterest, _ string) {
+		handler(&value)
+	}, errorHandler))
+}
+
+// SubscribeOptionSummaryWithError subscribes to one family's opt-summary
+// channel (every option's IVs, forward and greeks, pushed together) and
+// reports malformed payloads.
+func (c *WSClient) SubscribeOptionSummaryWithError(instFamily string, handler func(*OptionSummary), errorHandler func(error)) error {
+	args := WsSubscribeArgs{Channel: "opt-summary", InstFamily: instFamily}
+	return c.Subscribe(args, marketPushHandler("opt-summary", func(value OptionSummary, _ string) {
 		handler(&value)
 	}, errorHandler))
 }

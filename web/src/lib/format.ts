@@ -112,7 +112,8 @@ export const venueLabel = (venue: string) => VENUE_LABEL[venue] ?? venue;
 export function marketLabel(market: string): string {
   const [venue = "", product, settle] = market.split(":");
   if (!product) return venueLabel(venue);
-  return [venueLabel(venue), translate(product === "perp" ? "common.perp" : "common.spot"), settle].filter(Boolean).join(" ");
+  const name = product === "perp" ? "common.perp" : product === "option" ? "common.option" : "common.spot";
+  return [venueLabel(venue), translate(name), settle].filter(Boolean).join(" ");
 }
 
 export function instrumentName(id: string): string {

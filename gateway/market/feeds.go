@@ -19,6 +19,8 @@ const (
 	ChannelTrades = "trades"
 	ChannelCandle = "candle"
 	ChannelTicker = "ticker"
+	// ChannelOption streams one option's live quote (bid/ask with IVs).
+	ChannelOption = "option"
 )
 
 const (
@@ -113,6 +115,11 @@ func (feeds *Feeds) ValidKey(key hub.Key) error {
 			return fmt.Errorf("ticker is available for perpetuals only")
 		}
 		return nil
+	case ChannelOption:
+		if instrument.Product != exchange.ProductOption {
+			return fmt.Errorf("option quotes are available for options only")
+		}
+		return nil
 	}
 	return fmt.Errorf("unknown channel")
 }
@@ -180,8 +187,65 @@ func (feeds *Feeds) Source(ctx context.Context, key hub.Key, emit hub.Emit) erro
 			}
 			emit(hub.Message{Channel: ChannelTicker, Instrument: key.Instrument, Data: current}, true)
 		})
+	case ChannelOption:
+		quotes, ok := socket.(exchange.OptionQuoteWebSocket)
+		if !ok {
+			return fmt.Errorf("option quotes unavailable for %s", instrument.Venue)
+		}
+		subscription, err := quotes.WatchOptionQuote(ctx, exchange.WatchRequest{Instrument: native, Options: exchange.WatchOptions{Buffer: 64}})
+		if err != nil {
+			return err
+		}
+		return pump(ctx, subscription, func(event exchange.OptionQuote) {
+			emit(hub.Message{Channel: ChannelOption, Instrument: key.Instrument, Data: projectOptionQuote(event)}, true)
+		})
 	}
 	return fmt.Errorf("unknown channel %q", key.Channel)
+}
+
+// OptionQuote is one option's live quote: prices in the premium asset, IVs
+// as fractions, the venue's greeks per unit in the strike currency.
+type OptionQuote struct {
+	Bid             string  `json:"bid,omitempty"`
+	Ask             string  `json:"ask,omitempty"`
+	BidSize         string  `json:"bidSize,omitempty"`
+	AskSize         string  `json:"askSize,omitempty"`
+	Mark            string  `json:"mark,omitempty"`
+	Last            string  `json:"last,omitempty"`
+	MarkIV          float64 `json:"markIv,omitempty"`
+	BidIV           float64 `json:"bidIv,omitempty"`
+	AskIV           float64 `json:"askIv,omitempty"`
+	UnderlyingPrice string  `json:"underlying,omitempty"`
+	IndexPrice      string  `json:"index,omitempty"`
+	Delta           float64 `json:"delta,omitempty"`
+	Gamma           float64 `json:"gamma,omitempty"`
+	Vega            float64 `json:"vega,omitempty"`
+	Theta           float64 `json:"theta,omitempty"`
+	OpenInterest    string  `json:"oi,omitempty"`
+	Time            int64   `json:"ts"`
+}
+
+func projectOptionQuote(quote exchange.OptionQuote) OptionQuote {
+	text := func(value exchange.OptionalDecimal) string {
+		if !value.Valid {
+			return ""
+		}
+		return value.Value.String()
+	}
+	float := func(value exchange.OptionalDecimal) float64 {
+		if !value.Valid {
+			return 0
+		}
+		return value.Value.InexactFloat64()
+	}
+	out := OptionQuote{Bid: text(quote.Bid), Ask: text(quote.Ask), BidSize: text(quote.BidSize), AskSize: text(quote.AskSize), Mark: text(quote.Mark),
+		Last: text(quote.Last), MarkIV: float(quote.MarkIV), BidIV: float(quote.BidIV), AskIV: float(quote.AskIV),
+		UnderlyingPrice: text(quote.UnderlyingPrice), IndexPrice: text(quote.IndexPrice), OpenInterest: text(quote.OpenInterest), Time: quote.Time.UnixMilli()}
+	if quote.Greeks != nil {
+		out.Delta, out.Gamma = quote.Greeks.Delta.InexactFloat64(), quote.Greeks.Gamma.InexactFloat64()
+		out.Vega, out.Theta = quote.Greeks.Vega.InexactFloat64(), quote.Greeks.Theta.InexactFloat64()
+	}
+	return out
 }
 
 // pumpBook keeps a local book from snapshot/delta/full events and emits a

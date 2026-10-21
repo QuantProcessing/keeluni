@@ -15,11 +15,12 @@ import (
 )
 
 const (
-	okxVenue     = exchange.VenueOKX
-	okxSpotType  = "SPOT"
-	okxSwapType  = "SWAP"
-	okxCashMode  = "cash"
-	okxCrossMode = "cross"
+	okxVenue      = exchange.VenueOKX
+	okxSpotType   = "SPOT"
+	okxSwapType   = "SWAP"
+	okxOptionType = "OPTION"
+	okxCashMode   = "cash"
+	okxCrossMode  = "cross"
 )
 
 type okxContractMeta struct {
@@ -1048,7 +1049,8 @@ func okxCandle(row okx.Candle, product exchange.Product, interval time.Duration)
 		return exchange.Candle{}, err
 	}
 	volumeField := row[5]
-	if product == exchange.ProductPerp {
+	if exchange.IsDerivative(product) {
+		// Derivatives: row[5] counts contracts, row[6] the underlying.
 		volumeField = row[6]
 	}
 	volume, err := okxNonNegativeDecimal(volumeField)
@@ -1193,6 +1195,26 @@ func okxValidateSwapInstrument(instrument exchange.Instrument) error {
 	return nil
 }
 
+// okxValidateDerivativeInstrument validates a contract instrument: an
+// option or a USDT-linear swap.
+func okxValidateDerivativeInstrument(instrument exchange.Instrument) error {
+	if instrument.Identity.Product == exchange.ProductOption {
+		return okxValidateOptionInstrument(instrument)
+	}
+	return okxValidateSwapInstrument(instrument)
+}
+
+// okxInstType is the OKX instrument type of a product.
+func okxInstType(product exchange.Product) string {
+	switch product {
+	case exchange.ProductPerp:
+		return okxSwapType
+	case exchange.ProductOption:
+		return okxOptionType
+	}
+	return okxSpotType
+}
+
 func okxSpotNativeInstrument(operation string, instrument exchange.Instrument) (string, error) {
 	if err := okxValidateSpotInstrument(instrument); err != nil {
 		return "", okxInvalid(exchange.ProductSpot, operation, err.Error())
@@ -1212,7 +1234,7 @@ func okxOptionalInstrumentMatches(instrument *exchange.Instrument, nativeSymbol 
 }
 
 func okxContractMetaFromInstrument(instrument exchange.Instrument) (okxContractMeta, error) {
-	if err := okxValidateSwapInstrument(instrument); err != nil {
+	if err := okxValidateDerivativeInstrument(instrument); err != nil {
 		return okxContractMeta{}, err
 	}
 	if !instrument.Encoding.ContractMultiplier.Valid || !instrument.Encoding.ContractMultiplier.Value.IsPositive() {

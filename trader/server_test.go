@@ -191,3 +191,30 @@ func TestHedgerIsForwardedOnlyWhenConfigured(t *testing.T) {
 		t.Fatalf("cross-site mutation = %d", got)
 	}
 }
+
+func TestOptionerIsForwardedOnlyWhenConfigured(t *testing.T) {
+	server, _, _ := newTestServer(t)
+	cookie := login(t, server)
+	if got := request(server, "GET", "/api/options/v1/risk", "", func(r *http.Request) { r.AddCookie(cookie) }).Code; got != 404 {
+		t.Fatalf("optioner without config = %d", got)
+	}
+	var seen *http.Request
+	optioner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Clone(r.Context())
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(optioner.Close)
+	target, _ := url.Parse(optioner.URL)
+	server.config.OptionerURL, server.config.OptionerToken = target, "optioner-secret"
+	server = NewServer(server.config)
+	cookie = login(t, server)
+	apps := request(server, "GET", "/api/apps", "", func(r *http.Request) { r.AddCookie(cookie) })
+	if !strings.Contains(apps.Body.String(), `"options":true`) {
+		t.Fatalf("apps = %s", apps.Body)
+	}
+	response := request(server, "GET", "/api/options/v1/risk?hedges=1", "", func(r *http.Request) { r.AddCookie(cookie) })
+	if response.Code != 200 || seen == nil || seen.URL.Path != "/v1/risk" || seen.URL.RawQuery != "hedges=1" || seen.Header.Get("Authorization") != "Bearer optioner-secret" {
+		t.Fatalf("forward = %d %v", response.Code, seen)
+	}
+}

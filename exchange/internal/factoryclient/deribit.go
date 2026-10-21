@@ -26,29 +26,16 @@ import (
 const deribitCurrency = "USDC"
 
 type deribitPerpClient struct {
-	*perpClient
-	sdk    *deribit.Client
-	ws     *perpWebSocket
-	wsURL  string
-	stream func() *deribit.Stream
+	*deribitBase
+	ws *perpWebSocket
 }
 
 func NewDeribitPerp(clientID, clientSecret string, settings Settings) exchange.PerpClient {
-	sdk := newDeribitSDK(settings).WithCredentials(clientID, clientSecret)
-	wsURL := settings.WebSocketEndpoint
-	client := &deribitPerpClient{
-		perpClient: &perpClient{meta: clientMetaFromSettings(exchange.VenueDeribit, exchange.ProductPerp, settings)},
-		sdk:        sdk,
-		wsURL:      wsURL,
-		stream: func() *deribit.Stream {
-			stream := deribit.NewStream().WithCredentials(clientID, clientSecret)
-			if wsURL != "" {
-				stream.WithURL(wsURL)
-			}
-			return stream
-		},
-	}
-	backend := newDeribitWSBackend(client)
+	client := &deribitPerpClient{deribitBase: newDeribitBase(clientID, clientSecret, exchange.ProductPerp, deribitScope{
+		kind: deribit.KindFuture, currencies: []string{deribitCurrency}, eventCurrency: deribitCurrency,
+		serves: func(name string) bool { return strings.HasSuffix(name, "_USDC-PERPETUAL") },
+	}, settings)}
+	backend := newDeribitWSBackend(client.deribitBase)
 	client.ws = newPerpWebSocket(client.meta, backend, backend)
 	return client
 }
@@ -66,10 +53,8 @@ func newDeribitSDK(settings Settings) *deribit.Client {
 
 func (client *deribitPerpClient) WebSocket() exchange.PerpWebSocket { return client.ws }
 func (client *deribitPerpClient) Close() error                      { return client.ws.Close() }
-func (client *deribitPerpClient) String() string                    { return client.meta.redactedString() }
-func (client *deribitPerpClient) GoString() string                  { return client.String() }
 
-func (client *deribitPerpClient) Instruments(ctx context.Context) ([]exchange.Instrument, error) {
+func (client *deribitBase) Instruments(ctx context.Context) ([]exchange.Instrument, error) {
 	if err := deribitContext(ctx, client.meta, "Instruments"); err != nil {
 		return nil, err
 	}
@@ -83,9 +68,9 @@ func (client *deribitPerpClient) Instruments(ctx context.Context) ([]exchange.In
 	return append([]exchange.Instrument(nil), snapshot.Instruments...), nil
 }
 
-func (client *deribitPerpClient) native(operation string, instrument exchange.Instrument) (string, error) {
-	if instrument.Identity.Venue != exchange.VenueDeribit || instrument.Identity.Product != exchange.ProductPerp || instrument.Identity.NativeSymbol == "" {
-		return "", client.meta.catalogInvalidRequest(operation, "instrument venue/product does not match Deribit perp")
+func (client *deribitBase) native(operation string, instrument exchange.Instrument) (string, error) {
+	if instrument.Identity.Venue != exchange.VenueDeribit || instrument.Identity.Product != client.meta.product || instrument.Identity.NativeSymbol == "" {
+		return "", client.meta.catalogInvalidRequest(operation, "instrument venue/product does not match this Deribit client")
 	}
 	return instrument.Identity.NativeSymbol, nil
 }
@@ -94,7 +79,7 @@ func (client *deribitPerpClient) native(operation string, instrument exchange.In
 // Market data
 // ---------------------------------------------------------------------------
 
-func (client *deribitPerpClient) OrderBook(ctx context.Context, request exchange.OrderBookRequest) (exchange.OrderBook, error) {
+func (client *deribitBase) OrderBook(ctx context.Context, request exchange.OrderBookRequest) (exchange.OrderBook, error) {
 	if err := deribitContext(ctx, client.meta, "OrderBook"); err != nil {
 		return exchange.OrderBook{}, err
 	}
@@ -158,7 +143,7 @@ func deribitAggregate(bars []exchange.Candle, step time.Duration) []exchange.Can
 	return out
 }
 
-func (client *deribitPerpClient) Candles(ctx context.Context, request exchange.CandlesRequest) (exchange.CandlePage, error) {
+func (client *deribitBase) Candles(ctx context.Context, request exchange.CandlesRequest) (exchange.CandlePage, error) {
 	if err := deribitContext(ctx, client.meta, "Candles"); err != nil {
 		return exchange.CandlePage{}, err
 	}
@@ -218,7 +203,7 @@ func (client *deribitPerpClient) Candles(ctx context.Context, request exchange.C
 	return exchange.CandlePage{Candles: candles, Page: exchange.PageInfo{Limit: limit, WindowStart: start, WindowEnd: end}}, nil
 }
 
-func (client *deribitPerpClient) PublicTrades(ctx context.Context, request exchange.PublicTradesRequest) (exchange.PublicTradePage, error) {
+func (client *deribitBase) PublicTrades(ctx context.Context, request exchange.PublicTradesRequest) (exchange.PublicTradePage, error) {
 	if err := deribitContext(ctx, client.meta, "PublicTrades"); err != nil {
 		return exchange.PublicTradePage{}, err
 	}
@@ -300,7 +285,7 @@ func (client *deribitPerpClient) FundingRateHistory(ctx context.Context, request
 	return exchange.FundingRatePage{Rates: rates, Page: exchange.PageInfo{Limit: request.Limit, WindowStart: start, WindowEnd: end}}, nil
 }
 
-func (client *deribitPerpClient) MarkPrice(ctx context.Context, instrument exchange.Instrument) (exchange.MarkPriceEvent, error) {
+func (client *deribitBase) MarkPrice(ctx context.Context, instrument exchange.Instrument) (exchange.MarkPriceEvent, error) {
 	native, err := client.native("MarkPrice", instrument)
 	if err != nil {
 		return exchange.MarkPriceEvent{}, err
@@ -325,6 +310,18 @@ func (client *deribitPerpClient) summary(ctx context.Context, operation string) 
 		return deribit.AccountSummary{}, deribitNormalizeErr(client.meta, operation, err)
 	}
 	return summary, nil
+}
+
+// deribitSummaryBalances is one currency summary as a balance in that
+// currency.
+func deribitSummaryBalances(summary deribit.AccountSummary) []exchange.Balance {
+	currency := strings.ToUpper(strings.TrimSpace(summary.Currency))
+	if currency == "" {
+		currency = deribitCurrency
+	}
+	balances := deribitBalances(summary)
+	balances[0].Asset = currency
+	return balances
 }
 
 func deribitBalances(summary deribit.AccountSummary) []exchange.Balance {
@@ -452,7 +449,7 @@ func deribitOrderRequest(request exchange.PlaceOrderRequest) deribit.OrderReques
 	return out
 }
 
-func (client *deribitPerpClient) PlaceOrder(ctx context.Context, request exchange.PlaceOrderRequest) (exchange.OrderAcknowledgement, error) {
+func (client *deribitBase) PlaceOrder(ctx context.Context, request exchange.PlaceOrderRequest) (exchange.OrderAcknowledgement, error) {
 	if err := deribitContext(ctx, client.meta, "PlaceOrder"); err != nil {
 		return exchange.OrderAcknowledgement{}, err
 	}
@@ -460,10 +457,10 @@ func (client *deribitPerpClient) PlaceOrder(ctx context.Context, request exchang
 	if err != nil {
 		return exchange.OrderAcknowledgement{}, err
 	}
-	if err := request.Validate(exchange.ProductPerp); err != nil {
+	if err := request.Validate(client.meta.product); err != nil {
 		return exchange.OrderAcknowledgement{}, withExchangeOperation(err, "PlaceOrder")
 	}
-	ack := exchange.OrderAcknowledgement{Venue: exchange.VenueDeribit, Product: exchange.ProductPerp, Operation: exchange.OrderOperationPlace,
+	ack := exchange.OrderAcknowledgement{Venue: exchange.VenueDeribit, Product: client.meta.product, Operation: exchange.OrderOperationPlace,
 		NativeSymbol: native, OrderType: request.Type, ClientOrderID: request.ClientOrderID}
 	result, err := client.sdk.Place(ctx, deribitOrderRequest(request))
 	if err != nil {
@@ -498,7 +495,7 @@ func (client *deribitPerpClient) PlaceOrder(ctx context.Context, request exchang
 	return ack, nil
 }
 
-func (client *deribitPerpClient) CancelOrder(ctx context.Context, request exchange.CancelOrderRequest) (exchange.OrderAcknowledgement, error) {
+func (client *deribitBase) CancelOrder(ctx context.Context, request exchange.CancelOrderRequest) (exchange.OrderAcknowledgement, error) {
 	if err := deribitContext(ctx, client.meta, "CancelOrder"); err != nil {
 		return exchange.OrderAcknowledgement{}, err
 	}
@@ -509,7 +506,7 @@ func (client *deribitPerpClient) CancelOrder(ctx context.Context, request exchan
 	if strings.TrimSpace(request.OrderID) == "" {
 		return exchange.OrderAcknowledgement{}, client.meta.catalogInvalidRequest("CancelOrder", "order id is required")
 	}
-	ack := exchange.OrderAcknowledgement{Venue: exchange.VenueDeribit, Product: exchange.ProductPerp, Operation: exchange.OrderOperationCancel, NativeSymbol: native, OrderID: request.OrderID}
+	ack := exchange.OrderAcknowledgement{Venue: exchange.VenueDeribit, Product: client.meta.product, Operation: exchange.OrderOperationCancel, NativeSymbol: native, OrderID: request.OrderID}
 	order, err := client.sdk.Cancel(ctx, request.OrderID)
 	if err != nil {
 		return deribitCommandErr(client.meta, ack, err)
@@ -521,7 +518,7 @@ func (client *deribitPerpClient) CancelOrder(ctx context.Context, request exchan
 	return ack, nil
 }
 
-func (client *deribitPerpClient) OpenOrders(ctx context.Context, request exchange.OpenOrdersRequest) (exchange.OrderPage, error) {
+func (client *deribitBase) OpenOrders(ctx context.Context, request exchange.OpenOrdersRequest) (exchange.OrderPage, error) {
 	if err := deribitContext(ctx, client.meta, "OpenOrders"); err != nil {
 		return exchange.OrderPage{}, err
 	}
@@ -533,13 +530,13 @@ func (client *deribitPerpClient) OpenOrders(ctx context.Context, request exchang
 		}
 		filter = native
 	}
-	rows, err := client.sdk.OpenOrders(ctx, deribitCurrency)
+	rows, err := client.sdk.AllOpenOrders(ctx, client.scope.kind)
 	if err != nil {
 		return exchange.OrderPage{}, deribitNormalizeErr(client.meta, "OpenOrders", err)
 	}
 	orders := make([]exchange.Order, 0, len(rows))
 	for _, row := range rows {
-		if !strings.HasSuffix(row.InstrumentName, "_USDC-PERPETUAL") || (filter != "" && row.InstrumentName != filter) {
+		if !client.scope.serves(row.InstrumentName) || (filter != "" && row.InstrumentName != filter) {
 			continue
 		}
 		orders = append(orders, deribitOrder(row))
@@ -548,7 +545,7 @@ func (client *deribitPerpClient) OpenOrders(ctx context.Context, request exchang
 }
 
 // OrderHistory pages by offset: the cursor is the next offset.
-func (client *deribitPerpClient) OrderHistory(ctx context.Context, request exchange.OrderHistoryRequest) (exchange.OrderPage, error) {
+func (client *deribitBase) OrderHistory(ctx context.Context, request exchange.OrderHistoryRequest) (exchange.OrderPage, error) {
 	if err := deribitContext(ctx, client.meta, "OrderHistory"); err != nil {
 		return exchange.OrderPage{}, err
 	}
@@ -574,26 +571,39 @@ func (client *deribitPerpClient) OrderHistory(ctx context.Context, request excha
 		}
 		offset = parsed
 	}
-	rows, err := client.sdk.OrderHistory(ctx, deribitCurrency, count, offset)
-	if err != nil {
-		return exchange.OrderPage{}, deribitNormalizeErr(client.meta, "OrderHistory", err)
+	var rows []deribit.Order
+	full := false
+	seen := map[string]bool{}
+	for _, currency := range client.scope.currencies {
+		batch, err := client.sdk.OrderHistoryOf(ctx, currency, client.scope.kind, count, offset)
+		if err != nil {
+			return exchange.OrderPage{}, deribitNormalizeErr(client.meta, "OrderHistory", err)
+		}
+		full = full || len(batch) >= count
+		for _, row := range batch {
+			// A pair can be filed under both of its currencies.
+			if !seen[row.OrderID] {
+				seen[row.OrderID] = true
+				rows = append(rows, row)
+			}
+		}
 	}
 	orders := make([]exchange.Order, 0, len(rows))
 	for _, row := range rows {
 		order := deribitOrder(row)
-		if !strings.HasSuffix(row.InstrumentName, "_USDC-PERPETUAL") || (filter != "" && row.InstrumentName != filter) || !withinHalfOpen(order.UpdatedAt, request.Start, request.End) {
+		if !client.scope.serves(row.InstrumentName) || (filter != "" && row.InstrumentName != filter) || !withinHalfOpen(order.UpdatedAt, request.Start, request.End) {
 			continue
 		}
 		orders = append(orders, order)
 	}
 	page := exchange.PageInfo{Limit: count, WindowStart: request.Start, WindowEnd: request.End, HasMoreKnown: true}
-	if len(rows) >= count {
-		page.Cursor, page.HasMore = strconv.Itoa(offset+len(rows)), true
+	if full {
+		page.Cursor, page.HasMore = strconv.Itoa(offset+count), true
 	}
 	return exchange.OrderPage{Orders: orders, Page: page}, nil
 }
 
-func (client *deribitPerpClient) Fills(ctx context.Context, request exchange.FillsRequest) (exchange.FillPage, error) {
+func (client *deribitBase) Fills(ctx context.Context, request exchange.FillsRequest) (exchange.FillPage, error) {
 	if err := deribitContext(ctx, client.meta, "Fills"); err != nil {
 		return exchange.FillPage{}, err
 	}
@@ -620,9 +630,19 @@ func (client *deribitPerpClient) Fills(ctx context.Context, request exchange.Fil
 		}
 		end = parsed
 	}
-	rows, err := client.sdk.UserTrades(ctx, deribitCurrency, optionalMillis(request.Start), end, count)
-	if err != nil {
-		return exchange.FillPage{}, deribitNormalizeErr(client.meta, "Fills", err)
+	var rows []deribit.Trade
+	seen := map[string]bool{}
+	for _, currency := range client.scope.currencies {
+		batch, err := client.sdk.UserTradesOf(ctx, currency, client.scope.kind, optionalMillis(request.Start), end, count)
+		if err != nil {
+			return exchange.FillPage{}, deribitNormalizeErr(client.meta, "Fills", err)
+		}
+		for _, row := range batch {
+			if !seen[row.TradeID] {
+				seen[row.TradeID] = true
+				rows = append(rows, row)
+			}
+		}
 	}
 	fills := make([]exchange.Fill, 0, len(rows))
 	var oldest int64
@@ -630,7 +650,7 @@ func (client *deribitPerpClient) Fills(ctx context.Context, request exchange.Fil
 		if oldest == 0 || row.Timestamp < oldest {
 			oldest = row.Timestamp
 		}
-		if !strings.HasSuffix(row.InstrumentName, "_USDC-PERPETUAL") || (filter != "" && row.InstrumentName != filter) {
+		if !client.scope.serves(row.InstrumentName) || (filter != "" && row.InstrumentName != filter) {
 			continue
 		}
 		if request.OrderID != "" && row.OrderID != request.OrderID {
@@ -639,7 +659,7 @@ func (client *deribitPerpClient) Fills(ctx context.Context, request exchange.Fil
 		fills = append(fills, deribitFill(row))
 	}
 	page := exchange.PageInfo{Limit: count, WindowStart: request.Start, WindowEnd: request.End, HasMoreKnown: true}
-	if len(rows) >= count && oldest > 0 {
+	if len(rows) >= count && oldest > 0 && len(client.scope.currencies) == 1 {
 		page.Cursor, page.HasMore = strconv.FormatInt(oldest-1, 10), true
 	}
 	return exchange.FillPage{Fills: fills, Page: page}, nil
@@ -649,8 +669,8 @@ func (client *deribitPerpClient) Fills(ctx context.Context, request exchange.Fil
 // remain queryable for 30 minutes after the order closes; by id the lookup is
 // authoritative. A label miss is authoritative only for orders placed in
 // that window, which the caller cannot prove, so it is unconfirmed.
-func (client *deribitPerpClient) LookupExactOrder(ctx context.Context, request exchange.ExactOrderLookupRequest) (exchange.ExactOrderLookupResult, error) {
-	instrument, err := exactLookupInstrument(ctx, request, exchange.VenueDeribit, exchange.ProductPerp)
+func (client *deribitBase) LookupExactOrder(ctx context.Context, request exchange.ExactOrderLookupRequest) (exchange.ExactOrderLookupResult, error) {
+	instrument, err := exactLookupInstrument(ctx, request, exchange.VenueDeribit, client.meta.product)
 	if err != nil {
 		return exchange.ExactOrderLookupResult{}, err
 	}
@@ -659,16 +679,16 @@ func (client *deribitPerpClient) LookupExactOrder(ctx context.Context, request e
 		switch {
 		case err == nil:
 			if order.InstrumentName != instrument.Identity.NativeSymbol {
-				return exchange.ExactOrderLookupResult{}, exactLookupError(exchange.VenueDeribit, exchange.ProductPerp, exchange.KindMalformedResponse, "deribit order belongs to another instrument")
+				return exchange.ExactOrderLookupResult{}, exactLookupError(exchange.VenueDeribit, client.meta.product, exchange.KindMalformedResponse, "deribit order belongs to another instrument")
 			}
-			return exactLookupFound(request, exchange.VenueDeribit, exchange.ProductPerp, instrument, deribitOrder(order))
+			return exactLookupFound(request, exchange.VenueDeribit, client.meta.product, instrument, deribitOrder(order))
 		case deribit.IsOrderNotFound(err):
-			return exactLookupNotFound(request, exchange.VenueDeribit, exchange.ProductPerp, instrument)
+			return exactLookupNotFound(request, exchange.VenueDeribit, client.meta.product, instrument)
 		default:
 			return exchange.ExactOrderLookupResult{}, deribitNormalizeErr(client.meta, exactLookupOperation, err)
 		}
 	}
-	rows, err := client.sdk.OrderStateByLabel(ctx, deribitCurrency, request.ClientOrderID)
+	rows, err := client.sdk.OrderStateByLabel(ctx, client.scope.labelCurrency(instrument), request.ClientOrderID)
 	if err != nil {
 		return exchange.ExactOrderLookupResult{}, deribitNormalizeErr(client.meta, exactLookupOperation, err)
 	}
@@ -676,10 +696,10 @@ func (client *deribitPerpClient) LookupExactOrder(ctx context.Context, request e
 		if row.Label == request.ClientOrderID && row.InstrumentName == instrument.Identity.NativeSymbol {
 			order := deribitOrder(row)
 			order.ClientOrderID = request.ClientOrderID
-			return exactLookupFound(request, exchange.VenueDeribit, exchange.ProductPerp, instrument, order)
+			return exactLookupFound(request, exchange.VenueDeribit, client.meta.product, instrument, order)
 		}
 	}
-	return exactLookupUnconfirmed(request, exchange.VenueDeribit, exchange.ProductPerp, instrument, "")
+	return exactLookupUnconfirmed(request, exchange.VenueDeribit, client.meta.product, instrument, "")
 }
 
 func deribitOrder(row deribit.Order) exchange.Order {
@@ -830,6 +850,73 @@ func deribitCommandErr(meta clientMeta, ack exchange.OrderAcknowledgement, err e
 	}
 	ack.State = exchange.AckAmbiguous
 	return ack, exchange.NewError(exchange.KindAmbiguousOutcome, exchange.ErrorDetails{Venue: meta.venue, Product: meta.product, Operation: operation, SafeMessage: "deribit command outcome is ambiguous"})
+}
+
+// deribitScope is the slice of a Deribit account one client serves: one
+// instrument kind in some currencies, and which native names belong to it.
+type deribitScope struct {
+	kind       string
+	currencies []string
+	// eventCurrency names the private-stream currency ("any" for all).
+	eventCurrency string
+	serves        func(native string) bool
+}
+
+// labelCurrency is the currency Deribit files an instrument's orders under,
+// which get_order_state_by_label requires.
+func (scope deribitScope) labelCurrency(instrument exchange.Instrument) string {
+	if len(scope.currencies) == 1 {
+		return scope.currencies[0]
+	}
+	if instrument.Identity.Product == exchange.ProductOption {
+		return instrument.Identity.SettleAsset
+	}
+	if instrument.Identity.Product == exchange.ProductSpot {
+		return instrument.Identity.BaseAsset
+	}
+	return instrument.Identity.SettleAsset
+}
+
+// deribitBase is what every Deribit product client shares: catalog-backed
+// instruments, market data, orders and the lookup. Product clients add the
+// account surface of their product.
+type deribitBase struct {
+	meta   clientMeta
+	sdk    *deribit.Client
+	wsURL  string
+	stream func() *deribit.Stream
+	scope  deribitScope
+	// requests collapses identical whole-market reads across callers.
+	requests exchange.MarketRequestCoordinator
+}
+
+func newDeribitBase(clientID, clientSecret string, product exchange.Product, scope deribitScope, settings Settings) *deribitBase {
+	wsURL := settings.WebSocketEndpoint
+	return &deribitBase{
+		meta:     clientMetaFromSettings(exchange.VenueDeribit, product, settings),
+		sdk:      newDeribitSDK(settings).WithCredentials(clientID, clientSecret),
+		wsURL:    wsURL,
+		scope:    scope,
+		requests: settings.MarketRequests,
+		stream: func() *deribit.Stream {
+			stream := deribit.NewStream().WithCredentials(clientID, clientSecret)
+			if wsURL != "" {
+				stream.WithURL(wsURL)
+			}
+			return stream
+		},
+	}
+}
+
+func (client *deribitBase) String() string   { return client.meta.redactedString() }
+func (client *deribitBase) GoString() string { return client.String() }
+
+func (client *deribitBase) ResolveInstrument(ctx context.Context, symbol string) (exchange.Instrument, error) {
+	return client.meta.ResolveInstrument(ctx, symbol)
+}
+
+func (client *deribitBase) RefreshInstruments(ctx context.Context) ([]exchange.Instrument, error) {
+	return client.meta.RefreshInstruments(ctx)
 }
 
 var (
