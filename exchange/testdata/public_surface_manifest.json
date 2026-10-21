@@ -8224,6 +8224,150 @@
       "tests": [
         "TestPublicMarketTickersNormalizeVenueUnits"
       ]
+    },
+    {
+      "id": "exchange.TriggerKind",
+      "kind": "type",
+      "coverage": "contract",
+      "tests": [
+        "TestTriggerOrderRequestValidation"
+      ]
+    },
+    {
+      "id": "exchange.TriggerTakeProfit",
+      "kind": "const",
+      "coverage": "contract",
+      "tests": [
+        "TestTriggerOrderRequestValidation"
+      ]
+    },
+    {
+      "id": "exchange.TriggerStopLoss",
+      "kind": "const",
+      "coverage": "contract",
+      "tests": [
+        "TestTriggerOrderRequestValidation"
+      ]
+    },
+    {
+      "id": "exchange.TriggerPriceType",
+      "kind": "type",
+      "coverage": "contract",
+      "tests": [
+        "TestTriggerOrderRequestValidation"
+      ]
+    },
+    {
+      "id": "exchange.TriggerPriceLast",
+      "kind": "const",
+      "coverage": "contract",
+      "tests": [
+        "TestTriggerOrderRequestValidation"
+      ]
+    },
+    {
+      "id": "exchange.TriggerPriceMark",
+      "kind": "const",
+      "coverage": "contract",
+      "tests": [
+        "TestTriggerOrderRequestValidation"
+      ]
+    },
+    {
+      "id": "exchange.TriggerOrderRequest",
+      "kind": "type",
+      "coverage": "contract",
+      "tests": [
+        "TestTriggerOrderRequestValidation"
+      ]
+    },
+    {
+      "id": "exchange.TriggerOrderRequest.Validate",
+      "kind": "method",
+      "coverage": "contract",
+      "tests": [
+        "TestTriggerOrderRequestValidation"
+      ]
+    },
+    {
+      "id": "exchange.TriggerOrder",
+      "kind": "type",
+      "coverage": "contract",
+      "tests": [
+        "TestBinancePerpTriggerListsLooksUpAndCancels"
+      ]
+    },
+    {
+      "id": "exchange.TriggerLookupStatus",
+      "kind": "type",
+      "coverage": "contract",
+      "tests": [
+        "TestBinancePerpTriggerListsLooksUpAndCancels"
+      ]
+    },
+    {
+      "id": "exchange.TriggerFound",
+      "kind": "const",
+      "coverage": "contract",
+      "tests": [
+        "TestBinancePerpTriggerListsLooksUpAndCancels"
+      ]
+    },
+    {
+      "id": "exchange.TriggerNotFound",
+      "kind": "const",
+      "coverage": "contract",
+      "tests": [
+        "TestBinancePerpTriggerListsLooksUpAndCancels"
+      ]
+    },
+    {
+      "id": "exchange.TriggerOrderREST",
+      "kind": "interface",
+      "coverage": "contract",
+      "tests": [
+        "TestBinancePerpTriggerListsLooksUpAndCancels"
+      ]
+    },
+    {
+      "id": "exchange.TriggerOrderREST.TriggerPriceTypes",
+      "kind": "interface_method",
+      "coverage": "contract",
+      "tests": [
+        "TestBinancePerpTriggerListsLooksUpAndCancels"
+      ]
+    },
+    {
+      "id": "exchange.TriggerOrderREST.PlaceTriggerOrder",
+      "kind": "interface_method",
+      "coverage": "contract",
+      "tests": [
+        "TestBinancePerpTriggerPlacesReduceOnlyConditionalAlgoOrders"
+      ]
+    },
+    {
+      "id": "exchange.TriggerOrderREST.CancelTriggerOrder",
+      "kind": "interface_method",
+      "coverage": "contract",
+      "tests": [
+        "TestBinancePerpTriggerListsLooksUpAndCancels"
+      ]
+    },
+    {
+      "id": "exchange.TriggerOrderREST.OpenTriggerOrders",
+      "kind": "interface_method",
+      "coverage": "contract",
+      "tests": [
+        "TestBinancePerpTriggerListsLooksUpAndCancels"
+      ]
+    },
+    {
+      "id": "exchange.TriggerOrderREST.LookupTriggerOrder",
+      "kind": "interface_method",
+      "coverage": "contract",
+      "tests": [
+        "TestBinancePerpTriggerListsLooksUpAndCancels"
+      ]
     }
   ]
 }

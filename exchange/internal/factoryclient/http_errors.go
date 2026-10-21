@@ -61,8 +61,8 @@ func normalizeHTTPError(mapped, original error, venue exchange.Venue, product ex
 		// An order may issue a follow-up query. Its failure is not proof that the
 		// earlier mutation was never sent.
 		op := strings.ToLower(strings.ReplaceAll(operation, "_", ""))
-		details.CommandNotSent = (local.Action == "place" && (op == "place" || op == "placeorder")) ||
-			(local.Action == "cancel" && (op == "cancel" || op == "cancelorder"))
+		details.CommandNotSent = (local.Action == "place" && (op == "place" || op == "placeorder" || op == "placetriggerorder")) ||
+			(local.Action == "cancel" && (op == "cancel" || op == "cancelorder" || op == "canceltriggerorder"))
 	}
 	details.Venue, details.Product, details.Operation = venue, product, operation
 	return withVenueMessage(exchange.NewError(kind, details), nil, original)

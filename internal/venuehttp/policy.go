@@ -37,7 +37,7 @@ func PolicyForRequest(request *http.Request) HTTPPolicy {
 	body := requestBodyFields(request)
 	switch policy.Venue {
 	case "binance", "aster":
-		if request.Method == http.MethodPost && (strings.HasSuffix(path, "/order") || strings.HasSuffix(path, "/batchOrders")) {
+		if request.Method == http.MethodPost && (strings.HasSuffix(path, "/order") || strings.HasSuffix(path, "/batchOrders") || strings.HasSuffix(path, "/algoOrder")) {
 			policy.Action = "place"
 		}
 		if request.Method == http.MethodDelete && strings.Contains(strings.ToLower(path), "order") {
@@ -290,6 +290,13 @@ func binanceRequestCost(request *http.Request) int {
 			return 1
 		case "fundingRate", "fundingInfo":
 			return 1 // local accounting includes weight-zero calls
+		case "algoOrder":
+			return 1
+		case "openAlgoOrders":
+			if q.Get("symbol") == "" {
+				return 40
+			}
+			return 1
 		}
 	}
 	return 20
