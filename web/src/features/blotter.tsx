@@ -5,14 +5,15 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "@/api/client";
 import { useHedgeHoldings, type HedgeHolding } from "@/api/hedge";
 import { navigate } from "@/state/route";
-import type { Account, Balance, Order, Position } from "@/api/types";
+import type { Account, Balance, Order, Position, Trigger } from "@/api/types";
 import { instrumentName, marketLabel, num, price, snapToStep, time, usd, venueLabel } from "@/lib/format";
 import { accountName, rulesFor } from "@/lib/routes";
 import { useBook, useInstrument, useInstruments, useRoutes } from "@/state/hooks";
-import { originLabel, useWorkspace, type AccountFill, type AccountOrder } from "@/state/workspace";
+import { originLabel, useWorkspace, type AccountFill, type AccountOrder, type AccountTrigger } from "@/state/workspace";
 import { Dialog, PrimaryButton, Tabs, cx } from "@/ui/primitives";
 import { useToast } from "@/ui/toast";
 import { submitOrder } from "./submit";
+import { TriggerDialog, TriggerSummary, triggersOf } from "./triggers";
 import { translate, useT } from "@/i18n";
 
 type Tab = "positions" | "orders" | "fills" | "balances";
@@ -27,7 +28,7 @@ interface AccountBalance extends Balance { account: string }
  */
 export function Blotter() {
   const t = useT();
-  const { accounts, live, openOrders, fills, accountFilter, openConnect } = useWorkspace();
+  const { accounts, live, openOrders, triggers: allTriggers, fills, accountFilter, openConnect } = useWorkspace();
   const [tab, setTab] = useState<Tab>("positions");
   const shown = accountFilter ? accounts.filter((account) => account.id === accountFilter) : accounts;
   const ids = new Set(shown.map((account) => account.id));
@@ -40,6 +41,7 @@ export function Blotter() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [shown.map((account) => account.id).join(), live]);
   const orders = openOrders.filter((order) => ids.has(order.account));
+  const triggers = allTriggers.filter((trigger) => ids.has(trigger.account));
   const trades = fills.filter((fill) => ids.has(fill.account));
   const many = accounts.length > 1;
 
@@ -53,7 +55,7 @@ export function Blotter() {
           options={[
             { value: "balances", label: t("blotter.balances") },
             { value: "positions", label: `${t("blotter.positions")}${positions.length ? ` (${positions.length})` : ""}` },
-            { value: "orders", label: `${t("blotter.openOrders")}${orders.length ? ` (${orders.length})` : ""}` },
+            { value: "orders", label: `${t("blotter.openOrders")}${orders.length + triggers.length ? ` (${orders.length + triggers.length})` : ""}` },
             { value: "fills", label: t("blotter.tradeHistory") },
           ]}
         />
@@ -65,9 +67,9 @@ export function Blotter() {
             {t("blotter.noAccounts")} <button className="text-accent hover:underline" onClick={() => openConnect()}>{t("blotter.connectExchange")}</button> {t("blotter.noAccountsTail")}
           </Empty>
         ) : tab === "positions" ? (
-          <Positions positions={positions} loading={loading} many={many} />
+          <Positions positions={positions} triggers={triggers} loading={loading} many={many} />
         ) : tab === "orders" ? (
-          <OpenOrders orders={orders} many={many} />
+          <OpenOrders orders={orders} triggers={triggers} many={many} />
         ) : tab === "fills" ? (
           <Fills fills={trades} many={many} />
         ) : (
@@ -167,17 +169,22 @@ function Coin({ inst, className, onClick }: { inst: string; className?: string; 
   );
 }
 
-function Positions({ positions, loading, many }: { positions: AccountPosition[]; loading: boolean; many: boolean }) {
+function Positions({ positions, triggers, loading, many }: { positions: AccountPosition[]; triggers: AccountTrigger[]; loading: boolean; many: boolean }) {
   const t = useT();
   const tick = useTick();
-  const { setInstrumentId } = useWorkspace();
+  const { setInstrumentId, routes } = useWorkspace();
   const [closing, setClosing] = useState<{ position: AccountPosition; type: "market" | "limit" } | null>(null);
+  const [protecting, setProtecting] = useState<AccountPosition | null>(null);
+  // Take-profit / stop-loss where the account's route has trigger orders;
+  // elsewhere a position closes by a limit (or market) order only.
+  const supports = (position: AccountPosition) => Boolean(routes[position.account]?.find((route) => route.inst === position.inst)?.triggers);
+  const anyTriggers = positions.some(supports);
   const holdings = useHedgeHoldings();
   if (loading && !positions.length) return <Empty><span className="text-muted">{t("blotter.loadingPositions")}</span></Empty>;
   if (!positions.length) return <Empty>{t("blotter.noPositions")}</Empty>;
   return (
     <>
-      <Table head={[t("common.coin"), ...(many ? [t("common.account")] : []), t("common.size"), t("blotter.positionValue"), t("blotter.entryPrice"), t("blotter.markPrice"), t("blotter.pnl"), t("blotter.liqPrice"), t("blotter.margin"), t("blotter.close")]}>
+      <Table head={[t("common.coin"), ...(many ? [t("common.account")] : []), t("common.size"), t("blotter.positionValue"), t("blotter.entryPrice"), t("blotter.markPrice"), t("blotter.pnl"), t("blotter.liqPrice"), t("blotter.margin"), ...(anyTriggers ? [t("tpsl.column")] : []), t("blotter.close")]}>
         {positions.map((position) => {
           const value = Number(position.size) * Number(position.markPrice ?? position.entryPrice);
           const pnl = Number(position.unrealizedPnl);
@@ -201,6 +208,18 @@ function Positions({ positions, loading, many }: { positions: AccountPosition[];
               </td>
               <td className={td}>{price(position.liquidationPrice, tick(position.inst))}</td>
               <td className={td}>{position.margin ? usd(position.margin) : "—"}</td>
+              {anyTriggers && (
+                <td className={td}>
+                  {supports(position) ? (
+                    <button className="group inline-flex items-center gap-1.5" onClick={() => setProtecting(position)} title={t("tpsl.edit")}>
+                      <TriggerSummary triggers={triggersOf(triggers, position)} tick={tick(position.inst)} />
+                      <span className="text-accent group-hover:underline">{t("tpsl.set")}</span>
+                    </button>
+                  ) : (
+                    <span className="text-muted" title={t("tpsl.unsupported")}>—</span>
+                  )}
+                </td>
+              )}
               <td className={td}>
                 <span className="inline-flex gap-3">
                   <button className="text-accent hover:underline" onClick={() => setClosing({ position, type: "market" })}>{t("blotter.marketClose")}</button>
@@ -211,6 +230,7 @@ function Positions({ positions, loading, many }: { positions: AccountPosition[];
           );
         })}
       </Table>
+      {protecting && <TriggerDialog position={protecting} account={protecting.account} triggers={triggersOf(triggers, protecting)} onDone={() => setProtecting(null)} />}
       {closing && <ClosePosition position={closing.position} type={closing.type} hedges={holdings.get(`${closing.position.account}|${closing.position.inst}`)} onDone={() => setClosing(null)} />}
     </>
   );
@@ -311,14 +331,25 @@ function ClosePosition({ position, type, hedges, onDone }: { position: AccountPo
   );
 }
 
-function OpenOrders({ orders, many }: { orders: AccountOrder[]; many: boolean }) {
+function OpenOrders({ orders, triggers, many }: { orders: AccountOrder[]; triggers: AccountTrigger[]; many: boolean }) {
   const t = useT();
   const tick = useTick();
   const toast = useToast();
   const queryClient = useQueryClient();
   const { setInstrumentId } = useWorkspace();
   const [cancelling, setCancelling] = useState<string | null>(null);
-  if (!orders.length) return <Empty>{t("blotter.noOrders")}</Empty>;
+  if (!orders.length && !triggers.length) return <Empty>{t("blotter.noOrders")}</Empty>;
+  const cancelTrigger = async (trigger: AccountTrigger) => {
+    setCancelling(trigger.account + "/t/" + trigger.orderId);
+    try {
+      await api.cancelTrigger(trigger.account, trigger.inst, trigger.orderId);
+      queryClient.setQueryData<Trigger[]>(["triggers", trigger.account], (current = []) => current.filter((item) => item.orderId !== trigger.orderId));
+    } catch (error) {
+      toast.push({ kind: "error", title: t("blotter.cancelFailed"), detail: (error as Error).message });
+    } finally {
+      setCancelling(null);
+    }
+  };
   const cancel = async (order: AccountOrder) => {
     setCancelling(order.account + order.orderId);
     try {
@@ -354,6 +385,30 @@ function OpenOrders({ orders, many }: { orders: AccountOrder[]; many: boolean })
           </td>
         </tr>
       ))}
+      {triggers.map((trigger) => {
+        const key = trigger.account + "/t/" + trigger.orderId;
+        return (
+          <tr key={key} className="hover:bg-raised">
+            <td className={tdFirst}>{trigger.createdAt ? time(trigger.createdAt) : "—"}</td>
+            <td className={td}><Coin inst={trigger.inst} onClick={() => setInstrumentId(trigger.inst)} /></td>
+            {many && <AccountCell id={trigger.account} inst={trigger.inst} />}
+            <td className={td} title={t("tpsl.typeHint")}>{t(trigger.kind === "take_profit" ? "tpsl.takeProfit" : "tpsl.stopLoss")} · {t("common.market")}</td>
+            <td className={cx(td, trigger.side === "buy" ? "text-up" : "text-down")}>{t(trigger.side === "buy" ? "common.buy" : "common.sell")}</td>
+            <td className={td}>
+              <span className="text-muted">{t(trigger.priceType === "mark" ? "tpsl.markTrigger" : "tpsl.lastTrigger")} </span>
+              {price(trigger.triggerPrice, tick(trigger.inst))}
+            </td>
+            <td className={td}>{trigger.closePosition ? t("tpsl.wholePosition") : num(trigger.qty)}</td>
+            <td className={td}>—</td>
+            <td className={td}>{t("common.yes")}</td>
+            <td className={td}>
+              <button className="text-accent hover:underline disabled:text-muted" disabled={cancelling === key} onClick={() => cancelTrigger(trigger)}>
+                {cancelling === key ? t("common.cancelling") : t("common.cancel")}
+              </button>
+            </td>
+          </tr>
+        );
+      })}
     </Table>
   );
 }
