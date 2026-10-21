@@ -301,6 +301,20 @@ func TestCrossExAccountRequiresCrossExchangeSingleMode(t *testing.T) {
 		t.Fatalf("perp account = %+v", perp)
 	}
 
+	// With positions readable, unrealized PnL is theirs: the pool row carried
+	// only some venues' PnL (a hedged long and short showed as one leg's loss).
+	stub.reply("GET /api/v4/crossex/positions", 200, `[
+		{"user_id":"1","symbol":"BINANCE_FUTURE_ETH_USDT","position_side":"NONE","position_qty":"8","upnl":"-693.84","entry_price":"2553.39","mark_price":"2466.66","leverage":"25"},
+		{"user_id":"1","symbol":"HYPERLIQUID_FUTURE_ETH_USDC","position_side":"NONE","position_qty":"-8","upnl":"687.2","entry_price":"2553.1","mark_price":"2467.2","leverage":"25"}]`)
+	perp, err = client.PerpAccount(context.Background())
+	if err != nil || !perp.UnrealizedPnL.Value.Equal(decimal.RequireFromString("-6.64")) {
+		t.Fatalf("perp upnl = %+v, %v", perp.UnrealizedPnL, err)
+	}
+	pool, err := client.MarginPool(context.Background())
+	if err != nil || !pool.UnrealizedPnL.Value.Equal(decimal.RequireFromString("-6.64")) {
+		t.Fatalf("pool upnl = %+v, %v", pool.UnrealizedPnL, err)
+	}
+
 	for _, mode := range []string{
 		strings.Replace(account, `"CROSS_EXCHANGE"`, `"ISOLATED_EXCHANGE"`, 1),
 		strings.Replace(account, `"SINGLE"`, `"DUAL"`, 1),

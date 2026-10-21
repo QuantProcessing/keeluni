@@ -1,14 +1,14 @@
 import * as Popover from "@radix-ui/react-popover";
 import { useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { api } from "@/api/client";
 import { useHedgeHoldings, type HedgeHolding } from "@/api/hedge";
 import { navigate } from "@/state/route";
 import type { Account, Balance, Order, Position } from "@/api/types";
-import { instrumentName, marketLabel, num, price, time, usd, venueLabel } from "@/lib/format";
-import { accountName } from "@/lib/routes";
-import { useInstruments } from "@/state/hooks";
+import { instrumentName, marketLabel, num, price, snapToStep, time, usd, venueLabel } from "@/lib/format";
+import { accountName, rulesFor } from "@/lib/routes";
+import { useBook, useInstrument, useInstruments, useRoutes } from "@/state/hooks";
 import { originLabel, useWorkspace, type AccountFill, type AccountOrder } from "@/state/workspace";
 import { Dialog, PrimaryButton, Tabs, cx } from "@/ui/primitives";
 import { useToast } from "@/ui/toast";
@@ -171,7 +171,7 @@ function Positions({ positions, loading, many }: { positions: AccountPosition[];
   const t = useT();
   const tick = useTick();
   const { setInstrumentId } = useWorkspace();
-  const [closing, setClosing] = useState<AccountPosition | null>(null);
+  const [closing, setClosing] = useState<{ position: AccountPosition; type: "market" | "limit" } | null>(null);
   const holdings = useHedgeHoldings();
   if (loading && !positions.length) return <Empty><span className="text-muted">{t("blotter.loadingPositions")}</span></Empty>;
   if (!positions.length) return <Empty>{t("blotter.noPositions")}</Empty>;
@@ -202,13 +202,16 @@ function Positions({ positions, loading, many }: { positions: AccountPosition[];
               <td className={td}>{price(position.liquidationPrice, tick(position.inst))}</td>
               <td className={td}>{position.margin ? usd(position.margin) : "—"}</td>
               <td className={td}>
-                <button className="text-accent hover:underline" onClick={() => setClosing(position)}>{t("blotter.marketClose")}</button>
+                <span className="inline-flex gap-3">
+                  <button className="text-accent hover:underline" onClick={() => setClosing({ position, type: "market" })}>{t("blotter.marketClose")}</button>
+                  <button className="text-accent hover:underline" onClick={() => setClosing({ position, type: "limit" })}>{t("blotter.limitClose")}</button>
+                </span>
               </td>
             </tr>
           );
         })}
       </Table>
-      {closing && <ClosePosition position={closing} hedges={holdings.get(`${closing.account}|${closing.inst}`)} onDone={() => setClosing(null)} />}
+      {closing && <ClosePosition position={closing.position} type={closing.type} hedges={holdings.get(`${closing.position.account}|${closing.position.inst}`)} onDone={() => setClosing(null)} />}
     </>
   );
 }
@@ -230,31 +233,51 @@ function HedgeMark({ holdings }: { holdings: HedgeHolding[] | undefined }) {
 }
 
 /**
- * Closes on the account that holds the position, never another one. A
- * position that is a hedge leg can still be closed here, after a warning:
- * the hedge is then left one-sided and the hedger marks it Unhedged.
+ * Closes on the account that holds the position, never another one, with a
+ * reduce-only order: at market, or a limit at a price (prefilled from the
+ * other side of the book) for a share of the position. A position that is a
+ * hedge leg can still be closed here, after a warning: the hedge is then left
+ * one-sided and the hedger marks it Unhedged.
  */
-function ClosePosition({ position, hedges, onDone }: { position: AccountPosition; hedges?: HedgeHolding[]; onDone: () => void }) {
+function ClosePosition({ position, type, hedges, onDone }: { position: AccountPosition; type: "market" | "limit"; hedges?: HedgeHolding[]; onDone: () => void }) {
   const t = useT();
   const account = useAccount()(position.account);
+  const instrument = useInstrument(position.inst);
+  const routes = useRoutes(position.account).data;
+  const rules = instrument ? rulesFor(instrument, routes) : undefined;
+  const book = useBook(type === "limit" ? position.inst : "");
   const toast = useToast();
   const [busy, setBusy] = useState(false);
+  const [share, setShare] = useState(100);
+  const [limit, setLimit] = useState("");
+  const side = position.side === "long" ? "sell" : "buy";
+  // A long closes by selling: the resting price joins the asks; a short the bids.
+  const join = side === "sell" ? book?.asks[0]?.[0] : book?.bids[0]?.[0];
+  useEffect(() => {
+    if (type === "limit" && !limit && join) setLimit(join);
+  }, [type, join, limit]);
+  const qty = share >= 100 ? position.size : snapToStep(String((Number(position.size) * share) / 100), rules?.stepSize ?? "0.00000001");
+  const tooSmall = !(Number(qty) > 0) || (rules?.minQty !== undefined && Number(qty) < Number(rules.minQty));
   const close = async () => {
     if (!account) return;
     setBusy(true);
-    const outcome = await submitOrder(account.id, {
-      inst: position.inst, side: position.side === "long" ? "sell" : "buy", type: "market", qty: position.size, reduceOnly: true,
-    });
+    const outcome = await submitOrder(account.id, type === "market"
+      ? { inst: position.inst, side, type: "market", qty, reduceOnly: true }
+      : { inst: position.inst, side, type: "limit", qty, price: snapToStep(limit, rules?.tickSize ?? "0.00000001"), tif: "gtc", reduceOnly: true });
     setBusy(false);
     if (outcome.kind === "accepted") {
-      toast.push({ kind: "info", title: t("close.closingTitle", { qty: num(position.size), name: instrumentName(position.inst) }), detail: outcome.order.avgPrice ? t("order.averagePrice", { price: num(outcome.order.avgPrice) }) : accountName(account) });
+      toast.push({
+        kind: "info", title: t(type === "market" ? "close.closingTitle" : "close.limitPlaced", { qty: num(qty), name: instrumentName(position.inst), price: limit }),
+        detail: outcome.order.avgPrice ? t("order.averagePrice", { price: num(outcome.order.avgPrice) }) : accountName(account),
+      });
       onDone();
     } else {
       toast.push({ kind: "error", title: t("close.failed"), detail: outcome.message });
     }
   };
+  const field = "flex h-10 items-center gap-2 rounded-lg border border-line px-3 focus-within:border-line-strong";
   return (
-    <Dialog open onOpenChange={(open) => !open && onDone()} title={t("close.title")}
+    <Dialog open onOpenChange={(open) => !open && onDone()} title={t(type === "market" ? "close.title" : "close.limitTitle")}
       description={t("close.description", { side: t(position.side === "long" ? "side.long" : "side.short"), qty: num(position.size), name: instrumentName(position.inst), account: account ? accountName(account) : position.account })}>
       {hedges?.length ? (
         <div role="alert" className="mb-3 rounded-lg border border-down/60 bg-warn-bg px-3 py-2 text-down">
@@ -262,7 +285,28 @@ function ClosePosition({ position, hedges, onDone }: { position: AccountPosition
           <button onClick={() => { onDone(); navigate("/hedge"); }} className="mt-1 block text-accent hover:underline">{t("close.openHedge")}</button>
         </div>
       ) : null}
-      <PrimaryButton onClick={close} disabled={busy || !account}>{busy ? t("close.closing") : t("close.title")}</PrimaryButton>
+      <div className="flex flex-col gap-3">
+        {type === "limit" && (
+          <label className={field}>
+            <span className="text-muted">{t("common.price")}</span>
+            <input inputMode="decimal" autoFocus value={limit} onChange={(event) => setLimit(event.target.value.replace(/[^\d.]/g, ""))} className="min-w-0 flex-1 bg-transparent text-right outline-none" />
+            <span className="text-muted">{instrument?.quote}</span>
+          </label>
+        )}
+        <div className="flex items-center gap-2">
+          <span className="text-muted">{t("common.size")}</span>
+          <span className="ml-auto tabular-nums">{num(qty)} {instrument?.base}</span>
+        </div>
+        <div className="grid grid-cols-4 gap-1">
+          {[25, 50, 75, 100].map((value) => (
+            <button key={value} onClick={() => setShare(value)} className={cx("h-7 rounded-md", share === value ? "bg-line-strong/60 text-text" : "bg-raised text-muted hover:text-text")}>{value}%</button>
+          ))}
+        </div>
+        <PrimaryButton onClick={close} disabled={busy || !account || tooSmall || (type === "limit" && !(Number(limit) > 0))}>
+          {busy ? t("close.closing") : t(type === "market" ? "close.confirmMarket" : "close.confirmLimit")}
+        </PrimaryButton>
+        {tooSmall && rules && <div className="text-center text-muted">{t("ticket.minSizeIs", { min: rules.minQty })}</div>}
+      </div>
     </Dialog>
   );
 }

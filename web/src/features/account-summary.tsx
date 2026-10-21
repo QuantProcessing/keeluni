@@ -34,7 +34,7 @@ export function AccountSummary() {
     return (
       <div className="flex-1 bg-surface p-3">
         <div className="mb-2 text-md">{accountName(account)}</div>
-        <MarginPool margin={live.margin} />
+        <MarginPool margin={live.margin} positionsPnl={live.positions ? summary.pnl : undefined} />
         {stream}
       </div>
     );
@@ -54,17 +54,18 @@ export function AccountSummary() {
 const WARNING = { caution: "pool.caution", restricted: "pool.restricted", liquidation: "pool.liquidation" } as const satisfies Record<Exclude<MarginLevel, "ok">, string>;
 
 /** One margin pool backing positions on every venue the broker reaches. */
-export function MarginPool({ margin }: { margin: Margin | undefined }) {
+export function MarginPool({ margin, positionsPnl }: { margin: Margin | undefined; positionsPnl?: number }) {
   const t = useT();
   if (!margin) return <div className="py-1 text-muted">{t("pool.loading")}</div>;
   const level = marginLevel(margin.initialMarginRate, margin.maintenanceMarginRate);
-  const pnl = Number(margin.unrealizedPnl);
+  // The positions' own PnL when known: it is what the positions table sums to.
+  const pnl = positionsPnl ?? Number(margin.unrealizedPnl);
   const shares = (margin.byVenue ?? []).filter((share) => Number(share.equity) !== 0 || Number(share.initialMargin) !== 0);
   return (
     <>
       <Row label={t("pool.balance")} hint={t("pool.balanceHint")}>{usd(margin.equity)}</Row>
       <Row label={t("pool.available")} hint={t("pool.availableHint")}>{usd(margin.available)}</Row>
-      <Row label={t("summary.unrealized")}><span className={pnl >= 0 ? "text-up" : "text-down"}>{usd(margin.unrealizedPnl)}</span></Row>
+      <Row label={t("summary.unrealized")}><span className={pnl >= 0 ? "text-up" : "text-down"}>{usd(pnl)}</span></Row>
       {Number(margin.initialMargin) > 0 && <Row label={t("pool.initial")}>{usd(margin.initialMargin)}</Row>}
       <Row label={t("pool.initialRate")} hint={t("pool.initialRateHint")}>
         <Rate value={margin.initialMarginRate} warn={level === "caution" || level === "restricted"} />

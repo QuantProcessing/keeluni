@@ -79,44 +79,6 @@ export function AccountLabel({ account }: { account: Account }) {
   );
 }
 
-/**
- * The account an order goes to, as one row: its name, stream state and kind;
- * a menu of every account that trades this order book (with what each has
- * available) when there is a choice, plus brokers that could. Nothing is
- * chosen behind the user's back.
- */
-export function AccountPicker({ instrument, account, candidates, unconnectedBrokers, onChoose }: {
-  instrument: Instrument | undefined;
-  account: Account;
-  candidates: Account[];
-  unconnectedBrokers: string[];
-  onChoose: (id: string) => void;
-}) {
-  const t = useT();
-  const choosable = candidates.length > 1 || unconnectedBrokers.length > 0;
-  const row = (
-    <>
-      <AccountLabel account={account} />
-      {account.kind === "broker" && <span className="shrink-0 text-muted">· {t("common.crossExchange")}</span>}
-    </>
-  );
-  return (
-    <div className="flex h-8 items-center gap-2">
-      <span className="shrink-0 text-muted">{t("common.account")}</span>
-      {choosable ? (
-        <AccountMenu
-          instrument={instrument} account={account} candidates={candidates} unconnectedBrokers={unconnectedBrokers} onChoose={onChoose}
-          ariaLabel="Trading account" className="ml-auto flex h-8 min-w-0 items-center gap-2 rounded-lg px-2.5 hover:bg-raised"
-        >
-          {(open) => <>{row}<span className="shrink-0 text-muted">{open ? "▴" : "▾"}</span></>}
-        </AccountMenu>
-      ) : (
-        <span className="ml-auto flex min-w-0 items-center gap-2 px-2.5">{row}</span>
-      )}
-    </div>
-  );
-}
-
 export function AccountOption({ account, selected, onChoose }: { account: Account; selected: boolean; onChoose: () => void }) {
   const t = useT();
   const { live } = useWorkspace();
