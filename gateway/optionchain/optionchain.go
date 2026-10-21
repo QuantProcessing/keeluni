@@ -328,7 +328,12 @@ func project(instrument market.Instrument, terms exchange.OptionTerms, quote exc
 	return row
 }
 
+// round rounds to places; a non-finite value (an option moments from
+// expiry can produce one) is 0, so the chain always encodes.
 func round(value float64, places int) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0
+	}
 	scale := math.Pow(10, float64(places))
 	return math.Round(value*scale) / scale
 }
@@ -388,7 +393,7 @@ func summarizeExpiry(rows []Row) Expiry {
 	for _, row := range rows {
 		if row.forward > 0 {
 			forwards = append(forwards, row.forward)
-			summary.Discount = row.discount
+			summary.Discount = round(row.discount, 8)
 		}
 		strike := parseFloat(row.Strike)
 		point := byStrike[strike]
