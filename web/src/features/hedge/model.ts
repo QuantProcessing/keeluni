@@ -254,3 +254,134 @@ export function marginCheck(legs: Array<{ accountId: string; shared: boolean; no
 }
 
 const money = (value: number) => "$" + value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// ---------------------------------------------------------------------------
+// Opportunities: the funding table read as pairs
+// ---------------------------------------------------------------------------
+
+export interface FundingRow {
+  inst: string;
+  venue: string;
+  base: string;
+  apr?: string;
+  intervalHours?: number;
+  nextFunding?: number;
+  mark?: string;
+  oiUsd?: string;
+  stale: boolean;
+}
+
+export interface Opportunity {
+  base: string;
+  /** The leg that pays the least funding: bought. */
+  long: FundingRow;
+  /** The leg that pays the most: sold, so it receives. */
+  short: FundingRow;
+  /** Net funding a year, short APR − long APR (a fraction). */
+  net: number;
+  /** The smaller leg's open interest in USD: how much the pair can carry. */
+  depth?: number;
+  /** Mark of the short leg over the long leg, in bps: the basis now. */
+  basisBps?: number;
+  /** Perps of this base the table lists. */
+  venues: number;
+}
+
+/**
+ * The best funding pair of every underlying: the venue paying the most is
+ * shorted, the one paying the least is bought. Rows without an APR and stale
+ * rows are left out. With minOi, a pair needs depth: a leg below minOi (USD
+ * open interest) is dropped, and a leg whose venue does not publish open
+ * interest (Binance, Hyperliquid) is kept only when paired with one that does
+ * and clears the bar — a 400% APR on a market nobody trades is not an
+ * opportunity, and two unknowns prove nothing.
+ */
+export function opportunities(rows: FundingRow[], options: { minOi?: number; venues?: string[] } = {}): Opportunity[] {
+  const byBase = new Map<string, FundingRow[]>();
+  for (const row of rows) {
+    if (row.stale || row.apr === undefined || !Number.isFinite(Number(row.apr))) continue;
+    if (options.venues?.length && !options.venues.includes(row.venue)) continue;
+    if (options.minOi && row.oiUsd !== undefined && !(Number(row.oiUsd) >= options.minOi)) continue;
+    byBase.set(row.base, [...(byBase.get(row.base) ?? []), row]);
+  }
+  const out: Opportunity[] = [];
+  for (const [base, list] of byBase) {
+    if (list.length < 2) continue;
+    let long = list[0]!, short = list[0]!;
+    for (const row of list) {
+      if (Number(row.apr) < Number(long.apr)) long = row;
+      if (Number(row.apr) > Number(short.apr)) short = row;
+    }
+    if (long.inst === short.inst) continue;
+    const ois = [long.oiUsd, short.oiUsd].filter((value) => value !== undefined).map(Number);
+    if (options.minOi && ois.length === 0) continue;
+    const marks = [Number(long.mark), Number(short.mark)];
+    out.push({
+      base, long, short, net: Number(short.apr) - Number(long.apr), venues: list.length,
+      depth: ois.length ? Math.min(...ois) : undefined,
+      basisBps: marks[0]! > 0 && marks[1]! > 0 ? ((marks[1]! - marks[0]!) / marks[0]!) * 10_000 : undefined,
+    });
+  }
+  return out.sort((a, b) => b.net - a.net);
+}
+
+// ---------------------------------------------------------------------------
+// Spread ladder: both books read as one market for the pair
+// ---------------------------------------------------------------------------
+
+type Levels = Array<[string, string]>;
+
+/** Average price and filled base to spend notional (quote) walking levels; undefined when empty. */
+export function sweepNotional(levels: Levels, notional: number): { avg: number; base: number; full: boolean } | undefined {
+  let spent = 0, base = 0;
+  for (const [priceText, sizeText] of levels) {
+    const price = Number(priceText), size = Number(sizeText);
+    if (!(price > 0) || !(size > 0)) continue;
+    const take = Math.min(size, (notional - spent) / price);
+    spent += take * price;
+    base += take;
+    if (spent >= notional * (1 - 1e-9)) break;
+  }
+  return base > 0 ? { avg: spent / base, base, full: spent >= notional * (1 - 1e-9) } : undefined;
+}
+
+export interface LadderRow {
+  /** Notional per leg, in the quote currency. */
+  notional: number;
+  /** Opening: buy the long leg's asks, sell the short leg's bids. bps of the long leg. */
+  open?: number;
+  /** Closing: sell the long leg's bids, buy back the short leg's asks. */
+  close?: number;
+  /** Both books hold the size on both sides. */
+  full: boolean;
+}
+
+/**
+ * The pair's synthetic book: for each size, the spread a market entry would
+ * trade at (short leg's average sell over the long leg's average buy, in bps
+ * of the long leg) and the spread a market exit would trade at. open − close
+ * is the round trip a hedge pays for crossing both books twice; funding has
+ * to earn it back.
+ */
+export function spreadLadder(
+  longBook: { bids: Levels; asks: Levels } | undefined,
+  shortBook: { bids: Levels; asks: Levels } | undefined,
+  sizes: number[],
+  ratio = 1,
+): LadderRow[] {
+  return sizes.map((notional) => {
+    if (!longBook || !shortBook) return { notional, full: false };
+    const buyLong = sweepNotional(longBook.asks, notional);
+    const sellShort = sweepNotional(shortBook.bids, notional);
+    const sellLong = sweepNotional(longBook.bids, notional);
+    const buyShort = sweepNotional(shortBook.asks, notional);
+    const spread = (longPrice: number | undefined, shortPrice: number | undefined) =>
+      longPrice && shortPrice ? ((shortPrice / ratio - longPrice) / longPrice) * 10_000 : undefined;
+    return {
+      notional,
+      open: spread(buyLong?.avg, sellShort?.avg),
+      close: spread(sellLong?.avg, buyShort?.avg),
+      full: !!(buyLong?.full && sellShort?.full && sellLong?.full && buyShort?.full),
+    };
+  });
+}

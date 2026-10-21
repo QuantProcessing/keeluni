@@ -133,6 +133,9 @@ export interface FundingQuote {
   intervalHours?: number;
   apr?: string;
   nextFunding?: number;
+  /** Mark price and open interest in USD, when the venue publishes them. */
+  mark?: string;
+  oiUsd?: string;
   observedAt: number;
   stale: boolean;
 }

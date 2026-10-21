@@ -88,9 +88,10 @@ export function PairBar({ pair, matching, onInstrument, onFlip, canFlip }: {
   );
 }
 
+/** The leg's side: the one place on the page the direction is coloured. */
 function Side({ side }: { side: "buy" | "sell" }) {
   const t = useT();
-  return <span className={cx("w-9 shrink-0", side === "buy" ? "text-up" : "text-down")}>{t(side === "buy" ? "common.long" : "common.short")}</span>;
+  return <span className={cx("shrink-0 rounded px-1.5 py-0.5 text-xs", side === "buy" ? "bg-long/20 text-up" : "bg-short-deep/50 text-down")}>{t(side === "buy" ? "common.long" : "common.short")}</span>;
 }
 
 function Metric({ label, value, hint, className }: { label: string; value: string; hint: string; className?: string }) {
