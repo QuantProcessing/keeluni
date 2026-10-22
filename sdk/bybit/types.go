@@ -375,6 +375,13 @@ type PlaceOrderRequest struct {
 	BBOLevel              string `json:"bboLevel,omitempty"`
 	OrderIV               string `json:"orderIv,omitempty"`
 	MMP                   bool   `json:"mmp,omitempty"`
+	// Conditional orders: TriggerPrice with TriggerDirection 1 (fires when
+	// the price rises to it) or 2 (falls to it), compared with TriggerBy
+	// (LastPrice | MarkPrice | IndexPrice); OrderFilter StopOrder.
+	TriggerPrice     string `json:"triggerPrice,omitempty"`
+	TriggerDirection int    `json:"triggerDirection,omitempty"`
+	TriggerBy        string `json:"triggerBy,omitempty"`
+	OrderFilter      string `json:"orderFilter,omitempty"`
 }
 
 type BatchPlaceOrderItem struct {
@@ -504,6 +511,11 @@ type OrderRecord struct {
 	ClosedPnl          string `json:"closedPnl"`
 	TriggerPrice       string `json:"triggerPrice"`
 	LastPriceOnCreated string `json:"lastPriceOnCreated"`
+	TriggerDirection   int    `json:"triggerDirection"`
+	TriggerBy          string `json:"triggerBy"`
+	StopOrderType      string `json:"stopOrderType"`
+	OrderFilter        string `json:"orderFilter"`
+	CloseOnTrigger     bool   `json:"closeOnTrigger"`
 }
 
 type ExecutionRecord struct {

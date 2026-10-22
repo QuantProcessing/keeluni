@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 )
@@ -556,4 +557,102 @@ func (c *Client) SetLeverage(ctx context.Context, req *SetLeverageRequest) error
 		return newResponseError("set leverage", out.Code, out.Msg)
 	}
 	return nil
+}
+
+// StrategyOrderRequest places a UTA strategy order. Take-profit / stop-loss
+// use type "tpsl" with tpslMode "partial" (a fixed quantity) and either
+// takeProfit or stopLoss, triggered by "market" (last) or "mark".
+type StrategyOrderRequest struct {
+	Category    string `json:"category"`
+	Symbol      string `json:"symbol"`
+	Type        string `json:"type"`
+	Side        string `json:"side,omitempty"`
+	PosSide     string `json:"posSide,omitempty"`
+	Qty         string `json:"qty,omitempty"`
+	MarginMode  string `json:"marginMode,omitempty"`
+	ClientOID   string `json:"clientOid,omitempty"`
+	TPSLMode    string `json:"tpslMode,omitempty"`
+	ReduceOnly  string `json:"reduceOnly,omitempty"`
+	TPTriggerBy string `json:"tpTriggerBy,omitempty"`
+	SLTriggerBy string `json:"slTriggerBy,omitempty"`
+	TakeProfit  string `json:"takeProfit,omitempty"`
+	StopLoss    string `json:"stopLoss,omitempty"`
+	TPOrderType string `json:"tpOrderType,omitempty"`
+	SLOrderType string `json:"slOrderType,omitempty"`
+}
+
+// StrategyOrder is an unfilled (or historical) UTA strategy order.
+type StrategyOrder struct {
+	OrderID      string `json:"orderId"`
+	ClientOID    string `json:"clientOid"`
+	Category     string `json:"category"`
+	Symbol       string `json:"symbol"`
+	Qty          string `json:"qty"`
+	Side         string `json:"side"`
+	PosSide      string `json:"posSide"`
+	Status       string `json:"status"`
+	TPSLMode     string `json:"tpslMode"`
+	TPTriggerBy  string `json:"tpTriggerBy"`
+	SLTriggerBy  string `json:"slTriggerBy"`
+	TakeProfit   string `json:"takeProfit"`
+	StopLoss     string `json:"stopLoss"`
+	TPOrderType  string `json:"tpOrderType"`
+	SLOrderType  string `json:"slOrderType"`
+	TriggerPrice string `json:"triggerPrice"`
+	CreatedTime  string `json:"createdTime"`
+	UpdatedTime  string `json:"updatedTime"`
+}
+
+// PlaceStrategyOrder submits /api/v3/trade/place-strategy-order.
+func (c *Client) PlaceStrategyOrder(ctx context.Context, req *StrategyOrderRequest) (*PlaceOrderResponse, error) {
+	var out commandResponseEnvelope[PlaceOrderResponse]
+	if err := c.postPrivate(ctx, "/api/v3/trade/place-strategy-order", req, &out); err != nil {
+		return nil, err
+	}
+	result, err := commandResult("place strategy order", out)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateOrderActionResult("place strategy order", result.OrderID, result.ClientOID, "", req.ClientOID); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// CancelStrategyOrder cancels one strategy order by order id.
+func (c *Client) CancelStrategyOrder(ctx context.Context, orderID string) error {
+	var out responseEnvelope[json.RawMessage]
+	if err := c.postPrivate(ctx, "/api/v3/trade/cancel-strategy-order", map[string]string{"orderId": orderID}, &out); err != nil {
+		return err
+	}
+	if out.Code != "00000" {
+		return newResponseError("cancel strategy order", out.Code, out.Msg)
+	}
+	return nil
+}
+
+// GetUnfilledStrategyOrders lists waiting strategy orders of one type.
+func (c *Client) GetUnfilledStrategyOrders(ctx context.Context, category, strategyType string) ([]StrategyOrder, error) {
+	var out responseEnvelope[[]StrategyOrder]
+	if err := c.getPrivate(ctx, "/api/v3/trade/unfilled-strategy-orders", map[string]string{"category": category, "type": strategyType}, &out); err != nil {
+		return nil, err
+	}
+	if out.Code != "00000" {
+		return nil, newResponseError("get unfilled strategy orders", out.Code, out.Msg)
+	}
+	return out.Data, nil
+}
+
+// GetStrategyOrderHistory lists recent finished strategy orders of one type.
+func (c *Client) GetStrategyOrderHistory(ctx context.Context, category, strategyType string) ([]StrategyOrder, error) {
+	var out responseEnvelope[struct {
+		List []StrategyOrder `json:"list"`
+	}]
+	if err := c.getPrivate(ctx, "/api/v3/trade/history-strategy-orders", map[string]string{"category": category, "type": strategyType, "limit": "100"}, &out); err != nil {
+		return nil, err
+	}
+	if out.Code != "00000" {
+		return nil, newResponseError("get strategy order history", out.Code, out.Msg)
+	}
+	return out.Data.List, nil
 }

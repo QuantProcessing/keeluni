@@ -67,7 +67,7 @@ func PolicyForRequest(request *http.Request) HTTPPolicy {
 			policy.Action = "cancel"
 		}
 	case "okx":
-		if request.Method == http.MethodPost && (path == "/api/v5/trade/order" || path == "/api/v5/trade/batch-orders") {
+		if request.Method == http.MethodPost && (path == "/api/v5/trade/order" || path == "/api/v5/trade/batch-orders" || path == "/api/v5/trade/order-algo") {
 			policy.Action = "place"
 		}
 		if strings.HasPrefix(path, "/api/v5/trade/cancel-") {

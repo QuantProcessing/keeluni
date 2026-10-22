@@ -169,6 +169,10 @@ func classify(id venue.InstrumentID, request exchange.PlaceOrderRequest, ack exc
 		case isNormalized && normalized.Details().CommandNotSent:
 			// Proven never sent (e.g. local rate limit): safe to treat as refused.
 			return rejected()
+		case ack.State == exchange.AckAmbiguous && errors.Is(err, exchange.ErrVenueRejected):
+			// The adapter could not prove the venue code is a rejection (it is
+			// outside the SDK's documented taxonomy): the order may exist.
+			return PlaceResult{Status: OutcomeUnknown, Category: failure.Category, Message: "Order outcome unknown — checking with the exchange before anything else."}
 		case ack.State == exchange.AckRejected,
 			errors.Is(err, exchange.ErrVenueRejected), errors.Is(err, exchange.ErrAuthentication), errors.Is(err, exchange.ErrPermission):
 			return rejected()

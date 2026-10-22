@@ -24,6 +24,8 @@ func TestWirePoliciesWeightParametersAndPreserveBodies(t *testing.T) {
 		{"binance", "GET", "/api/v3/ticker/24hr?symbol=BTCUSDT", "", "read", 2},
 		{"binance", "DELETE", "/api/v3/order?signature=SECRET", "", "cancel", 1},
 		{"binance", "POST", "/fapi/v1/algoOrder", "", "place", 1},
+		{"okx", "POST", "/api/v5/trade/order-algo", "", "place", 1},
+		{"okx", "POST", "/api/v5/trade/cancel-algos", "", "cancel", 1},
 		{"binance", "DELETE", "/fapi/v1/algoOrder?algoId=1", "", "cancel", 1},
 		{"binance", "GET", "/fapi/v1/openAlgoOrders", "", "read", 40},
 		{"binance", "GET", "/fapi/v1/openAlgoOrders?symbol=BTCUSDT", "", "read", 1},

@@ -22,6 +22,9 @@ func TestClassifyNeverReportsRejectedWithoutProof(t *testing.T) {
 		{"deadline", exchange.OrderAcknowledgement{}, exchange.NewError(exchange.KindDeadlineExceeded, exchange.ErrorDetails{}), OutcomeUnknown},
 		{"plain error", exchange.OrderAcknowledgement{}, errors.New("boom"), OutcomeUnknown},
 		{"venue rejection", exchange.OrderAcknowledgement{State: exchange.AckRejected, VenueCode: "-2019", VenueMessage: "Margin is insufficient."}, exchange.NewError(exchange.KindVenueRejected, exchange.ErrorDetails{Code: "-2019"}), OutcomeRejected},
+		// A venue code outside the SDK's rejection taxonomy: the adapter marks
+		// the acknowledgement ambiguous even though the error kind is a rejection.
+		{"unlisted venue code", exchange.OrderAcknowledgement{State: exchange.AckAmbiguous}, exchange.NewError(exchange.KindVenueRejected, exchange.ErrorDetails{Code: "40762"}), OutcomeUnknown},
 		{"not sent", exchange.OrderAcknowledgement{}, exchange.NewError(exchange.KindTransport, exchange.ErrorDetails{CommandNotSent: true}), OutcomeRejected},
 		{"local validation", exchange.OrderAcknowledgement{}, exchange.NewError(exchange.KindInvalidRequest, exchange.ErrorDetails{}), OutcomeRejected},
 		{"auth", exchange.OrderAcknowledgement{}, exchange.NewError(exchange.KindAuthentication, exchange.ErrorDetails{HTTPStatus: 401}), OutcomeRejected},

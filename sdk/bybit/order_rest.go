@@ -252,6 +252,12 @@ func (c *Client) scanOrderHistory(
 }
 
 func (c *Client) GetRealtimeOrders(ctx context.Context, category, symbol, settleCoin, orderID, orderLinkID string, openOnly int) ([]OrderRecord, error) {
+	return c.GetRealtimeOrdersFiltered(ctx, category, symbol, settleCoin, orderID, orderLinkID, openOnly, "")
+}
+
+// GetRealtimeOrdersFiltered reads open (and recent) orders of one order
+// filter: "" for the venue default (Order), StopOrder for conditional ones.
+func (c *Client) GetRealtimeOrdersFiltered(ctx context.Context, category, symbol, settleCoin, orderID, orderLinkID string, openOnly int, orderFilter string) ([]OrderRecord, error) {
 	var out []OrderRecord
 	cursor := ""
 	seenCursors := make(map[string]struct{})
@@ -276,6 +282,9 @@ func (c *Client) GetRealtimeOrders(ctx context.Context, category, symbol, settle
 		}
 		if openOnly >= 0 {
 			query["openOnly"] = fmt.Sprintf("%d", openOnly)
+		}
+		if orderFilter != "" {
+			query["orderFilter"] = orderFilter
 		}
 
 		var resp responseEnvelope[OrdersResult]
