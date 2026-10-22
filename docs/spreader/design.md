@@ -123,12 +123,17 @@ hedger 的执行部分是 spreader 需要的全部执行能力：两腿下单（
 
 **做法**（P1 已完成）：
 
+<!-- v-pre: the {{placeholders}} below are SQL template names, not Vue. -->
+<div v-pre>
+
 1. hedger 除 HTTP API（`hedger/api.go`）外的全部代码移入 `pairexec`：模型、Engine、runner、Market、Store、sizing、position、文本码、Service、视图与资金费估算。
 2. Store 由 `Schema{Prefix, Migrations, Lock}` 决定表名：SQL 与迁移文件中的 `{{groups}}`、`{{prefix}}` 等占位符在运行时替换。`pairexec.HedgeSchema` 就是 hedger 一直使用的表名（`hedge_*`、`hedger_migrations`、原 advisory lock），已部署的库无需任何迁移；已用旧库验证。
 3. `Engine.SetObserver(Observer)`：动作结束、组状态确定后回调 `ActionSettled(group, action, status)`。spreader 用它回填周期；hedger 不设置。
 4. `Store.Migrate(fs, dir)` 让应用把自己的迁移文件（含 `{{...}}` 占位符）应用到同一 schema；`NewStoreWithPool` 让应用复用连接池。
 5. 文本码保留在 `pairexec/text.go`（全部是执行相关的），前端字典与测试改为读这个文件。
 6. 结果：hedger 行为不变（同一 API、同一表）；执行内核测试在真实 PostgreSQL 上全部通过，并新增「两个前缀在同一库中互不干扰」的测试。
+
+</div>
 
 ### 4.2 spreader 的组件
 
