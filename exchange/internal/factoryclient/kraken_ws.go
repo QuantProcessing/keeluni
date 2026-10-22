@@ -255,6 +255,10 @@ func (state *krakenAccountState) decode(message kraken.Message) ([]accountBacken
 			state.orders = map[string]exchange.Order{}
 			out := make([]accountBackendEvent, 0, len(payload.Orders))
 			for _, row := range payload.Orders {
+				if krakenIsTriggerType(row.Type) {
+					// Take-profit / stop-loss: read by OpenTriggerOrders.
+					continue
+				}
 				order := krakenWSOrder(row)
 				state.orders[order.OrderID] = order
 				out = append(out, krakenOrderEvent(order))
@@ -313,6 +317,10 @@ func (state *krakenAccountState) decode(message kraken.Message) ([]accountBacken
 func (state *krakenAccountState) orderDelta(payload kraken.OpenOrdersMessage) []accountBackendEvent {
 	var order exchange.Order
 	if payload.Order != nil {
+		if krakenIsTriggerType(payload.Order.Type) {
+			// A resting trigger order; the order it sends arrives on its own.
+			return nil
+		}
 		order = krakenWSOrder(*payload.Order)
 		if previous, ok := state.orders[order.OrderID]; ok && order.ClientOrderID == "" {
 			order.ClientOrderID = previous.ClientOrderID

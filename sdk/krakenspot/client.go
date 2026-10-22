@@ -273,6 +273,25 @@ func (c *Client) AssetPairs(ctx context.Context) (map[string]AssetPair, error) {
 	return out, err
 }
 
+// RESTTicker is one pair's 24h market from the public Ticker endpoint: c is
+// [last price, lot volume], o today's open (UTC midnight), v [today, 24h]
+// base volume, p [today, 24h] volume-weighted price.
+type RESTTicker struct {
+	Close  []string `json:"c"`
+	Open   string   `json:"o"`
+	Volume []string `json:"v"`
+	VWAP   []string `json:"p"`
+	High   []string `json:"h"`
+	Low    []string `json:"l"`
+}
+
+// Tickers reads every pair's ticker, keyed by the legacy REST name.
+func (c *Client) Tickers(ctx context.Context) (map[string]RESTTicker, error) {
+	out := map[string]RESTTicker{}
+	err := c.do(ctx, "/0/public/Ticker", nil, false, &out)
+	return out, err
+}
+
 // Assets lists every asset keyed by its legacy name.
 func (c *Client) Assets(ctx context.Context) (map[string]Asset, error) {
 	out := map[string]Asset{}

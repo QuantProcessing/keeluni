@@ -1,5 +1,5 @@
 import type {
-  Account, Balance, Book, Candle, Fill, FundingPoint, FundingQuote, Instrument, LookupResult, Margin, Order, PlaceRequest, PlaceResult, Position, Route, Stats, VenueInfo,
+  Account, Balance, Book, Candle, Fill, FundingPoint, FundingQuote, Instrument, LookupResult, Margin, MarketRow, Order, PlaceRequest, PlaceResult, Position, Route, Stats, Trigger, TriggerRequest, TriggerResult, VenueInfo,
 } from "./types";
 
 /** Same for every venue; see gateway account.Category. */
@@ -34,7 +34,7 @@ async function request<T>(method: string, path: string, body?: unknown, signal?:
   const payload = await response.json().catch(() => ({}));
   if (response.status === 401) onUnauthenticated();
   // Place returns a typed outcome on 202/422 as well.
-  if (!response.ok && !(path.endsWith("/orders") && method === "POST" && payload.status)) {
+  if (!response.ok && !((path.endsWith("/orders") || path.endsWith("/triggers")) && method === "POST" && payload.status)) {
     const error = payload.error ?? {};
     throw new ApiError(
       response.status,
@@ -68,6 +68,8 @@ export const api = {
   candles: (inst: string, interval: string, end?: number, signal?: AbortSignal) =>
     request<Candle[]>("GET", gw("/candles" + query({ inst, interval, end, limit: 500 })), undefined, signal),
   stats: (inst: string, signal?: AbortSignal) => request<Stats>("GET", gw("/ticker" + query({ inst })), undefined, signal),
+  /** Every spot and perp instrument's price, 24h change and value, funding and open interest. */
+  markets: (signal?: AbortSignal) => request<MarketRow[]>("GET", gw("/markets"), undefined, signal),
   /** Current funding of every perp on every venue (the resident table). */
   fundingTable: (signal?: AbortSignal) => request<{ quotes: FundingQuote[] }>("GET", gw("/funding"), undefined, signal),
   /** Current funding of every perp with this base asset, across venues. */
@@ -91,6 +93,13 @@ export const api = {
   place: (id: string, order: PlaceRequest) => request<PlaceResult>("POST", acc(id, "/orders"), order),
   lookup: (id: string, inst: string, clientOrderId: string) =>
     request<LookupResult>("GET", acc(id, "/orders/lookup" + query({ inst, clientOrderId }))),
+  /** Resting take-profit / stop-loss orders. */
+  triggers: (id: string, inst?: string) => request<Trigger[]>("GET", acc(id, "/triggers" + query({ inst }))),
+  placeTrigger: (id: string, trigger: TriggerRequest) => request<TriggerResult>("POST", acc(id, "/triggers"), trigger),
+  lookupTrigger: (id: string, inst: string, clientOrderId: string) =>
+    request<{ status: "found" | "not_found"; trigger?: Trigger }>("GET", acc(id, "/triggers/lookup" + query({ inst, clientOrderId }))),
+  cancelTrigger: (id: string, inst: string, orderId: string) =>
+    request<{ ok: boolean }>("DELETE", acc(id, `/triggers/${encodeURIComponent(orderId)}` + query({ inst }))),
   cancel: (id: string, inst: string, orderId: string) =>
     request<{ ok: boolean }>("DELETE", acc(id, `/orders/${encodeURIComponent(orderId)}` + query({ inst }))),
   setLeverage: (id: string, inst: string, leverage: number) =>

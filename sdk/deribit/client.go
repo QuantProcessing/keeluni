@@ -463,6 +463,10 @@ func (c *Client) Place(ctx context.Context, request OrderRequest) (PlaceResult, 
 	if request.ReduceOnly {
 		p["reduce_only"] = "true"
 	}
+	if request.TriggerPrice != "" {
+		p["trigger_price"] = request.TriggerPrice
+		p["trigger"] = request.Trigger
+	}
 	var out PlaceResult
 	err := c.call(ctx, method, p, true, &out)
 	return out, err

@@ -29,6 +29,8 @@ func PolicyForRequest(request *http.Request) HTTPPolicy {
 	// Gate puts the order identity in the path. It must not create a new bucket.
 	if at := strings.Index(endpoint, "/orders/"); at >= 0 {
 		endpoint = endpoint[:at] + "/orders/:id"
+	} else if at := strings.Index(endpoint, "_orders/"); at >= 0 {
+		endpoint = endpoint[:at] + "_orders/:id"
 	}
 	policy.Endpoint = request.Method + " " + endpoint
 	if request.Method == http.MethodGet {
@@ -37,7 +39,7 @@ func PolicyForRequest(request *http.Request) HTTPPolicy {
 	body := requestBodyFields(request)
 	switch policy.Venue {
 	case "binance", "aster":
-		if request.Method == http.MethodPost && (strings.HasSuffix(path, "/order") || strings.HasSuffix(path, "/batchOrders")) {
+		if request.Method == http.MethodPost && (strings.HasSuffix(path, "/order") || strings.HasSuffix(path, "/batchOrders") || strings.HasSuffix(path, "/algoOrder")) {
 			policy.Action = "place"
 		}
 		if request.Method == http.MethodDelete && strings.Contains(strings.ToLower(path), "order") {
@@ -67,7 +69,7 @@ func PolicyForRequest(request *http.Request) HTTPPolicy {
 			policy.Action = "cancel"
 		}
 	case "okx":
-		if request.Method == http.MethodPost && (path == "/api/v5/trade/order" || path == "/api/v5/trade/batch-orders") {
+		if request.Method == http.MethodPost && (path == "/api/v5/trade/order" || path == "/api/v5/trade/batch-orders" || path == "/api/v5/trade/order-algo") {
 			policy.Action = "place"
 		}
 		if strings.HasPrefix(path, "/api/v5/trade/cancel-") {
@@ -89,10 +91,10 @@ func PolicyForRequest(request *http.Request) HTTPPolicy {
 			policy.Action = "cancel"
 		}
 	case "gate", "crossex":
-		if request.Method == http.MethodPost && strings.HasSuffix(path, "/orders") {
+		if request.Method == http.MethodPost && (strings.HasSuffix(path, "/orders") || strings.HasSuffix(path, "/price_orders")) {
 			policy.Action = "place"
 		}
-		if request.Method == http.MethodDelete && strings.Contains(path, "/orders") {
+		if request.Method == http.MethodDelete && (strings.Contains(path, "/orders") || strings.Contains(path, "/price_orders")) {
 			policy.Action = "cancel"
 		}
 	case "hyperliquid":
@@ -290,6 +292,13 @@ func binanceRequestCost(request *http.Request) int {
 			return 1
 		case "fundingRate", "fundingInfo":
 			return 1 // local accounting includes weight-zero calls
+		case "algoOrder":
+			return 1
+		case "openAlgoOrders":
+			if q.Get("symbol") == "" {
+				return 40
+			}
+			return 1
 		}
 	}
 	return 20

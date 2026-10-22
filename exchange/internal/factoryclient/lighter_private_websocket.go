@@ -86,6 +86,11 @@ func (backend *lighterPrivateWSBackend) StartAccountEvents(ctx context.Context, 
 					emitLighterError(callbacks.Error, fmt.Errorf("lighter account order instrument is unknown"))
 					return
 				}
+				if lighterIsTriggerRow(row) {
+					// Take-profit / stop-loss: read by OpenTriggerOrders; the
+					// order it sends arrives as an ordinary one once triggered.
+					continue
+				}
 				converted, convertErr := lighterOrder(row, meta)
 				if convertErr != nil {
 					emitLighterError(callbacks.Error, backend.malformed(operation))
@@ -310,7 +315,7 @@ func (backend *lighterPrivateWSBackend) StartOrders(ctx context.Context, instrum
 		}
 		for _, orders := range event.Orders {
 			for _, row := range orders {
-				if stopped.Load() || row == nil || row.MarketIndex != meta.marketID {
+				if stopped.Load() || row == nil || row.MarketIndex != meta.marketID || lighterIsTriggerRow(row) {
 					continue
 				}
 				order, err := lighterOrder(row, meta)

@@ -264,7 +264,31 @@ func (client *crossExPerpClient) PerpAccount(ctx context.Context) (exchange.Perp
 	if err != nil {
 		return exchange.PerpAccount{}, err
 	}
-	return crossExPerpAccount(account), nil
+	perp := crossExPerpAccount(account)
+	if upnl, ok := client.positionsPnL(ctx); ok {
+		perp.UnrealizedPnL = upnl
+	}
+	return perp, nil
+}
+
+// positionsPnL is the sum of every position's unrealized PnL. CrossEx's
+// pool row does not carry all venues' PnL (in practice it holds some venues'
+// and leaves the rest on the venue rows), so the account figure is the
+// positions' own, which is what the positions table shows.
+func (client *crossExPerpClient) positionsPnL(ctx context.Context) (exchange.OptionalDecimal, bool) {
+	rows, err := client.sdk.Positions(ctx, crossex.PositionsQuery{})
+	if err != nil {
+		return exchange.OptionalDecimal{}, false
+	}
+	return crossExPositionsPnL(rows), true
+}
+
+func crossExPositionsPnL(rows []crossex.Position) exchange.OptionalDecimal {
+	total := decimal.Zero
+	for _, row := range rows {
+		total = total.Add(crossExDecimal(row.Upnl))
+	}
+	return exchange.OptionalDecimal{Value: total, Valid: true}
 }
 
 // MarginPool reports the cross-exchange pool and each venue's share.
@@ -273,7 +297,11 @@ func (client *crossExPerpClient) MarginPool(ctx context.Context) (exchange.Margi
 	if err != nil {
 		return exchange.MarginPool{}, err
 	}
-	return crossExMarginPool(account), nil
+	pool := crossExMarginPool(account)
+	if upnl, ok := client.positionsPnL(ctx); ok {
+		pool.UnrealizedPnL = upnl
+	}
+	return pool, nil
 }
 
 func crossExMarginPool(account crossex.Account) exchange.MarginPool {

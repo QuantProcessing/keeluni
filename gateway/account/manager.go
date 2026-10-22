@@ -393,6 +393,38 @@ func (manager *Manager) Fills(ctx context.Context, id string, instrumentID venue
 	return rt.Fills(ctx, instrument, start, limit)
 }
 
+func (manager *Manager) PlaceTrigger(ctx context.Context, id string, request TriggerRequest) (TriggerResult, error) {
+	rt, instrument, err := manager.resolve(id, request.Instrument)
+	if err != nil {
+		return TriggerResult{}, err
+	}
+	return rt.PlaceTrigger(ctx, instrument, request)
+}
+
+func (manager *Manager) CancelTrigger(ctx context.Context, id string, instrumentID venue.InstrumentID, orderID string) error {
+	rt, instrument, err := manager.resolve(id, instrumentID)
+	if err != nil {
+		return err
+	}
+	return rt.CancelTrigger(ctx, instrument, orderID)
+}
+
+func (manager *Manager) LookupTrigger(ctx context.Context, id string, instrumentID venue.InstrumentID, clientOrderID string) (TriggerLookup, error) {
+	rt, instrument, err := manager.resolve(id, instrumentID)
+	if err != nil {
+		return TriggerLookup{}, err
+	}
+	return rt.LookupTrigger(ctx, instrument, clientOrderID)
+}
+
+func (manager *Manager) OpenTriggers(ctx context.Context, id string, instrumentID venue.InstrumentID) ([]Trigger, error) {
+	rt, instrument, err := manager.resolveOptional(id, instrumentID)
+	if err != nil {
+		return nil, err
+	}
+	return rt.OpenTriggers(ctx, instrument)
+}
+
 func (manager *Manager) SetLeverage(ctx context.Context, id string, instrumentID venue.InstrumentID, leverage int) (int, error) {
 	rt, instrument, err := manager.resolve(id, instrumentID)
 	if err != nil {

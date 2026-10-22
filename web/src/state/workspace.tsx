@@ -2,7 +2,7 @@ import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { api } from "@/api/client";
-import type { Account, Fill, Instrument, Order, Route, VenueInfo } from "@/api/types";
+import type { Account, Fill, Instrument, Order, Route, Trigger, VenueInfo } from "@/api/types";
 import { useAccountStreams, useInstrument, useInstruments, type AccountLive } from "./hooks";
 import { useToast } from "@/ui/toast";
 import { instrumentName, num, venueLabel } from "@/lib/format";
@@ -14,6 +14,7 @@ const DEFAULT_INSTRUMENT = "binance:perp:BTC-USDT";
 /** Rows of the blotter: every account's, each tagged with its account. */
 export interface AccountOrder extends Order { account: string }
 export interface AccountFill extends Fill { account: string }
+export interface AccountTrigger extends Trigger { account: string }
 
 interface Workspace {
   instrumentId: string;
@@ -41,6 +42,8 @@ interface Workspace {
   /** Remembers an order this terminal placed, to report a later rejection. */
   trackOrder: (accountId: string, order: Order) => void;
   openOrders: AccountOrder[];
+  /** Resting take-profit / stop-loss orders of accounts whose markets have them. */
+  triggers: AccountTrigger[];
   fills: AccountFill[];
   limitPriceHint: { price: string; at: number } | null;
   hintLimitPrice: (price: string) => void;
@@ -162,6 +165,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const orderQueries = useQueries({
     queries: accounts.map((account) => ({ queryKey: ["orders", account.id], queryFn: () => api.openOrders(account.id), refetchInterval: 60_000 })),
   });
+  // Trigger orders exist only where some route carries trigger support; they
+  // change rarely (placed here, or fired), so a snapshot each 30 s.
+  const triggerQueries = useQueries({
+    queries: accounts.map((account) => ({
+      queryKey: ["triggers", account.id], queryFn: () => api.triggers(account.id), refetchInterval: 30_000,
+      enabled: Boolean(routes[account.id]?.some((route) => route.triggers)),
+    })),
+  });
+  const triggers = useMemo(() => accounts.flatMap((account, index) => (triggerQueries[index]?.data ?? []).map((trigger) => ({ ...trigger, account: account.id }))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [accounts, ...triggerQueries.map((query) => query.data)]);
   const fillQueries = useQueries({
     queries: accounts.map((account) => ({ queryKey: ["fills", account.id], queryFn: () => api.fills(account.id), refetchInterval: 120_000 })),
   });
@@ -280,11 +294,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const value = useMemo<Workspace>(() => ({
     instrumentId, setInstrumentId, accounts, live, routes, venues,
     candidates, tradingAccount, chooseTradingAccount, unconnectedBrokers,
-    accountFilter, setAccountFilter, trackOrder, openOrders, fills,
+    accountFilter, setAccountFilter, trackOrder, openOrders, triggers, fills,
     limitPriceHint, hintLimitPrice: (price) => setHint({ price, at: Date.now() }),
     connectOpen, connectVenue, openConnect, setConnectOpen, accountCreated,
   }), [instrumentId, setInstrumentId, accounts, live, routes, venues, candidates, tradingAccount, chooseTradingAccount, unconnectedBrokers,
-    accountFilter, setAccountFilter, trackOrder, openOrders, fills, limitPriceHint, connectOpen, connectVenue, openConnect, setConnectOpen, accountCreated]);
+    accountFilter, setAccountFilter, trackOrder, openOrders, triggers, fills, limitPriceHint, connectOpen, connectVenue, openConnect, setConnectOpen, accountCreated]);
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }

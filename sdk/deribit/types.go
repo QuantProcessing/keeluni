@@ -112,6 +112,8 @@ type BookSummary struct {
 	Low            json.Number `json:"low"`
 	Last           json.Number `json:"last"`
 	PriceChange    json.Number `json:"price_change"`
+	// VolumeUSD is the 24h volume in USD (futures and perpetuals).
+	VolumeUSD json.Number `json:"volume_usd"`
 	// Options and spot.
 	BidPrice          json.Number `json:"bid_price"`
 	AskPrice          json.Number `json:"ask_price"`
@@ -240,6 +242,12 @@ type Order struct {
 	CancelReason        string          `json:"cancel_reason"`
 	CreationTimestamp   int64           `json:"creation_timestamp"`
 	LastUpdateTimestamp int64           `json:"last_update_timestamp"`
+	// Trigger orders (stop_market, take_market, ...): TriggerPrice compared
+	// with Trigger (last_price | mark_price | index_price); Triggered once
+	// fired.
+	TriggerPrice json.Number `json:"trigger_price"`
+	Trigger      string      `json:"trigger"`
+	Triggered    bool        `json:"triggered"`
 }
 
 // LimitPrice returns the numeric price, or "" for market_price.
@@ -263,6 +271,9 @@ type OrderRequest struct {
 	Label       string
 	PostOnly    bool
 	ReduceOnly  bool
+	// TriggerPrice and Trigger make a stop_market / take_market order.
+	TriggerPrice string
+	Trigger      string
 }
 
 type PlaceResult struct {

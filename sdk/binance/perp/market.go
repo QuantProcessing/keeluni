@@ -105,6 +105,15 @@ type TickerResponse struct {
 	Count              int64  `json:"count"`
 }
 
+// Tickers reads every symbol's 24h statistics in one call (weight 40).
+func (c *Client) Tickers(ctx context.Context) ([]TickerResponse, error) {
+	var res []TickerResponse
+	if err := c.Get(ctx, c.apiV1("ticker/24hr"), map[string]interface{}{}, false, &res); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
 func (c *Client) Ticker(ctx context.Context, symbol string) (*TickerResponse, error) {
 	params := map[string]interface{}{}
 	if symbol != "" {

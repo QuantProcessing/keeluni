@@ -9,7 +9,7 @@ import { useInstrument, useLastPrice, useStats, useTicker } from "@/state/hooks"
 import { useTradingAccount, useWorkspace } from "@/state/workspace";
 import { Dialog, PrimaryButton, Row, Tabs, cx } from "@/ui/primitives";
 import { useToast } from "@/ui/toast";
-import { AccountPicker, NoAccount } from "./account-picker";
+import { AccountLabel, AccountMenu, NoAccount } from "./account-picker";
 import { submitOrder } from "./submit";
 import { translate, useT } from "@/i18n";
 
@@ -157,19 +157,20 @@ export function OrderTicket() {
 
   return (
     <div className="flex flex-col gap-3 bg-surface p-3">
-      <AccountRow account={account} />
-      {perp && (
-        <div className="grid grid-cols-2 gap-2">
-          <div className="flex h-8 items-center justify-center rounded-lg bg-raised text-muted" title={t("ticket.crossHint")}>{t("ticket.cross")}</div>
-          <button
-            disabled={!account}
-            onClick={() => setLeverageOpen(true)}
-            className="h-8 rounded-lg bg-raised hover:bg-line-strong/40 disabled:text-muted"
-          >
-            {effectiveLeverage ? `${effectiveLeverage}x` : t("ticket.leverage")}
-          </button>
-        </div>
-      )}
+      {/* One row of chips, as on the venues: where the order goes, the margin
+          mode, the leverage. Each opens what it changes. */}
+      <div className="flex h-8 items-stretch gap-1.5">
+        <AccountChip account={account} />
+        {perp && (
+          <>
+            <span className="flex shrink-0 items-center rounded-lg bg-raised px-2.5 text-text-2" title={t("ticket.crossHint")}>{t("ticket.cross")}</span>
+            <button onClick={() => setLeverageOpen(true)} title={t("ticket.leverageHint")}
+              className="shrink-0 rounded-lg bg-raised px-2.5 tabular-nums hover:bg-line-strong/40">
+              {effectiveLeverage ? `${effectiveLeverage}x` : t("ticket.leverage")}
+            </button>
+          </>
+        )}
+      </div>
 
       <Tabs value={type} onChange={setType} options={[{ value: "market", label: t("common.market") }, { value: "limit", label: t("common.limit") }]} className="[&>button]:flex-1" />
 
@@ -184,7 +185,6 @@ export function OrderTicket() {
 
       <div>
         <Row label={t("ticket.available")}>{available ? `${num(available.amount)} ${available.asset}` : "—"}</Row>
-        {perp && <Row label={t("ticket.position")}>{position ? <span className={position.side === "long" ? "text-up" : "text-down"}>{(position.side === "short" ? "-" : "") + num(position.size)} {instrument?.base}</span> : `0 ${instrument?.base ?? ""}`}</Row>}
       </div>
 
       {type === "limit" && (
@@ -292,15 +292,31 @@ export function validate(rules: Rules | undefined, baseQty: string, type: OrderT
 }
 
 /**
- * The account an order goes to. It follows the instrument's venue: the
- * account last chosen there, else the native account, else a broker. When
- * several accounts trade this order book a menu lists them all; nothing is
- * switched without the user picking it.
+ * The account an order goes to, as the first chip of the ticket. It follows
+ * the instrument's venue: the account last chosen there, else the native
+ * account, else a broker. When several accounts trade this order book the
+ * chip is a menu of them all; nothing is switched without the user picking.
  */
-function AccountRow({ account }: { account: Account }) {
+function AccountChip({ account }: { account: Account }) {
+  const t = useT();
   const { candidates, chooseTradingAccount, unconnectedBrokers, instrumentId } = useWorkspace();
   const instrument = useInstrument(instrumentId);
-  return <AccountPicker instrument={instrument} account={account} candidates={candidates} unconnectedBrokers={unconnectedBrokers} onChoose={chooseTradingAccount} />;
+  const choosable = candidates.length > 1 || unconnectedBrokers.length > 0;
+  const chip = "flex min-w-0 flex-1 items-center gap-2 rounded-lg bg-raised px-2.5";
+  const body = (open?: boolean) => (
+    <>
+      <AccountLabel account={account} />
+      {account.kind === "broker" && <span className="shrink-0 text-xs text-muted">{t("common.crossExchange")}</span>}
+      {choosable && <span className="ml-auto shrink-0 text-muted">{open ? "▴" : "▾"}</span>}
+    </>
+  );
+  if (!choosable) return <span className={chip} title={t("accounts.soleAccount")}>{body()}</span>;
+  return (
+    <AccountMenu instrument={instrument} account={account} candidates={candidates} unconnectedBrokers={unconnectedBrokers} onChoose={chooseTradingAccount}
+      ariaLabel={t("common.account")} className={cx(chip, "text-left hover:bg-line-strong/40")}>
+      {(open) => body(open)}
+    </AccountMenu>
+  );
 }
 
 export function LeverageDialog({ open, onOpenChange, instrument, accountId, current, onApplied }: {

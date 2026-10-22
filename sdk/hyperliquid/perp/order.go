@@ -499,6 +499,13 @@ func validateCommandOrderStatus(status OrderStatus, req PlaceOrderRequest, opera
 	if status.Error != nil {
 		shapeCount++
 	}
+	if status.Waiting != "" {
+		// Only a trigger order may answer "waiting for trigger".
+		if status.Waiting != "waitingForTrigger" || req.OrderType.Trigger == nil {
+			return fmt.Errorf("%s failed: unexpected venue status %q", operation, status.Waiting)
+		}
+		shapeCount++
+	}
 	if shapeCount != 1 {
 		return fmt.Errorf("%s failed: malformed venue status contains %d result shapes", operation, shapeCount)
 	}

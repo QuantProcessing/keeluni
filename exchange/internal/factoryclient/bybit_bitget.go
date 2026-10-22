@@ -1626,6 +1626,11 @@ func convertBybitOrders(ctx context.Context, meta clientMeta, op string, rows []
 		if nativeFilter != "" && row.Symbol != nativeFilter {
 			continue
 		}
+		if bybitIsTriggerRow(row) {
+			// Resting take-profit / stop-loss: read by OpenTriggerOrders.
+			// The market order it sends on trigger arrives as an ordinary one.
+			continue
+		}
 		nativeID, err := resolveEmittedNativeID(ctx, meta, op, row.Symbol)
 		if err != nil {
 			return nil, err

@@ -44,6 +44,47 @@ export interface Route {
   stepSize: string;
   minQty: string;
   minNotional?: string;
+  /** Set where the account can rest take-profit / stop-loss on this market. */
+  triggers?: { priceTypes: TriggerPriceType[] };
+}
+
+export type TriggerKind = "take_profit" | "stop_loss";
+/** The price the venue compares with the trigger. */
+export type TriggerPriceType = "last" | "mark";
+
+/** A resting take-profit or stop-loss: a reduce-only market order on trigger. */
+export interface Trigger {
+  inst: string;
+  orderId: string;
+  clientOrderId?: string;
+  side: "buy" | "sell";
+  kind: TriggerKind;
+  triggerPrice: string;
+  priceType: TriggerPriceType;
+  /** Absent with closePosition. */
+  qty?: string;
+  /** Closes the whole position whatever its size (set on the venue). */
+  closePosition?: boolean;
+  status: string;
+  createdAt?: number;
+}
+
+export interface TriggerRequest {
+  inst: string;
+  side: "buy" | "sell";
+  kind: TriggerKind;
+  triggerPrice: string;
+  priceType?: TriggerPriceType;
+  qty: string;
+  clientOrderId: string;
+}
+
+export interface TriggerResult {
+  status: "accepted" | "rejected" | "unknown";
+  trigger?: Trigger;
+  venueCode?: string;
+  venueMessage?: string;
+  message?: string;
 }
 
 /** "native": one venue. "broker": one margin pool trading many venues (Gate CrossEx). */
@@ -257,4 +298,18 @@ export interface VenueMargin {
   available: string;
   initialMargin?: string;
   unrealizedPnl?: string;
+}
+
+/** One instrument of the market list (gateway /v1/markets), by 24h value. */
+export interface MarketRow {
+  inst: string;
+  last?: string;
+  open24h?: string;
+  /** Fraction: 0.025 is +2.5%. */
+  change24h?: number;
+  /** 24h traded value in USD (absent when the quote asset has no dollar price). */
+  volume24h?: number;
+  fundingRate?: string;
+  fundingApr?: string;
+  oiUsd?: number;
 }

@@ -411,6 +411,10 @@ func (client *hyperliquidPerpClient) OpenOrders(ctx context.Context, req exchang
 		if requested != nil && row.Coin != requested.nativeCoin {
 			continue
 		}
+		if hlIsTriggerRow(row.IsTrigger, row.OrderType) {
+			// Take-profit / stop-loss: listed by OpenTriggerOrders.
+			continue
+		}
 		meta, ok := metas[row.Coin]
 		if !ok || hlRejectCoin(row.Coin) {
 			return exchange.OrderPage{}, hlMalformed(exchange.ProductPerp, "OpenOrders", "mixed or unknown product row")

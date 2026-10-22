@@ -528,6 +528,8 @@ type AlgoOrder struct {
 	TriggerPx         string            `json:"triggerPx"`
 	TriggerPxType     string            `json:"triggerPxType"`
 	UTime             string            `json:"uTime"`
+	// CloseFraction "1": closes the whole position (set on the venue).
+	CloseFraction string `json:"closeFraction"`
 }
 
 type AlgoCancelRequest struct {

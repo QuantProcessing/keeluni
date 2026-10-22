@@ -296,3 +296,15 @@ func freshAt(now, observedAt time.Time, maxAge time.Duration) bool {
 	age := now.UTC().Sub(observedAt.UTC())
 	return maxAge > 0 && !observedAt.IsZero() && age >= 0 && age <= maxAge
 }
+
+// MarketTicker is one instrument's 24h market from a whole-market read,
+// keyed by its native symbol (or native id where the venue keys by that).
+// Prices are in the quote asset; QuoteVolume24h is the 24h traded value in
+// the quote asset (or its dollar equivalent where the venue reports that).
+type MarketTicker struct {
+	NativeSymbol   string          `json:"native_symbol,omitempty"`
+	NativeID       string          `json:"native_id,omitempty"`
+	Last           OptionalDecimal `json:"last"`
+	Open24h        OptionalDecimal `json:"open_24h"`
+	QuoteVolume24h OptionalDecimal `json:"quote_volume_24h"`
+}

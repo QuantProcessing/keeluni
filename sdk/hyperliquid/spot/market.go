@@ -3,6 +3,7 @@ package spot
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 )
 
 type SpotMeta struct {
@@ -35,6 +36,34 @@ func (c *Client) GetSpotMeta(ctx context.Context) (*SpotMeta, error) {
 		return nil, err
 	}
 	return &res, nil
+}
+
+// SpotAssetCtx is one spot pair's market: coin is the pair name ("@107",
+// "PURR/USDC").
+type SpotAssetCtx struct {
+	Coin       string `json:"coin"`
+	MarkPx     string `json:"markPx"`
+	MidPx      string `json:"midPx"`
+	PrevDayPx  string `json:"prevDayPx"`
+	DayNtlVlm  string `json:"dayNtlVlm"`
+	DayBaseVlm string `json:"dayBaseVlm"`
+}
+
+// GetSpotAssetCtxs reads every spot pair's market (spotMetaAndAssetCtxs).
+func (c *Client) GetSpotAssetCtxs(ctx context.Context) ([]SpotAssetCtx, error) {
+	data, err := c.Post(ctx, "/info", map[string]string{"type": "spotMetaAndAssetCtxs"})
+	if err != nil {
+		return nil, err
+	}
+	var raw []json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	if len(raw) < 2 {
+		return nil, fmt.Errorf("unexpected spotMetaAndAssetCtxs response: %d elements", len(raw))
+	}
+	var ctxs []SpotAssetCtx
+	return ctxs, json.Unmarshal(raw[1], &ctxs)
 }
 
 func (c *Client) GetOutcomeMeta(ctx context.Context) (*OutcomeMeta, error) {

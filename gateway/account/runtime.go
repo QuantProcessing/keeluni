@@ -665,6 +665,10 @@ func (rt *runtime) marketNames() []string {
 func (rt *runtime) Routes(ctx context.Context) ([]Route, error) {
 	routes := []Route{}
 	for _, client := range rt.clients {
+		var triggers *TriggerSupport
+		if !client.broker {
+			triggers = triggerSupport(client)
+		}
 		var brokered map[string]exchange.Instrument
 		if client.broker {
 			instruments, err := client.perp.Instruments(ctx)
@@ -687,6 +691,9 @@ func (rt *runtime) Routes(ctx context.Context) ([]Route, error) {
 				}
 				route := Route{Instrument: instrument.ID, TickSize: native.Rules.PriceIncrement.String(),
 					StepSize: native.Rules.QuantityIncrement.String(), MinQty: native.Rules.MinQuantity.String()}
+				if exchange.IsDerivative(native.Identity.Product) {
+					route.Triggers = triggers
+				}
 				if native.Rules.MinNotional.Valid {
 					route.MinNotional = native.Rules.MinNotional.Value.String()
 				}
