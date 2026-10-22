@@ -536,7 +536,7 @@ func (client *deribitBase) OpenOrders(ctx context.Context, request exchange.Open
 	}
 	orders := make([]exchange.Order, 0, len(rows))
 	for _, row := range rows {
-		if !client.scope.serves(row.InstrumentName) || (filter != "" && row.InstrumentName != filter) {
+		if !client.scope.serves(row.InstrumentName) || (filter != "" && row.InstrumentName != filter) || deribitIsTriggerRow(row) {
 			continue
 		}
 		orders = append(orders, deribitOrder(row))

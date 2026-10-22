@@ -601,7 +601,7 @@ func (client *krakenPerpClient) OpenOrders(ctx context.Context, request exchange
 	}
 	orders := make([]exchange.Order, 0, len(rows))
 	for _, row := range rows {
-		if !strings.HasPrefix(row.Symbol, "PF_") || (filter != "" && row.Symbol != filter) {
+		if !strings.HasPrefix(row.Symbol, "PF_") || (filter != "" && row.Symbol != filter) || krakenIsTriggerType(row.OrderType) {
 			continue
 		}
 		orders = append(orders, krakenOpenOrder(row))

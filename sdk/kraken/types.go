@@ -138,6 +138,8 @@ type OpenOrder struct {
 	OrderType      string      `json:"orderType"` // lmt, post, ioc, mkt, stp, take_profit
 	Symbol         string      `json:"symbol"`
 	LimitPrice     json.Number `json:"limitPrice"`
+	StopPrice      json.Number `json:"stopPrice"`
+	TriggerSignal  string      `json:"triggerSignal"`
 	FilledSize     json.Number `json:"filledSize"`
 	UnfilledSize   json.Number `json:"unfilledSize"`
 	ReduceOnly     bool        `json:"reduceOnly"`
@@ -166,6 +168,11 @@ type OrderRequest struct {
 	LimitPrice    string
 	ClientOrderID string
 	ReduceOnly    bool
+	// Trigger orders (orderType stp or take_profit): StopPrice compared
+	// with TriggerSignal (last | mark | spot). Without LimitPrice they send a
+	// market order when triggered.
+	StopPrice     string
+	TriggerSignal string
 }
 
 // SendStatus.Status is "placed" (accepted) or a rejection reason such as
@@ -198,6 +205,8 @@ type EventOrder struct {
 	Quantity            json.Number `json:"quantity"`
 	Filled              json.Number `json:"filled"`
 	LimitPrice          json.Number `json:"limitPrice"`
+	StopPrice           json.Number `json:"stopPrice"`
+	TriggerSignal       string      `json:"triggerSignal"`
 	ReduceOnly          bool        `json:"reduceOnly"`
 	Timestamp           string      `json:"timestamp"`
 	LastUpdateTimestamp string      `json:"lastUpdateTimestamp"`

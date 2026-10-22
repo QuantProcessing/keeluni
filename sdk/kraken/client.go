@@ -372,6 +372,12 @@ func (c *Client) SendOrder(ctx context.Context, order OrderRequest) (SendStatus,
 	if order.ReduceOnly {
 		p["reduceOnly"] = "true"
 	}
+	if order.StopPrice != "" {
+		p["stopPrice"] = order.StopPrice
+	}
+	if order.TriggerSignal != "" {
+		p["triggerSignal"] = order.TriggerSignal
+	}
 	var out struct {
 		SendStatus SendStatus `json:"sendStatus"`
 	}

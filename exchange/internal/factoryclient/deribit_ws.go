@@ -267,6 +267,10 @@ func deribitAccountEvents(note deribit.Notification) ([]accountBackendEvent, err
 	}
 	var out []accountBackendEvent
 	for _, row := range changes.Orders {
+		if deribitIsTriggerRow(row) {
+			// A resting stop / take: read by OpenTriggerOrders.
+			continue
+		}
 		order := deribitOrder(row)
 		out = append(out, accountBackendEvent{Kind: exchange.AccountEventOrder, NativeSymbol: order.NativeSymbol, Order: &exchange.OrderEvent{Kind: exchange.EventDelta, Order: order}})
 	}

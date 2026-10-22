@@ -248,6 +248,16 @@ HTTP：accepted 200、rejected 422、unknown 202。
 | Binance 永续 | 最新价 / 标记价 | 条件单（algo order），`clientAlgoId` 即 `clientOrderId` |
 | Hyperliquid 永续 | 仅标记价 | trigger 单，触发后以触发价 ±10% 为保护价的市价单成交；含 builder dex（xyz: 等） |
 | Lighter 永续 | 仅标记价 | 止损 / 止盈单，触发后 IOC，保护价同上；下单为异步交易，查询不到时返回 unknown 而不是 not_found |
+| OKX 永续 | 最新价 / 标记价 | 单向条件单（`ordType=conditional`），按张数下单，`algoClOrdId` 即 `clientOrderId`；也列出在 OKX 页面设置的 OCO 止盈止损的市价腿 |
+| Bybit 永续 | 最新价 / 标记价 | 条件市价单（`orderFilter=StopOrder`），按触发方向区分止盈 / 止损；`orderLinkId` 即 `clientOrderId` |
+| Bitget 永续 | 最新价 / 标记价 | UTA 策略单（`type=tpsl`，部分止盈止损），单向模式只减仓、双向模式按持仓方向平仓 |
+| Kraken 永续 | 最新价 / 标记价 | `stp` / `take_profit` 单，触发后市价成交 |
+| Deribit 永续 | 最新价 / 标记价 | `stop_market` / `take_market` 单，`label` 即 `clientOrderId` |
+| Gate 永续（原生账户） | 最新价 / 标记价 | 价格触发单（`price_orders`），触发后市价（IOC）只减仓；Gate 不接受触发单的 clientOrderId，以 `initial.text` 携带，查询时在挂单和最近 100 条已完成单中匹配 |
+
+不支持：Gate CrossEx（只有市价 / 限价平仓）。
+
+查询找不到时，Binance、OKX、Bybit、Hyperliquid 返回 `not_found`（交易所查询是权威的）；Lighter、Bitget、Kraken、Deribit、Gate 只能看到挂单和最近一段已完成单，返回错误（结果未知），调用方应稍后重查，不得重发。
 
 #### POST /triggers
 

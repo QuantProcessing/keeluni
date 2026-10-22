@@ -29,6 +29,8 @@ func PolicyForRequest(request *http.Request) HTTPPolicy {
 	// Gate puts the order identity in the path. It must not create a new bucket.
 	if at := strings.Index(endpoint, "/orders/"); at >= 0 {
 		endpoint = endpoint[:at] + "/orders/:id"
+	} else if at := strings.Index(endpoint, "_orders/"); at >= 0 {
+		endpoint = endpoint[:at] + "_orders/:id"
 	}
 	policy.Endpoint = request.Method + " " + endpoint
 	if request.Method == http.MethodGet {
@@ -89,10 +91,10 @@ func PolicyForRequest(request *http.Request) HTTPPolicy {
 			policy.Action = "cancel"
 		}
 	case "gate", "crossex":
-		if request.Method == http.MethodPost && strings.HasSuffix(path, "/orders") {
+		if request.Method == http.MethodPost && (strings.HasSuffix(path, "/orders") || strings.HasSuffix(path, "/price_orders")) {
 			policy.Action = "place"
 		}
-		if request.Method == http.MethodDelete && strings.Contains(path, "/orders") {
+		if request.Method == http.MethodDelete && (strings.Contains(path, "/orders") || strings.Contains(path, "/price_orders")) {
 			policy.Action = "cancel"
 		}
 	case "hyperliquid":
