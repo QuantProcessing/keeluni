@@ -206,7 +206,7 @@ function Positions({ positions, triggers, loading, many }: { positions: AccountP
               <td className={cx(td, pnl >= 0 ? "text-up" : "text-down")}>
                 {usd(pnl)}{roe !== undefined && ` (${(roe * 100).toFixed(1)}%)`}
               </td>
-              <td className={td}>{price(position.liquidationPrice, tick(position.inst))}</td>
+              <td className={td}><LiquidationCell position={position} /></td>
               <td className={td}>{position.margin ? usd(position.margin) : "—"}</td>
               {anyTriggers && (
                 <td className={td}>
@@ -233,6 +233,27 @@ function Positions({ positions, triggers, loading, many }: { positions: AccountP
       {protecting && <TriggerDialog position={protecting} account={protecting.account} triggers={triggersOf(triggers, protecting)} onDone={() => setProtecting(null)} />}
       {closing && <ClosePosition position={closing.position} type={closing.type} hedges={holdings.get(`${closing.position.account}|${closing.position.inst}`)} onDone={() => setClosing(null)} />}
     </>
+  );
+}
+
+/**
+ * The liquidation price, or for a cross-margin pool (Gate CrossEx) the
+ * account-level risk: the pool is liquidated as a whole when its maintenance
+ * margin rate falls to 100%, so no single position has a price of its own.
+ */
+function LiquidationCell({ position }: { position: AccountPosition }) {
+  const t = useT();
+  const tick = useTick();
+  const account = useAccount()(position.account);
+  const { live } = useWorkspace();
+  if (position.liquidationPrice) return <>{price(position.liquidationPrice, tick(position.inst))}</>;
+  if (account?.kind !== "broker") return <>—</>;
+  const rate = Number(live[position.account]?.margin?.maintenanceMarginRate);
+  const shown = Number.isFinite(rate) && rate > 0 ? `${(rate * 100).toFixed(0)}%` : "—";
+  return (
+    <span className="dotted text-muted" title={t("blotter.poolLiqHint", { rate: shown })}>
+      {t("blotter.poolLiq", { rate: shown })}
+    </span>
   );
 }
 

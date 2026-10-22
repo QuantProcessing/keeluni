@@ -185,7 +185,6 @@ export function OrderTicket() {
 
       <div>
         <Row label={t("ticket.available")}>{available ? `${num(available.amount)} ${available.asset}` : "—"}</Row>
-        {perp && <Row label={t("ticket.position")}>{position ? <span className={position.side === "long" ? "text-up" : "text-down"}>{(position.side === "short" ? "-" : "") + num(position.size)} {instrument?.base}</span> : `0 ${instrument?.base ?? ""}`}</Row>}
       </div>
 
       {type === "limit" && (
