@@ -1,4 +1,4 @@
-package hedger
+package pairexec
 
 import (
 	"strings"
@@ -47,11 +47,11 @@ type SizePlan struct {
 // one side than the operator asked for.
 func PlanSize(input SizeInput, legs [2]Leg) (SizePlan, error) {
 	if !input.Size.IsPositive() {
-		return SizePlan{}, invalid("invalid.sizePositive")
+		return SizePlan{}, Invalid("invalid.sizePositive")
 	}
 	for i := range legs {
 		if !input.Price[i].IsPositive() {
-			return SizePlan{}, invalid("invalid.noPrice", "leg", i+1, "inst", legs[i].Instrument)
+			return SizePlan{}, Invalid("invalid.noPrice", "leg", i+1, "inst", legs[i].Instrument)
 		}
 	}
 	base0 := input.Size
@@ -60,7 +60,7 @@ func PlanSize(input SizeInput, legs [2]Leg) (SizePlan, error) {
 	case UnitQuote:
 		base0 = input.Size.Div(input.Price[0])
 	default:
-		return SizePlan{}, invalid("invalid.unit")
+		return SizePlan{}, Invalid("invalid.unit")
 	}
 	var plan SizePlan
 	switch input.Match {
@@ -70,7 +70,7 @@ func PlanSize(input SizeInput, legs [2]Leg) (SizePlan, error) {
 			ratio = decimal.NewFromInt(1)
 		}
 		if !ratio.IsPositive() {
-			return SizePlan{}, invalid("invalid.ratio")
+			return SizePlan{}, Invalid("invalid.ratio")
 		}
 		plan.Ratio = ratio
 		// Round leg 0, derive leg 1, round it, then re-derive leg 0 from the
@@ -88,7 +88,7 @@ func PlanSize(input SizeInput, legs [2]Leg) (SizePlan, error) {
 			plan.Ratio = q1.Div(q0)
 		}
 	default:
-		return SizePlan{}, invalid("invalid.match")
+		return SizePlan{}, Invalid("invalid.match")
 	}
 	for i := range legs {
 		plan.Notional[i] = plan.Qty[i].Mul(input.Price[i])

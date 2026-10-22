@@ -1,4 +1,4 @@
-package hedger
+package pairexec
 
 import (
 	"errors"
@@ -40,8 +40,8 @@ func TestEveryCodeHasAnEnglishFormat(t *testing.T) {
 			t.Errorf("%s has no format", code)
 		}
 	}
-	err := invalid("invalid.legRoute", "leg", 1, "account", "cx", "inst", "okx:perp:BTC-USDT-SWAP")
-	text, ok := invalidText(err)
+	err := Invalid("invalid.legRoute", "leg", 1, "account", "cx", "inst", "okx:perp:BTC-USDT-SWAP")
+	text, ok := InvalidText(err)
 	if !ok || !IsInvalid(err) || text.Code != "invalid.legRoute" || err.Error() != "leg 1: account cx cannot trade okx:perp:BTC-USDT-SWAP" {
 		t.Fatalf("invalid = %v %+v", err, text)
 	}

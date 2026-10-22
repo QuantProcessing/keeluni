@@ -1,4 +1,4 @@
-package hedger
+package pairexec
 
 import (
 	"encoding/json"
@@ -202,7 +202,7 @@ func joinTexts(a, b Text) Text {
 // errText is an error as a text: a refused request keeps its code, anything
 // else (a gateway or database failure) is shown as its own words.
 func errText(err error) Text {
-	if text, ok := invalidText(err); ok {
+	if text, ok := InvalidText(err); ok {
 		return text
 	}
 	return venueText(errorText(err))

@@ -1,7 +1,7 @@
 -- Hedger schema v1. Quantities are base units, prices quote per base.
 -- A group's holdings are never stored: they are the sum of its orders' fills.
 
-create table hedge_groups (
+create table {{groups}} (
     id         text primary key,
     label      text not null default '',
     note       text not null default '',
@@ -15,11 +15,11 @@ create table hedge_groups (
     updated_at timestamptz not null default now(),
     closed_at  timestamptz
 );
-create index hedge_groups_active on hedge_groups (created_at) where status not in ('closed', 'failed');
-create index hedge_groups_finished on hedge_groups (closed_at desc) where status in ('closed', 'failed');
+create index {{prefix}}groups_active on {{groups}} (created_at) where status not in ('closed', 'failed');
+create index {{prefix}}groups_finished on {{groups}} (closed_at desc) where status in ('closed', 'failed');
 
-create table hedge_legs (
-    group_id     text     not null references hedge_groups (id) on delete cascade,
+create table {{legs}} (
+    group_id     text     not null references {{groups}} (id) on delete cascade,
     leg          smallint not null check (leg in (0, 1)),
     account_id   text     not null,
     -- broker: the account is a broker (Gate CrossEx) whose rules and margin
@@ -41,9 +41,9 @@ create table hedge_legs (
     primary key (group_id, leg)
 );
 
-create table hedge_actions (
+create table {{actions}} (
     id          text primary key,
-    group_id    text     not null references hedge_groups (id) on delete cascade,
+    group_id    text     not null references {{groups}} (id) on delete cascade,
     kind        text     not null check (kind in ('open', 'close', 'unwind', 'rehedge')),
     mode        text     not null check (mode in ('market', 'limit')),
     maker_leg   smallint check (maker_leg in (0, 1)),
@@ -57,15 +57,15 @@ create table hedge_actions (
     created_at  timestamptz not null default now(),
     updated_at  timestamptz not null default now()
 );
-create index hedge_actions_group on hedge_actions (group_id, created_at);
-create unique index hedge_actions_one_working on hedge_actions (group_id) where status = 'working';
+create index {{prefix}}actions_group on {{actions}} (group_id, created_at);
+create unique index {{prefix}}actions_one_working on {{actions}} (group_id) where status = 'working';
 
 -- Every order is written here before it is sent: its client order id is the
 -- only way to learn the outcome of a send that timed out.
-create table hedge_orders (
+create table {{orders}} (
     client_order_id text primary key,
-    group_id        text     not null references hedge_groups (id) on delete cascade,
-    action_id       text     not null references hedge_actions (id) on delete cascade,
+    group_id        text     not null references {{groups}} (id) on delete cascade,
+    action_id       text     not null references {{actions}} (id) on delete cascade,
     leg             smallint not null check (leg in (0, 1)),
     role            text     not null check (role in ('maker', 'taker', 'hedge')),
     account_id      text     not null,
@@ -85,11 +85,11 @@ create table hedge_orders (
     created_at      timestamptz not null default now(),
     updated_at      timestamptz not null default now()
 );
-create index hedge_orders_group on hedge_orders (group_id, created_at);
-create index hedge_orders_venue on hedge_orders (account_id, venue_order_id) where venue_order_id <> '';
+create index {{prefix}}orders_group on {{orders}} (group_id, created_at);
+create index {{prefix}}orders_venue on {{orders}} (account_id, venue_order_id) where venue_order_id <> '';
 
-create table hedge_fills (
-    client_order_id text    not null references hedge_orders (client_order_id) on delete cascade,
+create table {{fills}} (
+    client_order_id text    not null references {{orders}} (client_order_id) on delete cascade,
     fill_id         text    not null,
     price           numeric not null,
     qty             numeric not null,
@@ -101,18 +101,18 @@ create table hedge_fills (
     primary key (client_order_id, fill_id)
 );
 
-create table hedge_events (
+create table {{events}} (
     id       bigserial primary key,
-    group_id text not null references hedge_groups (id) on delete cascade,
+    group_id text not null references {{groups}} (id) on delete cascade,
     at       timestamptz not null default now(),
     level    text not null check (level in ('info', 'warn', 'error')),
     message  text not null
 );
-create index hedge_events_group on hedge_events (group_id, id);
+create index {{prefix}}events_group on {{events}} (group_id, id);
 
 -- Estimated funding per settlement: amount > 0 was received.
-create table hedge_funding (
-    group_id   text        not null references hedge_groups (id) on delete cascade,
+create table {{funding}} (
+    group_id   text        not null references {{groups}} (id) on delete cascade,
     leg        smallint    not null check (leg in (0, 1)),
     settled_at timestamptz not null,
     rate       numeric     not null,

@@ -36,7 +36,7 @@ describe("dictionaries", () => {
 
 import { HEDGER_CODES, hedgerText } from "./hedger";
 // The hedger's own source, read as text at test time (Vite ?raw).
-import hedgerSource from "../../../hedger/text.go?raw";
+import hedgerSource from "../../../pairexec/text.go?raw";
 
 describe("hedger texts", () => {
   // The hedger's own list of codes and English formats.
