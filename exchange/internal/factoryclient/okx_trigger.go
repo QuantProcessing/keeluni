@@ -248,4 +248,3 @@ func okxTriggerStatus(state string) string {
 func okxAmbiguous(product exchange.Product, operation string) error {
 	return exchange.NewError(exchange.KindAmbiguousOutcome, exchange.ErrorDetails{Venue: okxVenue, Product: product, Operation: operation, SafeMessage: "order command outcome is unknown after possible send"})
 }
-
